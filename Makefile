@@ -45,6 +45,7 @@ endif
 CXXFLAGS += -pthread
 CFLAGS += -pthread
 
+
 # Don't touch anything below this line
 BUILD_NUMBER_FILE=build/build-number.txt
 SRC = $(CXXSOURCES) $(CSOURCES)
@@ -55,6 +56,11 @@ OBJ_BUILD = $(OBJ_CXX_BUILD) $(OBJ_C_BUILD)
 SYSLD := $(shell echo `whereis g++ | cut -d\  -f 2`)
 REALLD ?= $(SYSLD)
 SHAREDLIBS = -lssl -lcrypto -lsqlite3
+# On Linux, old Glib requires -lrt for aio and clock_gettime
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+   SHAREDLIBS += -lrt
+endif
 LDXX = g++
 Q = @
 

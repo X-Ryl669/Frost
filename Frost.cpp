@@ -1753,9 +1753,10 @@ int showHelpMessage(const Frost::String & error = "")
 {
     if (error) fprintf(stderr, "error: %s\n\n", (const char*)TRANS(error));
     
-    printf("Frost (C) Copyright 2013 - Cyril RUSSO All right reserved \n");
+    printf("Frost (C) Copyright 2013 - Cyril RUSSO (This software is BSD licensed) \n");
     printf(TRANS("Frost is a tool used to efficiently backup and restore files to/from a remote\n"
            "place with no control other the remote server software.\n"
+           "No warranty of any kind is provided for the use of this software.\n"
            "Current version: %d. \n\n"
            "Usage:\n"
            "  Actions:\n"
@@ -1763,7 +1764,7 @@ int showHelpMessage(const Frost::String & error = "")
            "\t--backup dir\t\tBackup the given directory (either backup or restore mode is supported)\n"
            "\t--purge [rev]\t\tPurge the given remote backup directory up to the given revision number (use --list to find out)\n"
            "\t--list [range]\t\tList the current backup in the specified index (required) and time range in UTC (in the form 'YYYYMMDDHHmmSS YYYYMMDDHHmmSS')\n"
-           "\t--filelist [range]\t\tList the current backup in the specified index (required) and time range in UTC, including the file list in this revision\n"
+           "\t--filelist [range]\tList the current backup in the specified index (required) and time range in UTC, including the file list in this revision\n"
            "\t--test [name]\t\tRun the test with the given name -developer only- use -v for more verbose mode, 'help' to get a list of available tests\n"
            "\t--help [security]\tGet help on the security features and advices of Frost\n"
            "  Required parameters for backup, purge and restore:\n"
@@ -1901,13 +1902,13 @@ int checkTests(Strings::StringArray & options)
                 // Ok, then fill some content in some files
                 if (!File::Info("./test/basicFile.txt").setContent("This is a very basic file content"))
                     ERR("Can't create basic file in the test directory");
-                if (!File::Info("../../Hurt.txt").copyTo("./test/smallFile.txt"))
+                if (!File::Info("./ex/Hurt.txt").copyTo("./test/smallFile.txt"))
                     ERR("Can't copy lyric file in the test directory");
-                if (!File::Info("../../RomeoAndJulietS2.txt").copyTo("./test/"))
+                if (!File::Info("./ex/RomeoAndJulietS2.txt").copyTo("./test/"))
                     ERR("Can't copy scene 2 file in the test directory");
-                if (!File::Info("../../RomeoAndJulietS3.txt").copyTo("./test/"))
+                if (!File::Info("./ex/RomeoAndJulietS3.txt").copyTo("./test/"))
                     ERR("Can't copy scene 3 file in the test directory");
-                if (!File::Info("../../TheMerchantOfVeniceA3S1.txt").copyTo("./test/"))
+                if (!File::Info("./ex/TheMerchantOfVeniceA3S1.txt").copyTo("./test/"))
                     ERR("Can't copy scene 1 file in the test directory");
 
                 
@@ -1930,7 +1931,7 @@ int checkTests(Strings::StringArray & options)
                 for (int i = 0; i < 16 * 1024; i++)
                 {
                     uint8 randomData[1024];
-                    Random::fillBlock(randomData, ArrSz(randomData), true);
+                    Random::fillBlock(randomData, ArrSz(randomData), i==0);
                     bigFile.Append(randomData, ArrSz(randomData));
                 }
                 bigFile.Append(bigFile.getConstBuffer() + 3, bigFile.getSize());

@@ -223,7 +223,7 @@ namespace Crypto
 #ifndef OPENSSL_NO_SSL2
                             (protocol == SSLv3 ? SSLv3_method() : SSLv2_method()))))
 #else
-                            SSLv3_method()))))
+                            SSLv3_method())))
 #endif
     {
         // Load the root certificate store from Mozilla's version.
@@ -265,7 +265,7 @@ namespace Crypto
 #ifndef OPENSSL_NO_SSL2
                                 (protocol == SSLv3 ? SSLv3_method() : SSLv2_method()))))
 #else
-                                SSLv3_method()))))
+                                SSLv3_method())))
 #endif
     {
         loadCertificate(rootCertificateBundlePath);
