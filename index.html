@@ -1,0 +1,349 @@
+<html>
+<head>
+<style>
+body, html {
+          height: 100%;
+          margin: 0;
+          -webkit-font-smoothing: antialiased;
+          font-weight: 100;
+          background: #468;
+          text-align: center;
+          font-family: helvetica;
+      }
+      h1 
+      {
+          padding: 10px;
+	  color: #fff;
+	  font-weight: 200;
+      }       
+
+      .tabs input[type=radio] {
+          position: absolute;
+          top: -9999px;
+          left: -9999px;
+      }
+      .tabs {
+        width: 80%;
+        float: none;
+        list-style: none;
+        position: relative;
+        padding: 0;
+        margin: 75px auto;
+      }
+      .tabs > input[type="radio"] + label {
+        float: left;
+      }
+      .tabs label {
+          display: block;
+          padding: 10px 20px;
+          border-radius: 4px 4px 0 0;
+          color: #644;
+ 	  margin-right: 2px;
+	  border: rgba(0, 0, 0, 0.5) 1px solid;
+          border-bottom: none;
+          font-size: 1em;
+          font-weight: normal;
+          font-family: 'Lily Script One', helveti;
+          background: rgba(255,255,255,0.2);
+          cursor: pointer;
+          position: relative;
+          top: 3px;
+          -webkit-transition: all 0.2s ease-in-out;
+          -moz-transition: all 0.2s ease-in-out;
+          -o-transition: all 0.2s ease-in-out;
+          transition: all 0.2s ease-in-out;
+
+          box-shadow: 0 0px 10px #444;
+          -moz-box-shadow: 0 0 10px #444;
+          -webkit-box-shadow: 0px 0px 10px #444;
+      }
+      
+      [id^=tab]:checked + label:after { 
+background: #48A;
+content: '';
+display: block;
+height: 20px;
+margin: 0 auto;
+position: absolute;
+bottom: -10px;
+left: 0px;
+right: 0px;
+}
+      .tabs label:hover {
+        background: rgba(255,255,255,0.5);
+        top: 0;
+      }
+       
+      [id^=tab]:checked + label {
+        background: #48A;
+        color: white;
+        top: 1px;
+	z-index: 3;
+      }
+       
+      #tab1:checked ~ .tab1, #tab2:checked ~ .tab2, #tab3:checked ~ .tab3, #tab4:checked ~ .tab4, #tab5:checked ~ .tab5 {
+         display: block;
+      }
+      .tab-content{
+	padding: 20px !important;
+        z-index: 2;
+        display: none;
+        text-align: left;
+        width: 100%;
+        font-size: 0.9em;
+        line-height: 140%;
+        padding-top: 10px;
+        background: #48A;
+        padding: 15px;
+        color: white;
+        position: relative;
+        left: 0;
+        box-sizing: border-box;
+        -webkit-animation-duration: 0.5s;
+        -o-animation-duration: 0.5s;
+        -moz-animation-duration: 0.5s;
+        animation-duration: 0.5s;
+        border: 1px solid rgba(0, 0, 0, 0.5);
+        border-radius: 0px 4px 4px 4px;
+        box-shadow: 0 0px 10px #444;
+        -moz-box-shadow: 0 0 10px #444;
+        -webkit-box-shadow: 0px 0px 10px #444;
+      }
+</style>
+</head>
+<body>
+<h1>Frost backup program</h1>
+
+<div class="tabs">
+
+          <input type="radio" checked name="tabs" id="tab1">
+          <label for="tab1">Why</label>
+          <input type="radio" name="tabs" id="tab2">
+          <label for="tab2">Features</label>
+          <input type="radio" name="tabs" id="tab3">
+          <label for="tab3">Comparing with competition</label>
+          <input type="radio" name="tabs" id="tab4">
+          <label for="tab4">Documentation</label>
+          <input type="radio" name="tabs" id="tab5">
+          <label for="tab5">Download</label>
+<br style="clear:both; height: 0; padding: 0; margin: 0"/>
+
+          <div id="tab-content1" class="tab-content animated fadeIn tab1">
+I needed a tool I can rely on to backup my work and personal data.<br/>
+I'm a bit paranoid, so I don't trust external company for my personal stuff (whatever their reputation at a given time).<br/>
+This tool should provide every feature I need in the best possible implementation and well tested.<br/>
+I don't want to manage backup (it should be transparent), I don't want to have incremental / full backup (we are no more in the 90s).<br/>
+Yet, the backup should be as small as possible, encrypted and indexed.
+          </div>
+
+
+          <div id="tab-content2" class="tab-content animated fadeIn tab2">
+<ul>
+<li>Open source (and well documented / commented)</li>
+<li>Out-of-site backup (with FUSE support)</li>
+<li>No local copy of the backuped files / directory (with FUSE support)</li>
+<li>Unmastered out-of-site server link (no specific backup software running on the server)</li>
+<li>Compression on the client site</li>
+<li>Encryption on the client site (server is considered unsecure)</li>
+<li>Optimized for slow upload link, high download link</li>
+<li>Deduplication (required for the feature below)</li>
+<li>Snapshot mode (no full/iterative backup, each backup is consistent)</li>
+<li>No dependency (except OpenSSL for cryptography, SQLite3 for embedded database)</li>
+<li>in v2: Data parity computation for fixing any byte corruption</li>
+<li>in v2: Support multiple file transfer protocol (currently using FUSE)</li>
+<li>in v2: Support for multiple compression type with pluggable filtering for best algorithm selection (DONE)</li>
+<li>in v2: FUSE mountable of any backup version</li> 
+</ul>
+          </div>
+
+
+          <div id="tab-content3" class="tab-content animated fadeIn tab3">
+<p>As far as I've searched, there is no integrated solution for my needs.</p>
+<p>I've found very close software, but they all fail to provide all the features I need for my backup solution:</p>
+<ul>
+<li>
+<b>Obnam</b><br/>
+Pro:
+  <ol>
+  <li>De-duplication</li>
+  <li>Encryption</li>
+  <li>Out of site backup</li>
+  </ol>
+Con:
+  <ol>
+  <li>No compression</li>
+  <li>Requires SSH on the server</li>
+  <li>De-duplication not using a variable block size, thus fails most of the time to spot the differences in files</li>
+  </ol>
+</li>
+<li>
+<b>Bup</b><br/>
+Pro:
+  <ol>
+  <li>De-duplication</li>
+  <li>Very efficient</li>
+  </ol>
+Con:
+  <ol>
+  <li>No compression</li>
+  <li>Requires SSH on the server</li>
+  <li>No encryption</li>
+  <li>Can't prune old backups</li>
+  </ol>
+</li>
+<li>
+<b>DDar</b><br/>
+Pro:
+  <ol>
+  <li>De-duplication</li>
+  </ol>
+Con:
+  <ol>
+  <li>No compression</li>
+  <li>No encryption</li>
+  <li>Local</li>
+  </ol>
+</li>
+<li>
+<b>Duplicity</b><br/>
+Pro:
+  <ol>
+  <li>Server agnostic</li>
+  <li>Compression</li>
+  <li>Encryption</li>
+  </ol>
+Con:
+  <ol>
+  <li>No deduplication (still using the inc/full painful system)</li>
+  <li>Using external tools for everything, prone to break on upgrade</li>
+  <li>Some obscure (and old) bugs prevent large system backup</li>
+  </ol>
+</li>
+<li>
+<b>Syncany</b><br/>
+Pro:
+  <ol>
+  <li>De-duplication</li>
+  <li>Server agnostic</li>
+  <li>Compression</li>
+  <li>Encryption</li>
+  </ol>
+Con:
+  <ol>
+  <li>Not supported anymore</li>
+  <li>Using java (and dependencies)</li>
+  </ol>
+</li>
+</ul>
+          </div>
+
+          <div id="tab-content4" class="tab-content animated fadeIn tab4">
+<h2>How it works</h2>
+<p>Typically, one would compile Frost by issueing a "make" in the source folder.
+On successful building, everything is explained by issueing "./frost --help".</p>
+
+<p>Frost backups the given directory to another directory that'll contain the encrypted and compressed data (called multichunk).</p>
+<p>If you need to save your data to a remote server, mount the server with FUSE on the destination directory, and the backup will transparently become off-site</p>
+<p>Frost requires/makes two specific files:</p>
+<ol>
+<li><em>The key vault file.</em> This file is protected by a password, yet, it's more secure if not sent on the server, but kept on your local filesystem / USB key.
+This file is used to store the master key that's protecting the complete backup set. Loosing this file means loosing your backup. </li>
+<li><em>The index file.</em> This file is a SQLite3 database, used to match the "chunks" to the initial directory hierarchy. It contains all the backup revisions, and 
+the hash for the data. Storing this file on the remote server gives any attacker the list of the files in the backup, but not the mean to access their content.</li>
+</ol>
+
+<h2>Technical discussion</h2>
+<p>A good start to read is <a href="http://www.philippheckel.com/files/syncany-heckel-thesis.pdf">this thesis</a></p>
+<p>First, the most important feature is deduplication, and it must be done at the source level (before compression, and obviously, encryption). Relying on an external program to encrypt/decrypt the data is not viable.</p>
+<p>The software must split the input data in chunks, and the chunks size can't be fixed (else, a single byte insert in a file would transform all chunks starting from the insert, and thus prevent deduplication algorithm to find out the similarities).</p>
+<p>The software will then use a rolling checksum property (which proved technically superior to Rabin fingerprinting [1]) in addition to a large checksum algorithm, to split the input data in chunks at some "checkpoint" places. Then, it stores the index / metadata / checksums for each chunk in an index file that needs to be saved locally (and backup remotely).
+This index file contains "fingerprint" for all chunks, and the data decomposition algorithm (which chunks are used by each file).</p>
+<p>Finally some compression is applied on the chunks (based on the computed entropy level, there's not point in compressing already compressed data), a encryption is done before saving the output chunk to the final server</p>
+<p>Restoring requires the index files, which links actual backup hierarchy to the different chunks on the server</p>
+
+
+<p>While Frost does not do any server communication on its own but instead relies on FUSE layer to show the server's as a filesystem, it's important to figure out the minimum requirement on the server / client protocol for anyone 
+interested in implementing a FUSE layer.</p><p>The minimum commands to be supported are:</p>
+<ul>
+<li>LIST - listing all files/chunks on the server</li>
+<li>STORE - store a file/chunk on the server</li>
+<li>RETRIEVE - retrieve a file/chunk on the server</li>
+<li>DELETE - delete a file/chunk on the server</li>
+</ul>
+<p>Also, to allow fast operation on an assymmetric link, most network communication should be carefully thought about. Typically, chunks will likely be small, but we would like to limit the overhead of a single chunk transfer, so we are going to aggregate chunks to so overhead becomes negligible. 
+Frost was designed with this idea, and a FUSE wrapper providing the minimum requirement above will give the best behavior directly.</p> 
+
+<h2>The implementation</h2>
+<h3>Crypto</h3>   
+<em>OpenSSL is used for the cryptographic algorithms. </em><br/>
+<em>AES256 is used for the symmetric algorithms, SHA256 for the 256-bit hashing functions, PBKDF1 for the password encryption, ECIES for the asymmetric encryption (Elliptic curve Integrated Encryption Scheme)</em>
+
+<h4>Key generation</h4>
+<p>512 bits of random data from the system random source are hashed into the 256 bits master key.</p>
+<p>An asymmetric key pair is generated (public and private). The master key is then encrypted with this key pair and saved in the database.</p>
+<p>The private key is encrypted with a symmetric encryption (AES256) and saved in the keyvault</p>
+<p>The symmetric encryption is initialized with a key derived from a password the user must provide (using Password Based Key Derivation Function and SHA256 as the hash function). There is no IV vector as ECB is used for a single 
+block anyway.</p>
+<h4>Backup process</h4>
+<p>After a multichunk is generated, and after it's compressed {might be avoided}, it's encrypted with a symmetric cryptographic algorithm that's unique per multichunk.</p>
+<p>The symmetric mode of encryption is used in CTR block mode. <br/>
+The nonce is derived from the SHA256(Multichunk) ^ counter <br/>
+The counter is reset for each multichunk (each multichunk is independant of the others).<br/>
+The key used for the encryption is derived from the asymmetric encryption algorithm (see below).</p>
+
+<p>It's updated at pseudo-regular interval, and synchronization points are used to figure out if the next block is a salt used to update the key or a ciphertext.
+Typically, a key is build like this: </p>
+<pre> 
+random Salt (256 bits) is generated.
+key = KDF(Salt || MasterKey)
+
+cipheredChunk = Salt
+for each block in the multichunk:
+   nonce = SHA256(Multichunk) ^ counter
+   cipheredChunk = cipheredChunk || AES_CTR(key, Multichunk, nonce)
+   if length(cipheredData) > securityThreshold:
+       create new key (see above)
+       cipheredChunk = cipheredChunk || newSalt
+</pre>
+
+<p>The initial secret is generated by pure random entropy and is > 256 bits.</p>
+<p>A asymmetric algorithm is used to encrypt this initial secret, and the ciphertext is saved in the key vault.
+When starting Frost, the secret is uncyphered from the public key (and a password)</p>
+
+<p>The secret is hashed into a master key.
+This master key called Mkey later on, is used to derive the block encryption keys.</p>
+<em>Notice that SHA256(Multichunk) is stored in clear in the index database as it's used to assert the multichunk was not corrupted in the remote place.</em>
+<h4>Weakness of the algorithm</h4>
+<p>A lot of random is used in the process to ensure cryptanalysis will be hard. However, if the system does not provide enough entropy, a pseudo random generator is used.
+This is how the Linux Kernel deals with randomness, and unfortunately, not something to overlook.</p>
+<p>Unless you are storing very secret information, this scheme is used in most cryptographic software.</p>
+<p>If someone get hands on the keyvault, (s)he can try to brute force the password (or use a dictionnary of most common used passwords). Do not use a simple password!</p>
+<p>The analysis will still be difficult, since there is no "good" result of decryption, but if the attacker knows a big file you have, then cryptanalysis can help him/her figure out if the tested password is working.</p>  
+ 
+<h3>Compression</h3>
+<h4>Zlib</h4>
+<p>This is the default compression library. The compression ratio is poor, yet the compression is fast.</p>
+<p>This is more important when purging old data from the backup set, because it's required to decompress the data and compress the remaining one. 
+If you have limited space (or bandwidth) on your server, then you should use the other method.</p>
+<p>On the other hand, if you have plenty of space or bandwidth, then a quick algorithm will prove faster and the backup process will take less time</p>
+<h4>BSC</h4>
+<p>The Block Sorter Compressor algorithm must be enabled explicitely. It was written by Ilya Grebnov, integrated in Frost by me.</p>
+<p>It works better with big blocks of data to compress. It's faster than LZMA (yet, it's also using Lempel Ziv Prediction over a BW transform), and produces <a href="http://mattmahoney.net/dc/text.html#1640">better compression 
+ratio</a>.</p>
+<p>Unfortunately, it's slower than Zlib, and less common, so caution kicks in here, and Zlib stays the default.</p>
+<em>Please notice that checksum are used everywhere, so any corruption in the data will be detected anyway.</em>
+
+
+          </div>
+
+          <div id="tab-content5" class="tab-content animated fadeIn tab5">
+<a href="frost.latest.tar.gz" >Source code for POSIX system (Linux and Mac OS X)</a>
+</div>
+
+</div>
+
+<div class="footer">
+This website and source code was build by me (C) X-Ryl669.
+</div>
+
+</body>
