@@ -9,7 +9,7 @@ namespace File
 {
     // Build a Two Threshold Two Divider chunker
     TTTDChunker::TTTDChunker(const String & _options)
-        : BaseChunker(name, _options)
+        : BaseChunker("TTTD", _options)
     {
         // Extract the parameters from the options
         if (options.getSize() >= 4)

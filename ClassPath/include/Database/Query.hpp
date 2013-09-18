@@ -558,7 +558,8 @@ namespace Query
             // The query retrieve all results at once
             const SQLFormat::Results * res = SQLFormat::sendQuery(Table::__DBIndex__, base);
             Var countT;
-            if (res == NULL || !SQLFormat::getResults(res, countT, 0, "xZ_X_Count_T823")) return Pool<Table>(0);
+            if (res == NULL) return Pool<Table>(0);
+            if (!SQLFormat::getResults(res, countT, 0, "xZ_X_Count_T823")) { SQLFormat::cleanResults(res); return Pool<Table>(0); }
 
             // Now, create the array of results
             int count = countT.like(&count);
@@ -637,7 +638,8 @@ namespace Query
             // The query retrieve all results at once
             const SQLFormat::Results * res = SQLFormat::sendQuery(Table::__DBIndex__, base);
             Var countT;
-            if (res == NULL || !SQLFormat::getResults(res, countT, 0, "xZ_X_Count_T823")) return Pool<Table>(0);
+            if (res == NULL) return Pool<Table>(0);
+            if (!SQLFormat::getResults(res, countT, 0, "xZ_X_Count_T823")) { SQLFormat::cleanResults(res); return Pool<Table>(0); }
 
             // Now, create the array of results
             int count = countT.like(&count);

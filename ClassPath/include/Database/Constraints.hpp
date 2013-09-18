@@ -996,7 +996,8 @@ namespace Database
         const SQLFormat::Results * res = SQLFormat::sendQuery(T::__DBIndex__, base);
         Var countT;
         // Extract the count of data for this query
-        if (res == NULL || !SQLFormat::getResults(res, countT, 0, "xZ_X_Count_T823")) return Pool<T>(0);
+        if (res == NULL) return Pool<T>(0);
+        if (!SQLFormat::getResults(res, countT, 0, "xZ_X_Count_T823")) { SQLFormat::cleanResults(res); return Pool<T>(0); }
 
         // Now, create the array of results
         int count = countT.like(&count);

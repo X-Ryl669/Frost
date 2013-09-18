@@ -42,8 +42,8 @@ CXXFLAGS += -O2
 CFLAGS += -O2
 endif
 
-CXXFLAGS += -pthread
-CFLAGS += -pthread
+CXXFLAGS += -pthread -Wno-multichar
+CFLAGS += -pthread -Wno-multichar
 
 
 # Don't touch anything below this line
@@ -67,21 +67,21 @@ Q = @
 all: $(OUTPUT)
 
 
-$(OUTPUT): $(OBJ_BUILD)
+$(OUTPUT): $(OBJ_BUILD) 
 	@echo Linking $@
 	$(Q)$(LDXX) -o $@ -lpthread $(LIBPATH) $(OBJ_BUILD) $(LIBS) $(SHAREDLIBS)
-	@echo Built test version: $$(cat $(BUILD_NUMBER_FILE))
+	@echo Built Frost version: $$(cat $(BUILD_NUMBER_FILE))
 
 $(BUILD_NUMBER_FILE): $(OBJ_BUILD)
 	@if ! test -f $(BUILD_NUMBER_FILE); then echo 0 > $(BUILD_NUMBER_FILE); fi
 	@echo $$(($$(cat $(BUILD_NUMBER_FILE)) + 1)) > $(BUILD_NUMBER_FILE)
 
-$(OBJ_C_BUILD): $(subst build/,,$@)
+$(OBJ_C_BUILD): $(CSOURCES)
 	@echo ">  Compiling $(notdir $*.c)"
 	$(Q)-mkdir -p $(dir $@)
 	$(Q)$(CC) $(CFLAGS) $(DFLAGS) -c $(subst build/,,$(patsubst %.o,%.c,$@)) -o $@
 
-$(OBJ_CXX_BUILD): $(subst build/,,$@)
+$(OBJ_CXX_BUILD): $(CXXSOURCES)
 	@echo ">  Compiling $(notdir $*.cpp)"
 	$(Q)-mkdir -p $(dir $@)
 	$(Q)$(CXX) $(CXXFLAGS) $(DFLAGS) $(INCPATH) -c $(subst build/,,$(patsubst %.o,%.cpp,$@)) -o $@

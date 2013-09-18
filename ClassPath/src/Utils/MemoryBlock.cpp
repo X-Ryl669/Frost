@@ -31,9 +31,15 @@ namespace Utils
     bool MemoryBlock::Append(const uint8 * _buffer, const uint32 _size)
     {
         if (!_size) return true;
+        bool overlap = (buffer <= _buffer && buffer + allocSize > _buffer);
+        size_t dist = overlap ? (size_t)(_buffer - buffer) : 0;
 
         if ((size + _size) > allocSize && !resizeBuffer((uint32)((size + _size) * 1.2f))) return false;
-        if (_buffer) memcpy(&buffer[size], _buffer, _size);
+        if (_buffer)
+        {
+            if (overlap) memmove(&buffer[size], buffer + dist, _size); // If the buffer was reallocated, we need to update the pointer
+            else         memcpy(&buffer[size], _buffer, _size);
+        }
         size += _size;
         return true;
     }
@@ -41,7 +47,7 @@ namespace Utils
     bool MemoryBlock::Extract(uint8 * _buffer, const uint32 _size)
     {
         if (_size > size) return false;
-        if (_buffer) memcpy(_buffer, buffer, _size);
+        if (_buffer) memmove(_buffer, buffer, _size);
         memmove(buffer, &buffer[_size], (size - _size));
         size -= _size;
         if (allocSize - size > MaxAllowedDelta && !resizeBuffer((uint32)(size * 1.2f)))

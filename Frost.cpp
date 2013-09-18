@@ -690,7 +690,7 @@ namespace Frost
         const char * suffix[] = { "B", "KB", "MB", "GB", "TB", "PB", "EB" };
         int suffixPos = 0, lastReminder = 0;
         while (size / 1024) { suffixPos++; lastReminder = size % 1024; size /= 1024; }
-        return String::Print("%d.%d%s", size, (lastReminder * 10 / 1024), suffix[suffixPos]);
+        return String::Print("%lld.%d%s", size, (lastReminder * 10 / 1024), suffix[suffixPos]);
     }
     String makeLegibleTime(uint64 ms)
     {
@@ -698,7 +698,7 @@ namespace Frost
         const int base[] = { 1000, 60, 60, 24, 1<<30};
         int suffixPos = 0, lastReminder = 0;
         while (suffixPos < 4 && ms / base[suffixPos]) { lastReminder = ms % base[suffixPos]; ms /= base[suffixPos]; suffixPos++; }
-        return String::Print("%d.%d%s", ms, suffixPos ? (lastReminder * 10) / base[suffixPos - 1] : 0, suffix[suffixPos]);
+        return String::Print("%lld.%d%s", ms, suffixPos ? (lastReminder * 10) / base[suffixPos - 1] : 0, suffix[suffixPos]);
     }
         
     struct ConsoleProgressCallback : public ProgressCallback
@@ -1934,7 +1934,7 @@ int checkTests(Strings::StringArray & options)
                     Random::fillBlock(randomData, ArrSz(randomData), i==0);
                     bigFile.Append(randomData, ArrSz(randomData));
                 }
-                bigFile.Append(bigFile.getConstBuffer() + 3, bigFile.getSize());
+                bigFile.Append(bigFile.getConstBuffer() + 3, bigFile.getSize() - 3);
                     
                 if (stream.write(bigFile.getConstBuffer(), bigFile.getSize()) != (uint64)bigFile.getSize())
                     ERR("Can't fill the big file");

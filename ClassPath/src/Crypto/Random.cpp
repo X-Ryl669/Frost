@@ -127,7 +127,7 @@ namespace Random
             arr[0] ^= uptime << 8;
             arr[1] ^= (uptime & 0xFFFF00) >> 8;
 #elif defined(_POSIX)
-            FILE * rnd = fopen("/dev/random", "r");
+            FILE * rnd = fopen("/dev/urandom", "r");
             if (rnd)
             {
                 fread(EntropyBucket, 1, 16, rnd);
