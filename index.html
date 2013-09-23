@@ -10,6 +10,7 @@ body, html {
           text-align: center;
           font-family: helvetica;
       }
+      a { color: #FFF; }
       h1 
       {
           padding: 10px;
@@ -30,10 +31,10 @@ body, html {
         padding: 0;
         margin: 75px auto;
       }
-      .tabs > input[type="radio"] + label {
+      .tabs > input[type="radio"] + label.t {
         float: left;
       }
-      .tabs label {
+      .tabs label.t {
           display: block;
           padding: 10px 20px;
           border-radius: 4px 4px 0 0;
@@ -58,7 +59,7 @@ body, html {
           -webkit-box-shadow: 0px 0px 10px #444;
       }
       
-      [id^=tab]:checked + label:after { 
+      [id^=tab]:checked + label.t:after { 
 background: #48A;
 content: '';
 display: block;
@@ -69,12 +70,12 @@ bottom: -10px;
 left: 0px;
 right: 0px;
 }
-      .tabs label:hover {
+      .tabs label.t:hover {
         background: rgba(255,255,255,0.5);
         top: 0;
       }
        
-      [id^=tab]:checked + label {
+      [id^=tab]:checked + label.t {
         background: #48A;
         color: white;
         top: 1px;
@@ -190,15 +191,15 @@ hinge {
 <div class="tabs">
 
           <input type="radio" checked name="tabs" id="tab1">
-          <label for="tab1">Why</label>
+          <label for="tab1" class='t'>Why</label>
           <input type="radio" name="tabs" id="tab2">
-          <label for="tab2">Features</label>
+          <label for="tab2" class='t'>Features</label>
           <input type="radio" name="tabs" id="tab3">
-          <label for="tab3">Comparing with competition</label>
+          <label for="tab3" class='t'>Comparing with competition</label>
           <input type="radio" name="tabs" id="tab4">
-          <label for="tab4">Documentation</label>
+          <label for="tab4" class='t'>Documentation</label>
           <input type="radio" name="tabs" id="tab5">
-          <label for="tab5">Download</label>
+          <label for="tab5" class='t'>Download</label>
 <br style="clear:both; height: 0; padding: 0; margin: 0"/>
 
           <div id="tab-content1" class="tab-content animated fadeIn tab1">
@@ -207,6 +208,9 @@ I'm a bit paranoid, so I don't trust external company for my personal stuff (wha
 This tool should provide every feature I need in the best possible implementation and well tested.<br/>
 I don't want to manage backup (it should be transparent), I don't want to have incremental / full backup (we are no more in the 90s).<br/>
 Yet, the backup should be as small as possible, encrypted and indexed.
+<br/>
+<br/>
+<label for="tab2" style="text-decoration : underline; cursor: hand;">This tool now exists, you can check its features here.</label>
           </div>
 
 
@@ -420,6 +424,6 @@ This website and source code was build by me (C) X-Ryl669.
 </div>
 
 <div class="ribbon hinge animated">
-    <a href="https://github.com/X-Ryl669/Frost">Fork me on GitHub</a>
+    <a href="https://github.com/X-Ryl669/Frost">Fork me, I'm famous</a>
 </div>
 </body>
