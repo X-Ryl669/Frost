@@ -11,6 +11,7 @@ body, html {
           font-family: helvetica;
       }
       a { color: #FFF; }
+      pre { background: #279; color: #EAA; font-weight: bold; font-family: monospace; padding: 5px; border-radius: 5px; }
       h1 
       {
           padding: 10px;
@@ -231,6 +232,7 @@ Yet, the backup should be as small as possible, encrypted and indexed.
 <li>in v2: Support for multiple compression type with pluggable filtering for best algorithm selection (DONE)</li>
 <li>in v2: FUSE mountable of any backup version</li> 
 </ul>
+<label for="tab4" style="text-decoration : underline; cursor: hand;">Show me how to use it.</label>
           </div>
 
 
@@ -329,6 +331,32 @@ This file is used to store the master key that's protecting the complete backup 
 the hash for the data. Storing this file on the remote server gives any attacker the list of the files in the backup, but not the mean to access their content.</li>
 </ol>
 
+<h2>How to use it</h2>
+<h3>Minimal use case</h3>
+<p>Once built and installed, you should perform a self test to ensure the code runs as expected</p>
+<pre>$ Frost --test key && Frost --test roundtrip && Frost --test purge # They should all return "Success"</pre>
+<p>You can backup a folder like this:</p>
+<pre>$ Frost --backup /path/to/backup --remote /where/to/store/backup</pre>
+<p>You can list all revisions of your backups like this:</p>
+<pre>$ Frost --list --index /where/backup/are/stored</pre>
+<p>You can get a more described file list like this:</p>
+<pre>$ Frost --filelist --index /where/backup/are/stored</pre>
+<p>You can restore the last revision of a backup like this:</p>
+<pre>$ Frost --restore /path/to/restore/to --remote /where/backup/are/stored</pre>
+<p>To purge up to a given revision:</p>
+<pre>$ Frost --purge #revision# --remote /where/backup/are/stored # drop from first revision up to (including) #revision#</pre>
+<h3>Advanced guide</h3>
+<p>To get more performance out of the system, if you have a limited upload bandwidth, and/or limited storage space on the remote:</p>
+<pre># Mount the remote server's filesystem on /mnt/remote before this
+$ mount [...]</pre>
+<pre>$ Frost --backup /path/to/backup --remote /mnt/remote --compression bsc</pre>
+<p>To purge cleanly as much as possible:</p>
+<pre>$ Frost --purge revision --remote /mnt/remote --strategy slow --compression bsc</pre>
+<p>To restore only a specific revision:</p>
+<pre>$ Frost --restore /path/to/restore/to #revision# --remote /mnt/remote</pre>
+<br/><br/>
+<label for="tab5" style="text-decoration : underline; cursor: hand;">Ok, let me try this.</label>
+
 <h2>Technical discussion</h2>
 <p>A good start to read is <a href="http://www.philippheckel.com/files/syncany-heckel-thesis.pdf">this thesis</a></p>
 <p>First, the most important feature is deduplication, and it must be done at the source level (before compression, and obviously, encryption). Relying on an external program to encrypt/decrypt the data is not viable.</p>
@@ -410,11 +438,11 @@ ratio</a>.</p>
 <p>Unfortunately, it's slower than Zlib, and less common, so caution kicks in here, and Zlib stays the default.</p>
 <em>Please notice that checksum are used everywhere, so any corruption in the data will be detected anyway.</em>
 
-
           </div>
 
           <div id="tab-content5" class="tab-content animated fadeIn tab5">
-<a href="frost.latest.tar.gz" >Source code for POSIX system (Linux and Mac OS X)</a>
+<a href="https://github.com/X-Ryl669/Frost/archive/master.zip" >Source code for POSIX system (Linux and Mac OS X)</a>.<br/><br/>
+The solution might be buildable on Windows, with mingw or Microsoft compiler, but I have not tested this. In all case, there is no gui, so the backup would have to be run in a console.<br/>
 </div>
 
 </div>
