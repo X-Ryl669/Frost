@@ -22,6 +22,8 @@
 
 // The global option map
 Strings::StringMap optionsMap;
+// The warning log that's displayed on output
+Strings::StringArray warningLog;
 // Error code that's returned to bail out of int functions
 const int BailOut = 26748;
 
@@ -719,6 +721,7 @@ namespace Frost
         return String::Print("%lld.%d%s", ms, suffixPos ? (lastReminder * 10) / base[suffixPos - 1] : 0, suffix[suffixPos]);
     }
         
+    
     struct ConsoleProgressCallback : public ProgressCallback
     {
         int lastProgress;
@@ -774,6 +777,7 @@ namespace Frost
         
         virtual bool warn(const Action action, const String & currentFilename, const String & message)
         {
+            warningLog.Append(currentFilename + ": " + message);
             fprintf(stderr, TRANS("\nWARNING %s: %s\n"), (const char*)currentFilename, (const char*)message);
             return true;
         }
@@ -2060,7 +2064,7 @@ int checkTests(Strings::StringArray & options)
             // Then purge the database from the last revision
             result = Frost::purgeBackup("./testBackup/", console, Frost::Slow, 1);
             if (result) ERR("Can't purge the last backup: %s\n", (const char*)result);
-/*            */
+
             Frost::finalizeDatabase();
             fprintf(stderr, "Success\n");
             return EXIT_SUCCESS;
@@ -2190,10 +2194,28 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
     if (action == "purge")
     {
         // Purge the directory now for useless chunks
-        if (!optionsMap["index"]) return showHelpMessage("Bad argument for purge, index file required");
         if (!optionsMap["remote"]) return showHelpMessage("Bad argument for purge, remote missing (that's where the backup is saved)");
         
-        return showHelpMessage("Not yet supported");
+        result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
+        if (result) ERR("Can't re-open the database: %s\n", (const char*)result);
+        if (!cipheredMasterKey.getSize()) ERR("Bad readback of the ciphered master key\n");
+        
+        result = Frost::getKeyFactory().loadPrivateKey(*optionsMap["keyvault"], cipheredMasterKey, pass, keyID);
+        pass = ""; // Password is not required anymore, let's wipe it
+        if (result) ERR("Reading back the master key failed (bad password ?): %s\n", (const char*)result);
+        
+        // Purge the backup up to the given revision
+        if (params[0] && (int)params[0]) revisionID = params[0];
+        else ERR("No revision ID given. I won't purge the complete backup set implicitely, purge aborted\n");
+        
+        Frost::PurgeStrategy strategy = optionsMap["strategy"] ? (*optionsMap["strategy"] == "slow" ? Frost::Slow : Frost::Fast) : Frost::Fast;
+        result = Frost::purgeBackup(*optionsMap["remote"], console, strategy, revisionID);
+        if (result) ERR("Can't purge the backup: %s\n", (const char*)result);
+
+        Frost::finalizeDatabase();
+        if (warningLog.getSize()) fputs((const char*)(warningLog.Join("\n")+"\n"), stderr);
+ 
+        return EXIT_SUCCESS;
     }
     if (action == "backup")
     {
@@ -2236,6 +2258,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         
         // Need to be called anyway
         Frost::finalizeDatabase();
+        if (warningLog.getSize()) fputs((const char*)(warningLog.Join("\n")+"\n"), stderr);
         return EXIT_SUCCESS;
     }
     if (action == "restore")
@@ -2255,6 +2278,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
 
         // Need to be called anyway
         Frost::finalizeDatabase();
+        if (warningLog.getSize()) fputs((const char*)(warningLog.Join("\n")+"\n"), stderr);
         return EXIT_SUCCESS;
     }
 #undef ERR
