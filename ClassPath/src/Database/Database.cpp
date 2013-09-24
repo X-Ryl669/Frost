@@ -384,7 +384,7 @@ namespace Database
 
                             // Need to get a new index from DB
                             String fields = escapedName + (sSetFieldName.getLength() ? ", " + sSetFieldName : "");
-                            String values = sSetFieldName.getLength() ? String().Format("%u, ", extractedValue) + sSetFieldValue : String().Format("%u", extractedValue);
+                            String values = sSetFieldName.getLength() ? String().Format("%llu, ", extractedValue) + sSetFieldValue : String().Format("%llu", extractedValue);
 
                             if (insertInto(fields, values))
                                 // And then retrieve All Fields again
@@ -393,7 +393,7 @@ namespace Database
                         else
                         {
                             // Need to get a new index from DB
-                            if (insertInto(escapedName, String().Format("%u", extractedValue)))
+                            if (insertInto(escapedName, String().Format("%llu", extractedValue)))
                                 // And then retrieve All Fields again
                                 retrieveAllFields(indexOfIndex);
                         }

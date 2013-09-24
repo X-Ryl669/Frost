@@ -603,7 +603,7 @@ namespace Frost
             {
                 // New file, let's figure out if it needs to be included or not in the list
                 if (entries[i].State != 1)
-                    entryList.Append(String::Print("%ld", (unsigned int)entries[i].ID));
+                    entryList.Append(String::Print("%u", (unsigned int)entries[i].ID));
                     
                 lastPath = entries[i].Path;
             }
@@ -613,7 +613,25 @@ namespace Frost
         return dirEntries[0].ID;
     }
 
-    typedef Container::HashTable<unsigned int, String, Container::HashKey<String> > PathIDMapT;
+    /** This is used as a wrapper over a DatabaseModel::Entry to avoid doing a lot of queries on the database */
+    class FileMDEntry
+    {
+        /** The file entry ID in database */
+        unsigned int ID;
+        /** The file metadata */
+        String metadata;
+        
+        // Interface
+    public:
+        /** Convert to unsigned int for the item ID */
+        operator unsigned int() const { return ID; }
+        /** Get the metadata */
+        const String & getMetaData() const { return metadata; }
+    
+        FileMDEntry(const unsigned int ID, const String & md) : ID(ID), metadata(md) {}
+    };
+    
+    typedef Container::HashTable<FileMDEntry, String, Container::HashKey<String> > PathIDMapT;
     /** Create a list of files in a directory based on the Entry's in the database.
         @param dirPath  The directory path to look for
         @param fileList On output, contains a sorted list of files and directories path in the specified directory
@@ -630,12 +648,12 @@ namespace Frost
         // Then find all files and directory and sort them
         
         // Find the directory with the given path
-        RowIterT fileEntries = Select("Path", "ID").From("Entry").Where("ID").In(entries).OrderBy("Path", true);
+        RowIterT fileEntries = Select("Path", "ID", "Metadata").From("Entry").Where("ID").In(entries).OrderBy("Path", true);
         if (!fileEntries) return 0; // No directory found lower than the given revision
         
         while (fileEntries)
         {
-            fileList.storeValue(fileEntries["Path"], new unsigned int(fileEntries["ID"]), true);
+            fileList.storeValue(fileEntries["Path"], new FileMDEntry(fileEntries["ID"], fileEntries["Metadata"]), true);
             ++fileEntries;
         }
         return dirID;
@@ -662,7 +680,7 @@ namespace Frost
                 // We don't care about deleted directories
                 if (directories[i].State == 1) continue;
                 // New dir that's alive, let's save it
-                fileList.storeValue(directories[i].Path, new unsigned int(directories[i].ID), true);                
+                fileList.storeValue(directories[i].Path, new FileMDEntry(directories[i].ID, directories[i].Metadata), true);
                 
                 // Then find out all the files that refers to this directory
                 Strings::StringArray dirID = String::Print("%u", (unsigned int)directories[i].ID);
@@ -678,7 +696,7 @@ namespace Frost
                 // Then find any file that has a parent directory ID in the list above
                 Database::Pool<DatabaseModel::Entry> files = (((Select("*").Max("Revision", "MaxRev").From("Entry").Where("Type") == 0).And("Revision") <= revID).And("ParentEntryID").In(dirID).And("State") == 0).GroupBy("Path");
                 for (int j = 0; j < files.count; j++)
-                    fileList.storeValue(files[j].Path, new unsigned int(files[j].ID), true);
+                    fileList.storeValue(files[j].Path, new FileMDEntry(files[j].ID, files[j].Metadata), true);
             }
         }
         return true;
@@ -1262,7 +1280,19 @@ namespace Frost
     }
     
 
+    
     // List available backups
+    struct CompareStringPath
+    {
+        static inline int compareData(const String & _first, const String & _second)
+        {
+            String first = _first.fromFirst("Z /"); String second = _second.fromFirst("Z /");
+            if (!first || !second) { first = _first; second = _second; } // No metadata ?
+            int ret = memcmp(first.getData(), second.getData(), min(first.getLength(), second.getLength()));
+            if (ret) return ret;
+            return first.getLength() < second.getLength() ? -1 : 1;
+        }
+    };
     unsigned int listBackups(const ::Time::Time & startTime, const ::Time::Time & endTime, const bool withList)
     {
         BuildPool(DatabaseModel::Revision, pool, TimeSinceEpoch, _C::Between((uint64)startTime.asNative(), (uint64)endTime.asNative()));
@@ -1290,11 +1320,19 @@ namespace Frost
                     PathIDMapT::IterT iter = fileList.getFirstIterator();
                     while (iter.isValid())
                     {
-                        filePaths.Append(String::Print(TRANS("%s [%u:%d]"), (const char*)*(iter.getKey()), (unsigned int)pool[i].ID, **iter));
+                        String md = (*iter)->getMetaData();
+                        String metaData = File::Info::printMetaData(md);
+                        if (metaData)
+                        {
+                            filePaths.Append(String::Print(TRANS("%s %s [rev%u:id%u]"), (const char*)metaData, (const char*)*(iter.getKey()), (unsigned int)pool[i].ID, (unsigned int)*(*iter)));
+                        }
+                        else
+                            filePaths.Append(String::Print(TRANS("%s [rev%u:id%u]"), (const char*)*(iter.getKey()), (unsigned int)pool[i].ID, (unsigned int)*(*iter)));
                         ++iter;
                     }
                     // Sort the file list
-                    Strings::CompareString cs;
+
+                    CompareStringPath cs;
                     Container::Algorithms<Strings::StringArray>::sortContainer(filePaths, cs);
                     // Show it
                     for (size_t j = 0; j < filePaths.getSize(); j++)
@@ -2193,7 +2231,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         // Display some statistics
         Frost::DatabaseModel::Revision rev;
         rev.ID = revisionID;
-        console.progressed(Frost::ProgressCallback::Backup, Frost::String::Print(Frost::__trans__("Finished: %s, (source size: %ld, backup size: %ld, %d files, %d directories)"),
+        console.progressed(Frost::ProgressCallback::Backup, Frost::String::Print(Frost::__trans__("Finished: %s, (source size: %lld, backup size: %lld, %u files, %u directories)"),
                                             (const char*)backup, (uint64)rev.InitialSize, (uint64)rev.BackupSize, (uint32)rev.FileCount, (uint32)rev.DirCount), 1, 1, (uint32)rev.FileCount, (uint32)rev.FileCount);
         
         // Need to be called anyway

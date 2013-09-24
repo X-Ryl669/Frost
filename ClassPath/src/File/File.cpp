@@ -63,10 +63,10 @@ namespace File
 #if defined(_POSIX)
         // We don't impersonate under windows
         struct group grp, *gr;
-        char grbuf[512];
+        char grbuf[32768];
         // Get user ID name
         struct passwd pwd, *ppwd;
-        char pwbuf[512];
+        char pwbuf[32768];
 
         switch (type)
         {
@@ -967,6 +967,126 @@ namespace File
         if (isSymLink) type = Link;
 #endif
         return true;
+    }
+    
+    
+    inline String makeLegibleSize(uint64 size)
+    {
+        const char * suffix[] = { "B", "KB", "MB", "GB", "TB", "PB", "EB" };
+        int suffixPos = 0, lastReminder = 0;
+        while (size / 1024) { suffixPos++; lastReminder = size % 1024; size /= 1024; }
+        return String::Print("%lld.%d%s", size, (lastReminder * 10 / 1024), suffix[suffixPos]);
+    }
+    
+    inline String getOwnerGroupTxt(uint32 owner, uint32 group)
+    {
+#ifdef _WIN32
+        if (owner == 0 || group == 0)
+            return String::Print("System");
+#elif defined(_POSIX)
+        struct group grp, *gr;
+        char grbuf[32768];
+        struct passwd pwd, *ppwd;
+        char pwbuf[32768];
+
+        String groupTxt = String::Print("%u", group);
+        if (getgrgid_r(group, &grp, grbuf, sizeof(grbuf), &gr) == 0)
+            groupTxt = grp.gr_name;
+        String userTxt = String::Print("%u", owner);
+        if (getpwuid_r(owner, &pwd, pwbuf, sizeof(pwbuf), &ppwd) == 0)
+            userTxt = pwd.pw_name;
+        return userTxt + ":" + groupTxt;
+#else
+        return String::Print("%u:%u", owner, group);
+#endif
+    }
+    
+    inline String makePerm(uint32 mode)
+    {
+        static const char *rwx[] = {"---", "--x", "-w-", "-wx", "r--", "r-x", "rw-", "rwx"};
+        static char bits[11];
+
+        strcpy(&bits[0], rwx[(mode >> 6) & 7]);
+        strcpy(&bits[3], rwx[(mode >> 3) & 7]);
+        strcpy(&bits[6], rwx[(mode & 7)]);
+        if (mode & S_ISUID)
+            bits[2] = (mode & 0100) ? 's' : 'S';
+        if (mode & S_ISGID)
+            bits[5] = (mode & 0010) ? 's' : 'l';
+        if (mode & S_ISVTX)
+            bits[8] = (mode & 0100) ? 't' : 'T';
+        bits[9] = ' ';
+        bits[10] = '\0';
+        return bits;
+    }
+        
+    // Print the metadata information to something understandable.
+    String File::Info::printMetaData(String metadata)
+    {
+#ifdef _WIN32
+        // TODO Handle symlinks
+        // Check if the given metadata is good
+        if (!metadata || metadata[0] != 'W') return "<NW>";
+        
+        uint64 mdSize = (uint64)metadata.splitUpTo("/").midString(1, 17).parseInt(16);
+        DWORD  attribute = (DWORD)metadata.splitUpTo("/").parseInt(16);
+        uint64 creatTime = (uint64)metadata.splitUpTo("/").parseInt(16);
+        uint64 writeTime = (uint64)metadata.splitUpTo("/").parseInt(16);
+        uint64 accesTime = (uint64)metadata.splitUpTo("/").parseInt(16);
+        
+
+
+        // Create the file
+        FILETIME writ;
+        LARGE_INTEGER li;
+        li.QuadPart = writeTime; writ.dwLowDateTime = li.LowPart; writ.dwHighDateTime = li.HighPart;
+        
+        Type typ = Info::Regular;
+        uint32 perm = 0, own = 0, grp = 0;
+        convertAttributes(attribute, perm, typ, own, grp);
+        
+        return (typ == Info::Regular ? "-" : "d") + makePerm(perm) + getOwnerGroupTxt(own, grp).alignedTo(19, -1) + " " + makeLegibleSize(mdSize).alignedTo(7,1) + " " + Time::toLocal(Time::Time(Time::convert(writ))).toDate(true);
+        
+#elif defined(_POSIX)
+        if (!metadata || metadata[0] != 'P') return "<NP>"; // Can't restore non-posix metadata here. Sorry
+        
+        
+        
+        
+        // We don't care about the dev/inode number itself, since we can't restore it.
+        // However, we are interested in matching hardlinks so let's extract this.
+        metadata.leftTrim("PSTHL");
+        String otherData = metadata.fromFirst("/").fromFirst("/");
+        String hardlinkHash = metadata.midString(0, metadata.getLength() - otherData.getLength() - 1);
+        // For now, we can't restore hardlinks, since we don't know the other part to link with
+        
+        // Let's extract everything else
+        struct stat status = {0};
+        status.st_mode = (uint32)otherData.splitUpTo("/").parseInt(16);
+        status.st_size = (uint64)otherData.splitUpTo("/").parseInt(16);
+        status.st_nlink = (uint32)otherData.splitUpTo("/").parseInt(16);
+        status.st_uid = (uint32)otherData.splitUpTo("/").parseInt(16);
+        status.st_gid = (uint32)otherData.splitUpTo("/").parseInt(16);
+        status.st_ctime = (uint64)otherData.splitUpTo("/").parseInt(16);
+        status.st_mtime = (uint64)otherData.splitUpTo("/").parseInt(16);
+        status.st_atime = (uint64)otherData.splitUpTo("/").parseInt(16);
+        
+        
+        String typeOfFile = "-";
+        switch (status.st_mode & S_IFMT)
+        {
+        case S_IFBLK:  typeOfFile = "b"; break;
+        case S_IFCHR:  typeOfFile = "c"; break;
+        case S_IFDIR:  typeOfFile = "d"; break;
+        case S_IFIFO:  typeOfFile = "f"; break;
+        case S_IFLNK:  typeOfFile = "l"; break;
+        case S_IFSOCK: typeOfFile = "s"; break;
+        default: break;
+        }
+        return typeOfFile + makePerm(status.st_mode & 0xFFFF) + getOwnerGroupTxt(status.st_uid, status.st_gid).alignedTo(19, -1) + " " + makeLegibleSize(status.st_size).alignedTo(7, 1) + " " + Time::Time(status.st_mtime, 0).toDate(true);
+     
+#endif
+        return "<NA>";
     }
     
     // Check if the given metadata match the current file.

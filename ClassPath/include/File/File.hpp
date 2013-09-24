@@ -255,6 +255,11 @@ namespace File
             @param override    If provided, this is used instead of the current file metadata.
             @return true if both metadata match */
         bool hasSimilarMetadata(String metadata, const Comparand checkMask, const String * override = 0) const;
+        /** Get a human understandable version of the metadata.
+            This typically output "type_mode_octal owner:group size modification_time_iso8601" (like ls -l does on POSIX).
+            @param metadata    The metadata to analyze
+            @return a string for the given metadata in the specified format */
+        static String printMetaData(String metadata);
             
         /** Get the complete content as a String.
             @warning Beware that the whole content is read in memory so big file will exhaust your memory */

@@ -590,11 +590,23 @@ namespace Bstrlib
 		    @return the number of parameter extracted (1 or 0 on error) */
 		int Scan(const char * fmt, void * data) const;
 		/** Printf like format */
-		String & Format(const char * fmt, ...);
+		String & Format(const char * fmt, ...)
+#ifdef __GNUC__
+        __attribute__ ((format (printf, 2, 3)))
+#endif
+        ;
 		/** Printf like format */
-		static String Print(const char * fmt, ...);
+		static String Print(const char * fmt, ...)
+#ifdef __GNUC__
+        __attribute__ ((format (printf, 1, 2)))
+#endif
+        ;
 		/** Printf like format for ascii */
-		void Formata(const char * fmt, ...);
+		void Formata(const char * fmt, ...)
+#ifdef __GNUC__
+        __attribute__ ((format (printf, 2, 3)))
+#endif
+        ;
 		/** Fill the string with 'fill' char length times */
 		void Fill(int length, unsigned char fill = ' ');
 		/** Fill the string with 'fill' char length times */

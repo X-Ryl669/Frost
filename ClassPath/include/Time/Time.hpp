@@ -175,11 +175,11 @@ namespace Time
             @param useISO8601   If true, the output format is using ISO8601 formatting rules, and not RFC1123. You better ignore this parameter
             @return the number of bytes required and/or written too  */
         int toDate(char * buffer, const bool useISO8601 = false) const;
-		/** Convert this time to a date in RFC1123 format.
-		    @sa toDate 
+        /** Convert this time to a date in RFC1123 format.
+            @sa toDate 
             @param useISO8601   If true, the output format is using ISO8601 formatting rules, and not RFC1123. You better ignore this parameter
-			@return a string instance that's containing the date */
-		Strings::FastString toDate(const bool useISO8601 = false) const;
+            @return a string instance that's containing the date */
+        Strings::FastString toDate(const bool useISO8601 = false) const;
         /** Get the date information.
             @param year         The number of years since 1900 (so it's 90 for 1990 and 110 for 2010)
             @param month        The number of month since January (so it's 0 for January and 11 for December) 
@@ -247,19 +247,19 @@ namespace Time
 
     /** A overload for the LocalTime that's in the current system timezone.
         @sa Time */
-    struct LocalTime : public Time 
+    struct LocalTime : public Time
     {
         /** Construct the object from second and microsecond */
         LocalTime(const time_t second = 0, const long usecond = 0)
             : Time(second, usecond) {}
-            
+
         /** Construct the object from a specific date in local time.
             The input tries to figure out the daylight saving time offset for the given time.
             @warning Due to the way DST is working, it's not always possible to figure out the UTC time out of this local time.
                      When the DST is going backward in time (there is 2 times the same hour in a day), there is two different points
                      in local time that would be possible. The system tries to prefer non-DST time, but this is platform specific 
                      and not guaranted.
-            
+
             @param year         The number of years since 1900 (so it's 90 for 1990 and 110 for 2010)
             @param month        The number of month since January (so it's 0 for January and 11 for December)
             @param dayOfMonth   The day index in the month set (starts by 1)
@@ -278,7 +278,7 @@ namespace Time
             @sa Time constructor */
         virtual void getAsDate(int & year, int & month, int & dayOfMonth, int & hour, int & min, int & sec, int * dayOfWeek = 0) const;
         /** Get this time as a native time_t value (only the number of second is returned) */
-        virtual time_t asNative() const;       
+        virtual time_t asNative() const;
         /** Get the local time now */
         static LocalTime Now();
     };

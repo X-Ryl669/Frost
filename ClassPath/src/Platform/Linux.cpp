@@ -49,6 +49,7 @@ namespace Platform
 
         if (tcsetattr(fileno(in), TCSANOW, &nflags) != 0
             || fputs(prompt, out) < 0
+            || fflush(out) != 0
             || fgets(buffer, size, stdin) == NULL
             || tcsetattr(fileno(stdin), TCSANOW, &oflags) != 0)
         {

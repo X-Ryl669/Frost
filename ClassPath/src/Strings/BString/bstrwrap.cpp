@@ -1475,7 +1475,7 @@ namespace Bstrlib
 	        leftCount = side == 1 ? diffInSize : (side == 0 ? diffInSize / 2 : 0),
 	        rightCount = side == -1 ? diffInSize : (side == 0 ? (diffInSize + 1) / 2 : 0);
 	        
-	    return String().Filled(leftCount, fill) + Filled(rightCount, fill);
+	    return String().Filled(leftCount, fill) + *this + Filled(rightCount, fill);
 	}
 	
 	

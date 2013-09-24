@@ -253,7 +253,7 @@ namespace Database
         if (!connection)
         {
             if (DBConnection)
-                Logger::log(Logger::Error | Logger::Database, (const char *)String::Print("Error while processing: %s", sql ? sql : "", (const char *)::Database::getLastError((sqlite3*)DBConnection)));
+                Logger::log(Logger::Error | Logger::Database, (const char *)String::Print("Error while processing: %s => %s", sql ? sql : "", (const char *)::Database::getLastError((sqlite3*)DBConnection)));
             else
                 DatabaseConnection::notifyError("Error with invalid database connection");
             return;
