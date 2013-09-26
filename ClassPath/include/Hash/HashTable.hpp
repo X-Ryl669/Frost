@@ -253,7 +253,7 @@ namespace Container
     public:
         /** Default constructor that let specify the capacity of the hash table */
         HashTable(uint32 _capacity = 101, float _loadFactor = 0.75)
-            : capacity(_capacity), loadFactor(_loadFactor)
+            : capacity(_capacity), count(0), modCount(0), loadFactor(_loadFactor)
         {
             if (loadFactor <= 0) { capacity = 0; return; }
             entryTable = (Entry **)malloc(capacity * sizeof(Entry*));
@@ -261,12 +261,10 @@ namespace Container
             memset(entryTable, 0, capacity * sizeof(Entry*));
 
             threshold = (uint32)((float)capacity * loadFactor + 0.5f);
-            modCount = count = 0;
         }
         /** Try to build a copy constructor */
         HashTable(CopyTypeT other) 
-            : capacity(other.capacity), loadFactor(other.loadFactor), threshold(other.threshold), 
-              modCount(0), count(0)
+            : capacity(other.capacity), count(0), threshold(other.threshold), modCount(0), loadFactor(other.loadFactor)
         {
             entryTable = (Entry**)malloc(capacity * sizeof(Entry*));
             if (!entryTable) { capacity = 0; return; }

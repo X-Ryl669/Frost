@@ -86,8 +86,8 @@ namespace UniversalTypeIdentifier
         typedef struct { char some[2]; } Type2;
 
         // Our type differentiator
-        static Type1 isConst(const volatile void *);
-        static Type2 isConst(volatile void *);
+        Type1 isConst(const volatile void *);
+        Type2 isConst(volatile void *);
         template<typename A, typename B>
         struct isSame { };
 

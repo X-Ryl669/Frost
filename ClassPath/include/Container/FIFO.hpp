@@ -166,9 +166,9 @@ namespace Stack
 			enum { elementSize = sizeof(T*) };
 		public:
 			/** Default Constructor */
-			inline FIFO() : array(NULL), currentSize(0), currentPos(0), allocatedSize(0)	{ }
+			inline FIFO() : array(NULL), currentPos(0), currentSize(0), allocatedSize(0)	{ }
 			/** Copy constructor */
-			inline FIFO(const FIFO & other) : array(NULL), currentSize(0), currentPos(0), allocatedSize(0) { *this = other; }
+			inline FIFO(const FIFO & other) : array(NULL), currentPos(0), currentSize(0), allocatedSize(0) { *this = other; }
 			/** Destructor */
 			~FIFO()		{ Clear(); }
 

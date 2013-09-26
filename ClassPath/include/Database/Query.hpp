@@ -61,9 +61,9 @@ namespace Query
         }
     
         /** Construction */
-        UnsafeRowIterator(const SQLFormat::Results * res) : rowIndex(0), res(res) {}
+        UnsafeRowIterator(const SQLFormat::Results * res) : res(res), rowIndex(0) {}
         /** Move semantics */
-        UnsafeRowIterator(const UnsafeRowIterator & other) : rowIndex(other.rowIndex), res(other.res) { const_cast<UnsafeRowIterator&>(other).res = 0; }
+        UnsafeRowIterator(const UnsafeRowIterator & other) : res(other.res), rowIndex(other.rowIndex) { const_cast<UnsafeRowIterator&>(other).res = 0; }
         /** Destructor */
         ~UnsafeRowIterator() { SQLFormat::cleanResults(res); }
     };
@@ -773,7 +773,7 @@ namespace Query
     
         // Construction
     public:
-        SelectRaw(const String & raw) : raw(raw), dbIndex(0) {}
+        SelectRaw(const String & raw) : dbIndex(0), raw(raw) {}
     };
     
     /** Delete from the database.

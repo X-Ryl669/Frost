@@ -25,6 +25,7 @@ CXXSOURCES = \
 ./ClassPath/src/Threading/Lock.cpp \
 ./ClassPath/src/Threading/Threads.cpp \
 ./ClassPath/src/Time/Time.cpp \
+./ClassPath/src/Utils/Dump.cpp \
 ./ClassPath/src/Utils/MemoryBlock.cpp \
 ./ClassPath/src/Variant/UTIImpl.cpp \
 ./Frost.cpp \

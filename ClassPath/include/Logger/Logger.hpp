@@ -167,7 +167,6 @@ namespace Logger
     {
         // Members
     private:
-        FILE *  file;
         Threading::Lock lock;
     
         // Used to rotate the log
@@ -175,10 +174,11 @@ namespace Logger
         int  breakSize;
         int  currentSize;
         bool flipFlop;
-        Strings::FastString lastMessage;
-        unsigned int        lastFlags;
-        uint32              lastTime;
         int                 lastMessageCount;
+        Strings::FastString lastMessage;
+        uint32              lastTime;
+        unsigned int        lastFlags;
+        FILE *  file;
 
         // Helpers
     private:
@@ -214,36 +214,7 @@ namespace Logger
         You'll use it like any other printf like function. 
         @param flags    Any combination of the Logger::Flags value (the sink will check its own mask against these flags to allow logging or not)
         @param format   The printf like format */
-    static void log(const unsigned int flags, const char * format, ...)
-    {
-        
-        size_t startSize = 512;
-
-        for (;;)
-        {
-            va_list argp;
-            va_start(argp, format);
-            char * buffer = (char*)malloc(startSize);
-            if(!buffer) return;
-            
-            const int err = (int)vsnprintf(buffer, startSize - 1, format, argp);
-            va_end(argp);
-            
-            // Not enough space
-            if (err <= 0) 
-            {
-                // Safety check to exit when vsnprintf fails to print anything
-                if (err == 0 || startSize > 131072) return;
-                startSize <<= 1; 
-                free(buffer);
-                continue;
-            }
-            getDefaultSink().gotMessage(buffer, flags);
-			free(buffer);
-            return;
-        }
-        
-    }
+    void log(const unsigned int flags, const char * format, ...);
 /*    
     static void dlog(const char * file, const int line, const unsigned int flags, const char * format, ...)
     {

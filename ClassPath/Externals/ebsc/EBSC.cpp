@@ -88,7 +88,7 @@ namespace BSC
             LargeFree(buffer);
         }
 
-        if (lzSize <= HeaderSize)
+        if (lzSize <= (int)HeaderSize)
         {
             blockSorter = BWT;
             mode = (mode & 0xffffffe0) | BWT;
@@ -111,7 +111,7 @@ namespace BSC
             int result = resultE.value();
             if (resultE.getError() == Success) memcpy(data + HeaderSize, buffer, result);
             LargeFree(buffer);
-            if ((resultE.getError() != Success) || (result + 1 + 4 * num_indexes >= n))
+            if ((resultE.getError() != Success) || (result + 1 + 4 * num_indexes >= (int)n))
             {
                 return NotCompressible;
             }
@@ -187,7 +187,7 @@ namespace BSC
             lzSize = n; memcpy(output, input, n);
         }
 
-        if (lzSize <= HeaderSize)
+        if (lzSize <= (int)HeaderSize)
         {
             blockSorter = BWT;
             mode = (mode & 0xffffffe0) | BWT;
@@ -213,7 +213,7 @@ namespace BSC
             int result = resultE.value();
             if (resultE.getError() == Success) memcpy(output + HeaderSize, buffer, result);
             LargeFree(buffer);
-            if ((resultE.getError() != Success) || (result + 1 + 4 * num_indexes >= n))
+            if ((resultE.getError() != Success) || (result + 1 + 4 * num_indexes >= (int)n))
             {
                 return store(input, output, n);
             }
@@ -287,7 +287,7 @@ namespace BSC
             return DataCorrupt;
         }
 
-        if (blockSize < HeaderSize || blockSize > HeaderSize + dataSize)
+        if (blockSize < (int)HeaderSize || blockSize > (int)HeaderSize + dataSize)
         {
             return DataCorrupt;
         }
@@ -391,7 +391,7 @@ namespace BSC
             return NotEnoughMemory;
         }
 
-        return lzSize == dataSize ? (adler32_data == adler32(data, dataSize) ? Success : DataCorrupt) : DataCorrupt;
+        return lzSize == (int)dataSize ? (adler32_data == adler32(data, dataSize) ? Success : DataCorrupt) : DataCorrupt;
     }
 
     Error EBSC::decompress(const uint8 * input, const size_t inputSize, uint8 * output, const size_t outputSize)
@@ -476,7 +476,7 @@ namespace BSC
             return NotEnoughMemory;
         }
 
-        return lzSize == dataSize ? (adler32_data == adler32(output, dataSize) ? Success : DataCorrupt) : DataCorrupt;
+        return lzSize == (int)dataSize ? (adler32_data == adler32(output, dataSize) ? Success : DataCorrupt) : DataCorrupt;
     }
     
     Error EBSC::postProcess(uint8 * input, const size_t inputSize, const int8 sortingContext, const int8 recordSize)

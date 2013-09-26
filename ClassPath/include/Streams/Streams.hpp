@@ -735,7 +735,7 @@ namespace Stream
     public:
         /** The only allowed constructor */
         MemoryBufferedInputStream(const InputStream & is, const bool zeroTerminated = true)
-            : buffer(0), inputStream(is), currentPos(0)
+            : inputStream(is), buffer(0), currentPos(0)
         {
             if (is.fullSize() < 0xfffffffe)
             {
@@ -806,7 +806,7 @@ namespace Stream
         // Construction
     public:
         /** The only allowed constructor */
-        MemoryBufferedOutputStream(OutputStream & os) : buffer(0), outputStream(os), size(0), isDirty(false)  { }
+        MemoryBufferedOutputStream(OutputStream & os) : outputStream(os), buffer(0), size(0), isDirty(false)  { }
         /** The only allowed destructor */
         ~MemoryBufferedOutputStream()     { if (buffer && isDirty) deliverBuffer(); Platform::safeRealloc(buffer, 0); buffer = 0; size = 0; isDirty = false; }
 

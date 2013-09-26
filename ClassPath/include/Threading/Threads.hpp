@@ -267,6 +267,10 @@ namespace Threading
         // Those members here must not be used outside this object
         // If you need to do so, please mark them as volatile and
         // provide a locking mechanism to access them
+#if (DEBUG==1)
+        /** The thread name if provided at construction time */
+        Strings::FastString *    threadName;
+#endif
         /** The thread handle */
         HTHREAD     thread;
 #ifdef _WIN32
@@ -275,10 +279,6 @@ namespace Threading
 #endif
         /** The thread leaving callback, if provided */
         Leaving *               leaving;
-#if (DEBUG==1)
-        /** The thread name if provided at construction time */
-        Strings::FastString *    threadName;
-#endif
     
         // Give no access to child classes 
     private:

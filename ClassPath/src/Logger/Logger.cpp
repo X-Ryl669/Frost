@@ -12,6 +12,37 @@
 
 namespace Logger
 {
+    // The main log function
+    void log(const unsigned int flags, const char * format, ...)
+    {
+        size_t startSize = 512;
+
+        for (;;)
+        {
+            va_list argp;
+            va_start(argp, format);
+            char * buffer = (char*)malloc(startSize);
+            if(!buffer) return;
+            
+            const int err = (int)vsnprintf(buffer, startSize - 1, format, argp);
+            va_end(argp);
+            
+            // Not enough space
+            if (err <= 0) 
+            {
+                // Safety check to exit when vsnprintf fails to print anything
+                if (err == 0 || startSize > 131072) return;
+                startSize <<= 1; 
+                free(buffer);
+                continue;
+            }
+            getDefaultSink().gotMessage(buffer, flags);
+			free(buffer);
+            return;
+        }
+    }
+
+
     // Get a console sink that's build on the main stack (BSS section)
     static OutputSink * getStaticSink()
     {

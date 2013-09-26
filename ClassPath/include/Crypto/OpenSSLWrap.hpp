@@ -271,7 +271,7 @@ namespace Crypto
         }
 
         void Destroy() { if (context) ::EVP_CIPHER_CTX_free(context); context = 0; }
-        OSSL_AES() : context(0), previousEncrypt(true), prevOpMode((OperationMode)-1) {}
+        OSSL_AES() : context(0), prevOpMode((OperationMode)-1), previousEncrypt(true) {}
         ~OSSL_AES() { Destroy(); }
     };
 

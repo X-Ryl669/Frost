@@ -11,7 +11,6 @@ bool Threading::ReadWriteLock::acquireReader(const Threading::TimeOut timeout) v
 {
 	ScopedLock scope(lock);
 	int prevReadCount = currentReaderCount;
-	int prevWriteCount = writerCount;
 	if(!writerCount)
 	{   // Enter successful without wait
 		++currentReaderCount;
@@ -320,7 +319,7 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
     {
         // Process the absolute time for timeout
         struct timespec abstime;
-        struct timeval now, tOut;
+        struct timeval tOut;
         gettimeofday(&tOut, NULL);
         tOut.tv_usec += (uint32)(rcxTO % 1000) * 1000;
         tOut.tv_sec += (uint32)rcxTO / 1000;
@@ -331,7 +330,7 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
         
         // First try to lock the mutex
         // Sadly, we must poll here
-        int retval = -1;
+
         // Install clean up handlers
         pthread_cleanup_push((PThreadVoid)pthread_mutex_unlock, (void *) &event);
         int mutexLockSuccess = -1, retval = 0;

@@ -296,9 +296,9 @@ Thread::Thread(const char * name) :
     threadName(0),
 #endif
 #ifdef _WIN32
-    thread(NULL), threadID(0), run(false), lock(name), leaving(0) {}
+    thread(NULL), threadID(0), leaving(0), run(false), lock(name) {}
 #else
-    run(false), lock(name), isCreated(false), leaving(0)
+    leaving(0), run(false), lock(name), isCreated(false)
 {
     memset(&thread, 0, sizeof(thread));
 #ifdef _POSIX
@@ -313,9 +313,9 @@ Thread::Thread(const Strings::FastString & name) :
     threadName(new Strings::FastString(name)),
 #endif
 #ifdef _WIN32
-    thread(NULL), threadID(0), run(false), lock(name), leaving(0) {}
+    thread(NULL), threadID(0), leaving(0), run(false), lock(name) {}
 #else
-    run(false), lock(name), isCreated(false), leaving(0)
+    leaving(0), run(false), lock(name), isCreated(false)
 {
     memset(&thread, 0, sizeof(thread));
 #ifdef _POSIX

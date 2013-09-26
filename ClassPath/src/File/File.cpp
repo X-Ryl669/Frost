@@ -620,7 +620,6 @@ namespace File
         
         uint32 count = 0;
         // Then read the directory
-        struct dirent * ent = 0;
         while (readdir(finder) != NULL)
             count++;
         closedir(finder);
@@ -791,7 +790,7 @@ namespace File
         // Need to split the metadata array
         bool isSymLink = metadata[1] == 'S';
         bool isDevNode = metadata[1] == 'T';
-        bool isCharDev = metadata[2] == 'H';
+        // bool isCharDev = metadata[2] == 'H';
         // We don't care about the dev/inode number itself, since we can't restore it.
         // However, we are interested in matching hardlinks so let's extract this.
         metadata.leftTrim("PSTHL");
@@ -928,8 +927,9 @@ namespace File
         
         // Need to split the metadata array
         bool isSymLink = metadata[1] == 'S';
-        bool isDevNode = metadata[1] == 'T';
-        bool isCharDev = metadata[2] == 'H';
+        // bool isDevNode = metadata[1] == 'T';
+        // bool isCharDev = metadata[2] == 'H';
+        
         // We don't care about the dev/inode number itself, since we can't restore it.
         // However, we are interested in matching hardlinks so let's extract this.
         metadata.leftTrim("PSTHL");
@@ -996,9 +996,8 @@ namespace File
         if (getpwuid_r(owner, &pwd, pwbuf, sizeof(pwbuf), &ppwd) == 0)
             userTxt = pwd.pw_name;
         return userTxt + ":" + groupTxt;
-#else
-        return String::Print("%u:%u", owner, group);
 #endif
+        return String::Print("%u:%u", owner, group);
     }
     
     inline String makePerm(uint32 mode)
@@ -1009,11 +1008,11 @@ namespace File
         strcpy(&bits[0], rwx[(mode >> 6) & 7]);
         strcpy(&bits[3], rwx[(mode >> 3) & 7]);
         strcpy(&bits[6], rwx[(mode & 7)]);
-        if (mode & S_ISUID)
+        if (mode & Info::OwnerSUID)
             bits[2] = (mode & 0100) ? 's' : 'S';
-        if (mode & S_ISGID)
+        if (mode & Info::GroupSUID)
             bits[5] = (mode & 0010) ? 's' : 'l';
-        if (mode & S_ISVTX)
+        if (mode & Info::StickyBit)
             bits[8] = (mode & 0100) ? 't' : 'T';
         bits[9] = ' ';
         bits[10] = '\0';
@@ -1187,13 +1186,13 @@ namespace File
         return 0;
     }
 
-    Info::Info(const String & fullPath) : size(0), owner(0), group(0), creation(0), modification(0), lastAccess(0), permission(0), type(Regular)
+    Info::Info(const String & fullPath) : size(0), creation(0), modification(0), lastAccess(0), owner(0), group(0), permission(0), type(Regular)
     {
         buildNameAndPath(fullPath);
         restatFile();
     }
 
-    Info::Info(const String & fullPath, const bool expandVar) : size(0), owner(0), group(0), creation(0), modification(0), lastAccess(0), permission(0), type(Regular)
+    Info::Info(const String & fullPath, const bool expandVar) : size(0), creation(0), modification(0), lastAccess(0), owner(0), group(0), permission(0), type(Regular)
     {
 #ifdef _WIN32
         if (expandVar)
@@ -2089,7 +2088,7 @@ namespace File
     }
 
     AsyncStream::AsyncStream(const String & fullPath, const OpenMode mode)
-        : priv(0), currentPos(0), asyncSize(0), readPos(0)
+        : priv(0), currentPos(0), readPos(0), asyncSize(0)
     {
 #ifdef _WIN32
         tmpBuffer = 0;
@@ -2368,9 +2367,9 @@ namespace File
 
     MonitoringPool::MonitoringPool(const bool own)
 #ifdef _WIN32
-        : pool(0), size(0), own(own), readSet(0), writeSet(0), bothSet(0), triggerCount(0), waitSet(0)
+        : pool(0), size(0), readSet(0), writeSet(0), bothSet(0), triggerCount(0), own(own), waitSet(0)
 #else
-        : pool(0), size(0), own(own), indexPool(0), eventReady(NULL, true, false), triggerCount(0)
+        : pool(0), size(0), indexPool(0), eventReady(NULL, true, false), triggerCount(0), own(own)
 #endif
     { }
 

@@ -599,7 +599,7 @@ namespace Frost
         Database::Pool<DatabaseModel::Entry> entries = (Select("*").From("Entry").Where("ParentEntryID").In(dirEntry.Refine("ID")).And("Revision") <= revID).OrderBy("Path", true, "Revision", false);
         // Then for each entry, let's build the final entry list
         String lastPath = "*"; // Impossible path
-        for (int i = 0; i < entries.count; i++)
+        for (unsigned int i = 0; i < entries.count; i++)
         {
             if (entries[i].Path != lastPath)
             {
@@ -671,8 +671,8 @@ namespace Frost
         // We need to find out all the valid directories in the given revision.
         Database::Pool<DatabaseModel::Entry> directories = ((Select("*").From("Entry").Where("Type") == 1).And("Revision") <= revID).OrderBy("Path", true, "Revision", false);
         String lastPath = "*";
-        int step = 1;
-        for (int i = 0; i < directories.count; i += step)
+        unsigned int step = 1;
+        for (unsigned int i = 0; i < directories.count; i += step)
         {
             // For each directory alive, we have to find out the min and max revision
             step = 1;
@@ -697,7 +697,7 @@ namespace Frost
                 
                 // Then find any file that has a parent directory ID in the list above
                 Database::Pool<DatabaseModel::Entry> files = (((Select("*").Max("Revision", "MaxRev").From("Entry").Where("Type") == 0).And("Revision") <= revID).And("ParentEntryID").In(dirID).And("State") == 0).GroupBy("Path");
-                for (int j = 0; j < files.count; j++)
+                for (unsigned int j = 0; j < files.count; j++)
                     fileList.storeValue(files[j].Path, new FileMDEntry(files[j].ID, files[j].Metadata), true);
             }
         }
@@ -1114,10 +1114,10 @@ namespace Frost
         }
         
         BackupFile(ProgressCallback & callback, const String & backupTo, const unsigned int revID, const String & rootFolder)
-            : callback(callback), backupTo(backupTo), revID(revID), seen(0), total(1), multiChunkListID(0),
-              folderToBackup(rootFolder.normalizedPath(Platform::Separator, true)),
+            : callback(callback), backupTo(backupTo),
+              folderToBackup(rootFolder.normalizedPath(Platform::Separator, true)), revID(revID), seen(0), total(1), 
               fileCount(0), dirCount(0), totalInSize(0), totalOutSize(0),
-              prevParentFolder("*")
+              multiChunkListID(0), prevParentFolder("*")
         {}
     };
     
@@ -1304,7 +1304,7 @@ namespace Frost
             fprintf(stdout, "%s", (const char*)TRANS("No revision found\n"));
         else
         {
-            for (int i = 0; i < pool.count; i++)
+            for (unsigned int i = 0; i < pool.count; i++)
             {
                 if ((uint64)pool[i].InitialSize)
                     fprintf(stdout, (const char*)TRANS("Revision %d happened on %s, linked %d files and %d directories, cumulative size %s (backup is %s, saved %d%%)\n"), (int)pool[i].ID, (const char*)(String)pool[i].RevisionTime,
@@ -1479,7 +1479,7 @@ namespace Frost
             String chunkRoot = File::Info(chunkFolder.normalizedPath(Platform::Separator, true), true)
                                        .getFullPath().normalizedPath(Platform::Separator, true);   // Expand environnement variables
             uint64 purgedSize = 0;
-            for (int i = 0; i < orphanMultichunks.count; i++)
+            for (unsigned int i = 0; i < orphanMultichunks.count; i++)
             {
                 if (!callback.progressed(ProgressCallback::Purge, orphanMultichunks[i].Path, 0, 0, i, orphanMultichunks.count))
                     return TRANS("Error with output");
@@ -1550,7 +1550,7 @@ namespace Frost
                 typedef Tree::AVL::Tree<unsigned int, float> MultiChunkTreeT;
                 MultiChunkTreeT amountRatio;
                 unsigned int previousChunkListID = 0; unsigned int tmpCount = 0;
-                for (int i = 0; i < chunkListWithOrphans.count; i++)
+                for (unsigned int i = 0; i < chunkListWithOrphans.count; i++)
                 {
                     tmpCount ++;
                     if (previousChunkListID != chunkListWithOrphans[i].ID)
@@ -1594,7 +1594,7 @@ namespace Frost
                     Database::Pool<DatabaseModel::ChunkList> multichunk = Select("*").From("ChunkList").Where("ChunkID").NotIn(orphanChunks).And("ID") == (*iter);
                     
                     String error;
-                    for (int i = 0; i < multichunk.count; i++)
+                    for (unsigned int i = 0; i < multichunk.count; i++)
                     {
                         // Then we need to read the complete multichunk to get each chunk that's alive
                         // Find the chunk checksum to ensure about integrity
@@ -1701,8 +1701,8 @@ namespace Frost
         uint32 total = (uint32)fileList.getSize(), current = 0;
         String lastPath = "*";
         RestoreFile restore(callback, folderTrimmed, restoreFrom, overwritePolicy);
-        int skip = 1;
-        for (int i = 0; i < dirPool.count; i+= skip)
+        unsigned int skip = 1;
+        for (unsigned int i = 0; i < dirPool.count; i+= skip)
         {
             // Reinitialize the skip counter (used to avoid checking numerous times the same value)
             skip = 1;
@@ -1767,7 +1767,7 @@ namespace Frost
             Select dirPossibility = ((Select("ID").From("Entry").Where("Revision") <= revisionID).And("Path") == lastPath).And("Revision") > lowerRevID;
             Database::Pool<DatabaseModel::Entry> filePool = ((Select("*").From("Entry").Where("Revision") <= revisionID).And("Type") == 0).And("ParentEntryID").In(dirPossibility).OrderBy("Path", true, "Revision", false);
             String lastFilePath = "*";
-            for (int j = 0; j < filePool.count; j++)
+            for (unsigned int j = 0; j < filePool.count; j++)
             {
                 String errorMessage;
                 // We only care about the last revision for files and subdir
@@ -2235,6 +2235,9 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
             result = Frost::initializeDatabase(backup, revisionID, cipheredMasterKey);
         } else
         {
+            if (!File::Info(*optionsMap["keyvault"], true).doesExist())
+                ERR("The database exists, but the keyvault does not. Either delete the database, either set the path to the keyvault\n");
+                
             result = Frost::initializeDatabase(backup, revisionID, cipheredMasterKey);
             if (!result)
             {   // It exists already, so load the private key
@@ -2311,8 +2314,6 @@ int main(int argc, char ** argv)
     if (options.getSize() < 2)
         return showHelpMessage();
 
-    size_t optionPos = 0;
-    bool backupMode = true;
     Frost::Helpers::compressor = Frost::Helpers::ZLib;
     
     // This also works for tests, so test it before entering any tests

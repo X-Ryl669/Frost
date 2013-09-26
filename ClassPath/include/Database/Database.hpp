@@ -295,7 +295,8 @@ namespace Database
         /** Get the value position */
         ModifiedCallback *  getCB(void * table) const { return (ModifiedCallback*)((char*)table + offset); }
 
-        FieldDescription(const String & name, TypeID typeID, uint32 offset, const String & defaultValue = "", const String & _help = "", bool isIndex = false, bool isUnique = false) : columnName(name), help(_help), defaultValue(defaultValue), value(typeID), offset(offset), isIndex(isIndex), isUnique(isUnique) {}
+        FieldDescription(const String & name, TypeID typeID, uint32 offset, const String & defaultValue = "", const String & _help = "", bool isIndex = false, bool isUnique = false)
+         : columnName(name), help(_help), defaultValue(defaultValue), isIndex(isIndex), isUnique(isUnique), value(typeID), offset(offset) {}
     };
 
     template <typename U, int position>
@@ -1099,7 +1100,8 @@ namespace Database
         const uint32    databaseIndex;
 
         /** Construction */
-        TableDescription(const String & name, const uint32 dbIndex, const bool delayInsert = false, const String & _help = "") : tableName(SQLFormat::escapeString(name)), holdData(delayInsert), help(_help), databaseIndex(dbIndex), wasModified(false) {}
+        TableDescription(const String & name, const uint32 dbIndex, const bool delayInsert = false, const String & _help = "")
+            : tableName(SQLFormat::escapeString(name)), help(_help), holdData(delayInsert), wasModified(false), databaseIndex(dbIndex) {}
         virtual ~TableDescription() {}
 
 
@@ -1637,9 +1639,9 @@ namespace Database
         }
     }
 #else
-#define BeginTableDeclaration(X)    typedef X DatabaseType; static const char * databaseName() { return #X; } mutable int tableCount; X() : tableCount(0), ::Database::Base<X>(#X) {} \
+#define BeginTableDeclaration(X)    typedef X DatabaseType; static const char * databaseName() { return #X; } mutable int tableCount; X() : ::Database::Base<X>(#X), tableCount(0) {} \
                                         const ::Database::AbstractTableDescription ** getAbstractTableArray() const { static const ::Database::AbstractTableDescription * array[] = {
-#define BeginTableDeclarationEx(X, DBName)  typedef X DatabaseType; static const char * databaseName() { return DBName; } const  mutable int tableCount; X() : tableCount(0), ::Database::Base<X>(#X) {} \
+#define BeginTableDeclarationEx(X, DBName)  typedef X DatabaseType; static const char * databaseName() { return DBName; } const  mutable int tableCount; X() : ::Database::Base<X>(#X), tableCount(0) {} \
                                                 const ::Database::AbstractTableDescription ** getAbstractTableArray() const { static const ::Database::AbstractTableDescription * array[] = {
 
 #define DeclareTable(X)                 &getAbstractDescription((::Database::AbstractTable<X>*)0, #X, tableCount++),

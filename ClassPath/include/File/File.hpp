@@ -95,14 +95,21 @@ namespace File
             OwnerRead       =   0400,
             OwnerWrite      =   0200,
             OwnerExecute    =   0100,
+            OwnerMask       =   0700,
 
             GroupRead       =   0040,
             GroupWrite      =   0020,
             GroupExecute    =   0010,
+            GroupMask       =   0070,
 
             OtherRead       =   0004,
             OtherWrite      =   0002,
             OtherExecute    =   0001,
+            OtherMask       =   0007,
+
+            OwnerSUID       =   04000,
+            GroupSUID       =   02000,
+            StickyBit       =   01000,
         };
 
         /** The permission to check */
@@ -316,7 +323,7 @@ namespace File
             This method fix any environment variable inside the file name, so that "~/someFile" will expand to "/home/user/someFile" for example. */
         Info(const String & fullPath, const bool fixEnvVariable);
         /** Default constructor */
-        Info() : size(0), owner(0), group(0), creation(0), modification(0), lastAccess(0), permission(0), type(Regular) {}
+        Info() : size(0), creation(0), modification(0), lastAccess(0), owner(0), group(0), permission(0), type(Regular) {}
     };
 
     /** A file item hold the minimal required informations to identify a file uniquely.
@@ -720,7 +727,7 @@ namespace File
                 completed = false;
             }
 
-            AsyncCompleted(MonitoringPool & pool, uint16 index) : pool(pool), index(index), completed(false) {}
+            AsyncCompleted(MonitoringPool & pool, uint16 index) : index(index), completed(false), pool(pool)  {}
         };
         friend struct AsyncCompleted;
 #endif

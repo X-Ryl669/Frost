@@ -150,7 +150,7 @@ namespace File
                 return false;
             }
             /** You need to provide a logical callback that's not owned */
-            EventIterator(const bool recursive, FileFoundCB & callback) : EntryIterator(recursive), callback(callback), finished(false) {}
+            EventIterator(const bool recursive, FileFoundCB & callback) : EntryIterator(recursive), finished(false), callback(callback) {}
         };
         
         /** The basic engine.

@@ -270,7 +270,7 @@ namespace Database
 
         SQLFormat::Results * pRet = new SQLFormat::Results;
         const char *         szError = 0;
-        int                  result = 0, count = 0;
+        int                  result = 0;
 
         result = sqlite3_prepare_v2((sqlite3 *)DBConnection,(const char *)sStr,	-1, &pStmt, &szError );
         if (result != SQLITE_OK || !szError)

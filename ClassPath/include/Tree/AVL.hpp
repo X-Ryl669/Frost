@@ -86,7 +86,7 @@ namespace Tree
             /** Call this to avoid deleting the data of this node */
             inline void Forget() { balance = Forgotten; }
         // Constructor
-            inline Node( Node* _root, const T& _data, KeyType _key) : rootNode(_root), data(_data), key(_key), balance(Balanced) { child[Left] = child[Right] = 0; } 
+            inline Node( Node* _root, const T& _data, KeyType _key) : balance(Balanced), rootNode(_root), data(_data), key(_key) { child[Left] = child[Right] = 0; }
             inline ~Node() { if (balance != Forgotten) DeleterT::deleter(data, key); }
 
         // Members

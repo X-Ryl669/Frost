@@ -99,7 +99,7 @@ namespace Compression
     }
     
     
-    GZip::GZip() : CommonZlib("gzip"), expectedFileSize(0), modifTime(0)
+    GZip::GZip() : CommonZlib("gzip"), modifTime(0), expectedFileSize(0)
     {
         opaque = initGZStream(-1);
     }

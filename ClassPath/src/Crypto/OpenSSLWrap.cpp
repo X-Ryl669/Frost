@@ -230,7 +230,6 @@ namespace Crypto
         // The ca-bundle-asn1.cpp is automatically generated from genBinCert.sh script
         const unsigned char * certPtr = Private::certStore; int len = Private::certStore_size;
         X509 * cert = 0;
-        bool firstCertificate = true;
 
         X509_STORE * store = SSL_CTX_get_cert_store(context);
 
@@ -245,7 +244,7 @@ namespace Crypto
 
             if (store)
             {
-                int ret = X509_STORE_add_cert(store, cert);
+                X509_STORE_add_cert(store, cert);
                 continue;
             }
 //            if (!SSL_CTX_add_extra_chain_cert(context, cert))

@@ -231,6 +231,9 @@ namespace Time
             @param min          The number of minutes (so it's in [0 60] range)
             @param sec          The number of seconds (so it's in [0 60] range, 60 is used for leap seconds) */
         Time(const int year, const int month, const int dayOfMonth, const int hour, const int min, const int sec);
+        
+        /** Default destructor */
+        virtual ~Time() {}
     };
 
     /** Obviously, this one is the origin */

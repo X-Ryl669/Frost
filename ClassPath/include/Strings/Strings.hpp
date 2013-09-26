@@ -277,10 +277,10 @@ namespace Strings
         typedef const CharType * const   CharPointer;
 
     private:
-        /** The data pointer */
-        CharPointer     data;
         /** The current string length */
         const int       length;
+        /** The data pointer */
+        CharPointer     data;
 
         // Interface
     public:
@@ -307,7 +307,7 @@ namespace Strings
         /** The destructor */
         ~ReadOnlyUnicodeString() { CharType * & _data = const_cast<CharType *&>(data); delete[] _data; _data = 0;  *const_cast<int*>(&length) = 0; }
         /** The copy constructor doesn't copy the data, but actually move them */
-        ReadOnlyUnicodeString(const ReadOnlyUnicodeString & copy) : data(copy.data), length(copy.length) { CharType * & _data = const_cast<CharType *&>(const_cast<ReadOnlyUnicodeString &>(copy).data); _data = 0;  *const_cast<int *>(&const_cast<ReadOnlyUnicodeString &>(copy).length) = 0;}
+        ReadOnlyUnicodeString(const ReadOnlyUnicodeString & copy) : length(copy.length), data(copy.data) { CharType * & _data = const_cast<CharType *&>(const_cast<ReadOnlyUnicodeString &>(copy).data); _data = 0;  *const_cast<int *>(&const_cast<ReadOnlyUnicodeString &>(copy).length) = 0;}
         /** Compare operator */
         inline const bool operator == (const ReadOnlyUnicodeString & copy) const { return length == copy.length && memcmp(data, copy.data, length * sizeof(data[0])) == 0; }
         /** Inverted compare operator */
@@ -343,10 +343,10 @@ namespace Strings
     private:
         /** The array */
         TPtr *      array;
-        /** The array allocation size */
-        size_t      allocatedSize;
         /** The actual usage */
         size_t      currentSize;
+        /** The array allocation size */
+        size_t      allocatedSize;
     
         // Helpers
     private:

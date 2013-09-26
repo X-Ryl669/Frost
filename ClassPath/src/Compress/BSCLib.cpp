@@ -206,7 +206,7 @@ namespace Compression
         return decompressStream(finalStream, inStream);
     }    
     
-    BSCLib::BSCLib() : BaseCompressor("BSC"), compressionFactor(-1), opaque(0), lastError(Success)
+    BSCLib::BSCLib() : BaseCompressor("BSC"), compressionFactor(-1), lastError(Success), opaque(0)
     {
         opaque = new BSC::EBSC();
     }
@@ -274,7 +274,7 @@ namespace Compression
     {
         // We need to first read the number of blocks
         uint32 nBlocks = 0;
-        size_t processedSize = 0;
+        
         #define POP(X, S) if (inStream.read(X, (uint64)S) != (uint64)S) return setError(UnexpectedEOD); 
         POP(&nBlocks, sizeof(nBlocks));
 
