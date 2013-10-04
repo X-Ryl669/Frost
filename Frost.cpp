@@ -232,6 +232,9 @@ namespace Frost
             // No other compressor supported
         } compressor;
         
+        // Excluded file list if found
+        String excludedFilePath;
+        
         // Base 85 encoding
         String fromBinary(const uint8 * data, const uint32 size, const bool base)
         {
@@ -799,6 +802,43 @@ namespace Frost
         }
         AllFiles(ProgressCallback & callback) : count(0), callback(callback) {}
     };
+    
+    /** Match the excluded files */
+    class MatchExcludedFiles
+    {
+        struct MatchAFile { virtual bool isExcluded(const String & relPath) const { return false; } virtual ~MatchAFile() {} };
+        struct MatchSimpleRule : public MatchAFile { String rule; virtual bool isExcluded(const String & relPath) const { return relPath.Find(rule) != -1; } MatchSimpleRule(const String & rule) : rule(rule) {} };
+        struct MatchRegEx : public MatchAFile { String::RegExOpaque * opaque; virtual bool isExcluded(const String & relPath) const { return !relPath.regExMatchEx(*opaque, 0); }
+                                               ~MatchRegEx() { String::regExClean(opaque); } MatchRegEx(const String & regEx) : opaque(0) { String::regExCompile(regEx, opaque); } };
+                                               
+        Container::NotConstructible<MatchAFile>::IndexList matches;
+    public:
+        bool isExcluded(const String & relPath) const
+        {
+            for (size_t i = 0; i < matches.getSize(); i++)
+                if (matches.getElementAtUncheckedPosition(i)->isExcluded(relPath))
+                    return true;
+            return false;
+        }
+        
+        MatchExcludedFiles()
+        {
+            if (!Helpers::excludedFilePath) return;
+            
+            // Get a list of rules in this file
+            Strings::StringArray rules(File::Info(Helpers::excludedFilePath, true).getContent());
+            for (size_t i = 0; i < rules.getSize(); i++)
+            {
+                const String & rule = rules.getElementAtUncheckedPosition(i);
+                if (!rule.Trimmed()) continue; // Empty lines are ignored
+                
+                if (rule.midString(0, 2) == "r/")
+                    matches.Append(new MatchRegEx(rule.midString(2, rule.getLength())));
+                else matches.Append(new MatchSimpleRule(rule));
+            }
+        }
+    };
+    
     /** The file filter that's accepting all files and backuping them */
     struct BackupFile : public File::Scanner::EventIterator::FileFoundCB
     {
@@ -820,6 +860,7 @@ namespace Frost
         
         PathIDMapT           prevFilesInDir;
         String               prevParentFolder;
+        MatchExcludedFiles   excludes;
                 
         // Check if a file has content to save
         bool hasContent(File::Info & info)
@@ -895,6 +936,12 @@ namespace Frost
             // Ok, backup this file, if required (we lie about the size here)
             if (!callback.progressed(ProgressCallback::Backup, TRANS("Analysing: ") + info.name, 0, 1, seen, total))
                 return false;
+            if (excludes.isExcluded(strippedFilePath))
+            {   // This file is excluded
+                if (!callback.progressed(ProgressCallback::Backup, TRANS("Excluded: ") + info.name, 0, 0, seen, total))
+                    return false;
+                return true;
+            }
                 
             // Check if the parent folder was changed
             String parentFolder = info.getParentFolder();
@@ -1824,6 +1871,10 @@ int showHelpMessage(const Frost::String & error = "")
            "\t                     \tHowever, 'bsc' also changes the multichunk size to 10240.\n"
            "\t--strategy [mode]    \tThe purging strategy, 'fast' for removing lost chunk from database, but does not reassemble multichunks\n"
            "\t                     \t'slow' for rebuilding multichunks after fast pruning. This will save the maximum backup amount, at the price of much longer processing\n"
+           "\t--exclude list.exc \tYou can specify a file containing the exclusion list for backup. This file is read line-by-line (one rule per line)\n"
+           "\t                     \tIf a line starts by 'r/' the exclusion rule is considered as a regular expression otherwise the rule is matched if the analyzed file path containing the rule.\n"
+           "\t                     \tThis also means that if you need to exclude a file whose name starts by 'r/', you need to write 'r/r/'.\n"
+           "\t                     \tTo get more details about the regular expression engine, run --help regex\n"
            ),
 #include "build/build-number.txt"
     );
@@ -1832,9 +1883,10 @@ int showHelpMessage(const Frost::String & error = "")
 
 int showSecurityMessage()
 {
-    printf("Frost (C) Copyright 2013 - Cyril RUSSO All right reserved \n");
+    printf("Frost (C) Copyright 2013 - Cyril RUSSO (This software is BSD licensed) \n");
     printf(TRANS("Frost is a tool used to efficiently backup and restore files to/from a remote\n"
            "place with no control other the remote server software.\n"
+           "No warranty of any kind is provided for the use of this software.\n"
            "Current version: %d. \n\n"
            "Security advices and features:\n"
            "  Algorithm description:\n"
@@ -1862,6 +1914,37 @@ int showSecurityMessage()
            "\tThe keyvault is never modified by Frost after first backup, so you might as well leave it on a server\n"
            "\tor locally depending on your security concerns.\n"
            ),
+#include "build/build-number.txt"
+    );
+    return EXIT_SUCCESS;
+}
+
+int showRegExMessage()
+{
+    printf("Frost (C) Copyright 2013 - Cyril RUSSO (This software is BSD licensed) \n");
+    printf(TRANS("Frost is a tool used to efficiently backup and restore files to/from a remote\n"
+           "place with no control other the remote server software.\n"
+           "No warranty of any kind is provided for the use of this software.\n"
+           "Current version: %d. \n\n"
+           "Supported Regular Expression pattern for exclusion file:\n"
+           "\t.\t\tMatch any character\n"
+"\t^\t\tMatch beginning of a buffer\n"
+"\t$\t\tMatch end of a buffer\n"
+"\t()\t\tGrouping and substring capturing -useless, no backward search-\n"
+"\t[...]\t\tMatch any character from set\n"
+"\t[^...]\t\tMatch any character but ones from set\n"
+"\t\\s\t\tMatch whitespace\n"
+"\t\\S\t\tMatch non-whitespace\n"
+"\t\\d\t\tMatch decimal digit\n"
+"\t\\r\t\tMatch carriage return\n"
+"\t\\n\t\tMatch newline\n"
+"\t+\t\tMatch one or more times (greedy)\n"
+"\t+?\t\tMatch one or more times (non-greedy)\n"
+"\t*\t\tMatch zero or more times (greedy)\n"
+"\t*?\t\tMatch zero or more times (non-greedy)\n"
+"\t?\t\tMatch zero or once\n"
+"\t\\xDD\t\tMatch byte with hex value 0xDD\n"
+"\t\\meta\t\tMatch one of the meta character: ^$().[*+\\?\n"),
 #include "build/build-number.txt"
     );
     return EXIT_SUCCESS;
@@ -2334,6 +2417,7 @@ int main(int argc, char ** argv)
     if (getOptionParameters(options, "help", params))
     {
         if (params.getSize() && params[0] == "security") return showSecurityMessage();
+        if (params.getSize() && params[0] == "regex") return showRegExMessage();
         return showHelpMessage();
     }
     
@@ -2342,12 +2426,15 @@ int main(int argc, char ** argv)
     if (checkOption(options, "overwrite") == EXIT_SUCCESS) return EXIT_SUCCESS;
     if (checkOption(options, "strategy") == EXIT_SUCCESS) return EXIT_SUCCESS;
     if (checkOption(options, "keyid") == EXIT_SUCCESS) return EXIT_SUCCESS;
-
-
+    if (checkOption(options, "exclude") == EXIT_SUCCESS) return EXIT_SUCCESS;
     if (checkOption(options, "multichunk", true) == EXIT_SUCCESS) return EXIT_SUCCESS;
     
+    if (optionsMap["exclude"])
+        Frost::Helpers::excludedFilePath = *optionsMap["exclude"];
+
     if (optionsMap["multichunk"])
         File::MultiChunk::setMaximumSize(((uint32)*optionsMap["multichunk"]) * 1024);
+        
     
     if (optionsMap["overwrite"]
         && *optionsMap["overwrite"] != "yes"

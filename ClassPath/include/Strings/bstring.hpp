@@ -430,10 +430,11 @@ namespace Bstrlib
             and then match using this compiled object.
 
             @param regEx        The regular expression to match. @sa RE macro to avoid double escape of backlashes.
-            @param opaque       On output, will be filled with an opaque structure you must pass to the match function. You must delete the returned object
+            @param opaque       On output, will be filled with an opaque structure you must pass to the match function. 
+                                You must delete the returned object with regExClean
             @return The number of expected captures for this expression, or -1 on error (use regExMatch to figure out the error string)
             @sa regExMatch */
-        int regExCompile(const String & regEx, RegExOpaque *& opaque) const;
+        static int regExCompile(const String & regEx, RegExOpaque *& opaque);
         /** Match the expression against the compiled regular expression
             @param opaque       The opaque object that's created with regExCompile
             @param captures     If provided will be filled with the captures.
@@ -443,6 +444,8 @@ namespace Bstrlib
 
             @return An empty string on success, or the error string on failure */
         String regExMatchEx(RegExOpaque & opaque, String * captures, const bool caseSensitive = true) const;
+        /** Clean a precompiled regular expression opaque object */
+        static void regExClean(RegExOpaque *& opaque);
 #endif
 
 		// Extraction method.

@@ -1934,6 +1934,7 @@ namespace Bstrlib
 
         RegExp::cap * caps = new RegExp::cap[obj.captureCount + 1];
         if (!caps) return "Not enough memory for captures";
+        obj.caseInsensitive = !caseSensitive;
         error = RegExp::match2(&obj, (const char*)data, slen, caps);
         for (int i = 0; i < obj.captureCount + 1; i++)
             captures[i] = String(caps[i].ptr, caps[i].len);
@@ -1941,7 +1942,7 @@ namespace Bstrlib
         return error;
     }
     // Compile a regular expression to match later on.
-    int String::regExCompile(const String & regEx, String::RegExOpaque *& opaque) const
+    int String::regExCompile(const String & regEx, String::RegExOpaque *& opaque) 
     {
         delete opaque;
         opaque = new RegExOpaque;
@@ -1954,11 +1955,20 @@ namespace Bstrlib
     {
         RegExp::cap * caps = new RegExp::cap[opaque.captureCount + 1];
         if (!caps) return "Not enough memory for captures";
+        opaque.caseInsensitive = !caseSensitive;
         const char * error = RegExp::match2(&opaque, (const char*)data, slen, caps);
-        for (int i = 0; i < opaque.captureCount + 1; i++)
-            captures[i] = String(caps[i].ptr, caps[i].len);
+        if (captures)
+        {
+            for (int i = 0; i < opaque.captureCount + 1; i++)
+                captures[i] = String(caps[i].ptr, caps[i].len);
+        }
         delete[] caps;
         return error;
+    }
+    // Clean a precompiled regular expression opaque object
+    void String::regExClean(RegExOpaque *& opaque)
+    {
+        delete0(opaque);
     }
 #endif
 } // namespace Bstrlib
