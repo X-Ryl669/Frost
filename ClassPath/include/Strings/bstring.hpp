@@ -262,11 +262,11 @@ namespace Bstrlib
 			@warning if you have disabled float parsing, you must provide a int dtoa(double, char out[20], int precision) function */
 		void storeDouble(double v, int precision) { char Buf[20]; lftoa(v, Buf, precision); *this = Buf; } 
 #endif
-		/** To int, as long as the string contains a int value (0 on error) */
+		/** To int, as long as the string contains a int value in base 10 (0 on error) */
 		operator signed int() const;
-		/** To unsigned int, as long as the string contains a int value (0 on error) */
+		/** To unsigned int, as long as the string contains a int value in base 10 (0 on error) */
 		operator unsigned int() const;
-        /** To int64, as long as the string contains a int64 value (0 on error) */
+        /** To int64, as long as the string contains a int64 value in base 10 (0 on error) */
         operator int64() const;		
         
         /** Handy function to get the hexadecimal representation of a number 

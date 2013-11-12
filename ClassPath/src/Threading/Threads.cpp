@@ -446,7 +446,7 @@ void * Thread::RunThread(void * pVoid)
 #endif
         
 #endif
-        void * dw = (void*)pThread->runThread();
+        void * dw = (void*)(long int)pThread->runThread();
 #endif
 
         // Stop the run condition anyway

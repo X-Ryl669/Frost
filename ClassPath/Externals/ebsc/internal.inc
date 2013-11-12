@@ -1495,11 +1495,11 @@ if(((c) & 4) && ((ss_compare(T, PA + GETIDX(*((b) - 1)), PA + *(b), depth) == 0)
                 if(*rm < 0)
                 {
                     *rm = ~*rm;
-                    if(first < lm) { for(; *--l < 0;) ; next |= 4; }
+                    if(first < lm) { for(; *--l < 0;) {} next |= 4; }
                     next |= 1;
                 } else if(first < lm)
                 {
-                    for(; *r < 0; ++r) ;
+                    for(; *r < 0; ++r) {}
                     next |= 2;
                 }
             }

@@ -258,11 +258,11 @@ namespace Threading
 
 #ifdef _WIN32
         /** The mutex object */
-        CRITICAL_SECTION mutex;
-        inline bool _Lock(const TimeOut dwLength) volatile   { if (dwLength == Infinite) { EnterCriticalSection((CRITICAL_SECTION*)&mutex); return true; } 
-                                                               else if (dwLength == InstantCheck) return TryEnterCriticalSection((CRITICAL_SECTION*)&mutex) != 0;
+        SRWLOCK mutex;
+        inline bool _Lock(const TimeOut dwLength) volatile   { if (dwLength == Infinite) { AcquireSRWLockExclusive((SRWLOCK*)&mutex); return true; }
+                                                               else if (dwLength == InstantCheck) return TryAcquireSRWLockExclusive((SRWLOCK*)&mutex) != 0;
                                                                return false; }
-        inline void _Unlock(void * = 0) volatile             { LeaveCriticalSection((CRITICAL_SECTION*)&mutex); }
+        inline void _Unlock(void * = 0) volatile             { ReleaseSRWLockExclusive((SRWLOCK*)&mutex); }
 #else
         HMUTEX mutex;
         /** Those methods are too big to be included here, please refer to lock.cpp for details */
@@ -289,8 +289,8 @@ namespace Threading
 #ifdef _WIN32
         // Check return type of InitializeCriticalSection in case it fails (no more memory available), 
         // sleep a bit to let other process return some memory, and try again, this time with exception on error
-        { if (InitializeCriticalSectionAndSpinCount(&mutex, 4096) == 0) { ::Sleep(5000); InitializeCriticalSection(&mutex); } if (initialOwner) Acquire(); }
-        ~FastLock() { DeleteCriticalSection(&mutex); }
+        { InitializeSRWLock(&mutex); if (initialOwner) Acquire(); }
+        ~FastLock() { }
 #else
         /* , mutex(0) */
         { 

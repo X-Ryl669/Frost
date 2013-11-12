@@ -668,17 +668,17 @@ namespace Bstrlib
 	
 	String::operator signed int() const 
 	{
-		return (signed int)parseInt();
+		return (signed int)parseInt(10);
 	}
 	
 	String::operator unsigned int() const 
 	{
-		return (unsigned int)parseInt();
+		return (unsigned int)parseInt(10);
 	}
 
 	String::operator int64() const 
 	{
-		return (int64)parseInt();
+		return (int64)parseInt(10);
 	}
 
 	int String::Scan(const char * fmt, void * data) const

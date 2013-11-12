@@ -89,7 +89,8 @@ namespace Random
             int i = 1, j = 0;
             for (int k = max(arraySize, (uint32)Size); k; --k)
             {
-                state[i] = (state[i] ^ ((state[i - 1] ^ (state[i - 1] >> 30)) * GenSeed1)) + array[j] + j++;
+                state[i] = (state[i] ^ ((state[i - 1] ^ (state[i - 1] >> 30)) * GenSeed1)) + array[j] + j;
+                j++;
                 j %= arraySize;
                 if (++i == Size) { state[0] = state[Size - 1]; i = 1; }
             }
