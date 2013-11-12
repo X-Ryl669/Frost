@@ -60,7 +60,7 @@ SHAREDLIBS = -lssl -lcrypto -lsqlite3
 # On Linux, old Glib requires -lrt for aio and clock_gettime
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
-   SHAREDLIBS += -lrt
+   SHAREDLIBS += -lrt -ldl -lpthread
 endif
 LDXX = g++
 Q = @
