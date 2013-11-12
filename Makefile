@@ -43,6 +43,7 @@ CXXFLAGS += -O2
 CFLAGS += -O2
 endif
 
+LIBS=-ldl -lpthread
 CXXFLAGS += -pthread -Wno-multichar
 CFLAGS += -pthread -Wno-multichar
 
