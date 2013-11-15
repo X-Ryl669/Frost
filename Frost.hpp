@@ -187,7 +187,8 @@ namespace Frost
         virtual bool progressed(const Action action, const String & currentFilename, const uint64 sizeDone, const uint64 totalSize, const uint32 index, const uint32 count) = 0;
         /** This method is called when the processing must warn the user.
             @return false to interrupt the process */
-        virtual bool warn(const Action action, const String & currentFilename, const String & message) { return true; }
+        virtual bool warn(const Action action, const String & currentFilename, const String & message, const uint32 sourceLine = 0) { return true; }
+        #define WARN_CB(action, file, msg) callback.warn(action, file, msg, __LINE__)
         virtual ~ProgressCallback() {}
     };
     

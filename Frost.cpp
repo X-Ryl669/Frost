@@ -778,10 +778,10 @@ namespace Frost
             return true;
         }
         
-        virtual bool warn(const Action action, const String & currentFilename, const String & message)
+        virtual bool warn(const Action action, const String & currentFilename, const String & message, const uint32 sourceLine = 0)
         {
-            warningLog.Append(currentFilename + ": " + message);
-            fprintf(stderr, TRANS("\nWARNING %s: %s\n"), (const char*)currentFilename, (const char*)message);
+            warningLog.Append(String::Print("%s(%d): %s", (const char*)currentFilename, sourceLine, (const char*)message));
+            fprintf(stderr, TRANS("\nWARNING %s(%d): %s\n"), (const char*)currentFilename, sourceLine, (const char*)message);
             return true;
         }
         
@@ -977,7 +977,7 @@ namespace Frost
                 String currentFullPath = info.getRealFullPath();
                 if (currentFullPath.midString(0, backupFullPath.getLength()) != backupFullPath)
                 {
-                    if (!callback.warn(ProgressCallback::Backup, info.name, TRANS("Symbolic link points outside of the backup folder, the content will not be saved, only the link")))
+                    if (!WARN_CB(ProgressCallback::Backup, info.name, TRANS("Symbolic link points outside of the backup folder, the content will not be saved, only the link")))
                         return false;
                 }
             }
@@ -1001,7 +1001,7 @@ namespace Frost
             // We'll need the parent directory ID to link with
             unsigned int parentDirID = findParentDirectoryID(strippedFilePath);
             if (!parentDirID)
-                return !callback.warn(ProgressCallback::Backup, info.name, TRANS("The parent directory does not exists in the database")) && false;
+                return !WARN_CB(ProgressCallback::Backup, info.name, TRANS("The parent directory does not exists in the database")) && false;
 
             // Check if the entry already exists in the database
             String dbMeta = checkMostRecentEntryMetadata(strippedFilePath);
@@ -1129,7 +1129,7 @@ namespace Frost
                 }
                 else
                 {
-                    if (!callback.warn(ProgressCallback::Backup, info.name, TRANS("Non regular type (fifo, pipe or socket) are not backed up.")))
+                    if (!WARN_CB(ProgressCallback::Backup, info.name, TRANS("Non regular type (fifo, pipe or socket) are not backed up.")))
                         return false;
                 }
             }
@@ -1146,6 +1146,15 @@ namespace Frost
                 if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize))
                     return false;
             }
+            
+            // Marks the currently missing item as deleted in database
+            PathIDMapT::IterT iter = prevFilesInDir.getFirstIterator();
+            while (iter.isValid())
+            {
+                deleteRemainingEntry(*(*iter));
+                ++iter;
+            }
+            
             // Save the statistics
             DatabaseModel::Revision rev;
             rev.FileCount = fileCount;
@@ -1156,6 +1165,8 @@ namespace Frost
             
             // If we found something to analyze, then the backup worked
             if (totalInSize) Frost::backupWorked = true;
+            
+            
             
             return true;
         }
@@ -1183,7 +1194,7 @@ namespace Frost
             @return 0 on success, -1 on error, 1 on warning */
         int restoreFile(const DatabaseModel::Entry & file, String & errorMessage, const uint32 current, const uint32 total)
         {
-    #define WarnAndReturn(Msg) callback.warn(ProgressCallback::Restore, file.Path, TRANS( Msg )) ? 1 : -1
+    #define WarnAndReturn(Msg) WARN_CB(ProgressCallback::Restore, file.Path, TRANS( Msg )) ? 1 : -1
     #define ERR(Msg) { errorMessage = Msg; return -1; }
             // We need to figure out if the file is a regular file, we do so by checking its metadata field
             File::Info outFile(folderTrimmed + file.Path);
@@ -1534,7 +1545,7 @@ namespace Frost
                 purgedSize += multichunk.size;
                 if (!multichunk.remove())
                 {
-                    if (!callback.warn(ProgressCallback::Purge, orphanMultichunks[i].Path, TRANS("Can not remove this multichunk")))
+                    if (!WARN_CB(ProgressCallback::Purge, orphanMultichunks[i].Path, TRANS("Can not remove this multichunk")))
                         return TRANS("Can not remove a multichunk");
                 }
             }
@@ -1683,7 +1694,7 @@ namespace Frost
                     purgedSize += multichunkFile.size;
                     if (!multichunkFile.remove())
                     {
-                        if (!callback.warn(ProgressCallback::Purge, mChunk.Path, TRANS("Can not remove this multichunk")))
+                        if (!WARN_CB(ProgressCallback::Purge, mChunk.Path, TRANS("Can not remove this multichunk")))
                             return TRANS("Can not remove a multichunk");
                     }
                     // Remove the now useless multichunk out of the database
@@ -1972,7 +1983,8 @@ int checkTests(Strings::StringArray & options)
                    "\tkey\t\tTest cryptographic system, by creating a new vault, and master key, and reading it back\n"
                    "\tdb\t\tTest database code, by creating a default database, filling it and reading it back\n"
                    "\troundtrip\tTest a complete roundtrip backup and restore, of fake created file, with specific attributes\n"
-                   "\tpurge\t\tTest an update to a previous roundtrip test, and purging the initial revision\n"),
+                   "\tpurge\t\tTest an update to a previous roundtrip test, and purging the initial revision\n"
+                   "\tfs\t\tTest some simple filesystem operations (independant from any other tests)\n"),
 #include "build/build-number.txt"
                    );
             return EXIT_SUCCESS;
@@ -2148,6 +2160,102 @@ int checkTests(Strings::StringArray & options)
             result = Frost::purgeBackup("./testBackup/", console, Frost::Slow, 1);
             if (result) ERR("Can't purge the last backup: %s\n", (const char*)result);
 
+            Frost::finalizeDatabase();
+            fprintf(stderr, "Success\n");
+            return EXIT_SUCCESS;
+        } else if (testName == "fs")
+        {
+            File::Info("./test/").remove();
+            File::Info("./testBackup/").remove();
+            File::Info("./testRestore/").remove();
+            if (!File::Info("./testBackup/").makeDir()) ERR("Failed creating the backup folder ./testBackup/\n");
+            if (!File::Info("./testRestore/").makeDir()) ERR("Failed creating the restoring folder ./testRestore/\n");
+            if (!File::Info("./test/").makeDir()) ERR("Failed creating the test folder ./test/\n");
+            
+            {
+                // Ok, then fill some content in some files
+                if (!File::Info("./test/basicFile.txt").setContent("This is a very basic file content"))
+                    ERR("Can't create basic file in the test directory");
+                if (!File::Info("./ex/Hurt.txt").copyTo("./test/smallFile.txt"))
+                    ERR("Can't copy lyric file in the test directory");
+                if (!File::Info("./ex/RomeoAndJulietS2.txt").copyTo("./test/"))
+                    ERR("Can't copy scene 2 file in the test directory");
+            }
+            
+            // Then, let backup this!
+            Frost::ConsoleProgressCallback console;
+            // Create a new key
+            File::Info("./testBackup/keyVault").remove();
+            Frost::MemoryBlock cipheredMasterKey;
+            Frost::String result = Frost::getKeyFactory().createMasterKeyForFileVault(cipheredMasterKey, "./testBackup/keyVault", "password");
+            if (result) ERR("Creating the master key failed: %s\n", (const char*)result);
+            
+            // Create a database too
+            Frost::DatabaseModel::databaseURL = "./testBackup/";
+            // Wipe out the database
+            File::Info(Frost::DatabaseModel::databaseURL + DEFAULT_INDEX).remove();
+            // And recreate it
+            unsigned int revisionID = 0;
+            result = Frost::initializeDatabase("test/", revisionID, cipheredMasterKey);
+            if (result) ERR("Creating the database failed: %s\n", (const char*)result);
+
+            // Then backup the folder
+            result = Frost::backupFolder("test/", "./testBackup/", revisionID, console);
+            if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
+            
+            if (Frost::listBackups() != 1) ERR("Can't list the created backup\n");
+            
+            // Reported issue #3
+            // Delete a file and backup again
+            File::Info("./test/smallFile.txt").remove();
+
+            Frost::finalizeDatabase();
+            result = Frost::initializeDatabase("test/", revisionID, cipheredMasterKey);
+            if (result) ERR("Creating the database failed: %s\n", (const char*)result);
+            result = Frost::backupFolder("test/", "./testBackup/", revisionID, console);
+            if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
+            
+            if (Frost::listBackups() != 2) ERR("Can't list the created backup\n");
+            
+            // Add another file and backup
+            if (!File::Info("./ex/RomeoAndJulietS3.txt").copyTo("./test/"))
+                ERR("Can't copy scene 3 file in the test directory");
+
+            Frost::finalizeDatabase();
+            result = Frost::initializeDatabase("test/", revisionID, cipheredMasterKey);
+            if (result) ERR("Creating the database failed: %s\n", (const char*)result);
+            result = Frost::backupFolder("test/", "./testBackup/", revisionID+2, console);
+            if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
+            
+            if (Frost::listBackups() != 3) ERR("Can't list the created backup\n");
+            
+            // Finalize the database and clean up all our stuff before restoring
+            if (!cipheredMasterKey.Extract(0, cipheredMasterKey.getSize()))
+                ERR("Can't reset the ciphered master key\n");
+            
+            /////////////////////////////// Restoring here /////////////////////////////////
+            // Ok, let's re-open again all of stuff
+            File::Info("./test/RomeoAndJulietS3.txt").remove();
+            revisionID = 0;
+            result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
+            if (result) ERR("Can't re-open the database: %s\n", (const char*)result);
+            if (!cipheredMasterKey.getSize()) ERR("Bad readback of the ciphered master key\n");
+            
+            result = Frost::getKeyFactory().loadPrivateKey("./testBackup/keyVault", cipheredMasterKey, "password");
+            if (result) ERR("Reading back the master key failed: %s\n", (const char*)result);
+            
+            // Restore the backup for the given revision
+            result = Frost::restoreBackup("./testRestore/", "./testBackup/", 2, console);
+            if (result) ERR("Can't restore the backup: %s\n", (const char*)result);
+            
+            /////////////////////////////// Testing here ////////////////////////////////////
+            // Compare the files
+            system("diff -ur test testRestore > diffOutput.txt 2>&1");
+            Frost::String output = File::Info("diffOutput.txt").getContent();
+            if (output.getLength())
+                ERR("Comparing failed: %s\n", (const char*)output);
+            
+            // Finalize the database
             Frost::finalizeDatabase();
             fprintf(stderr, "Success\n");
             return EXIT_SUCCESS;
