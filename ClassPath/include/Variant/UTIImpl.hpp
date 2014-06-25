@@ -9,6 +9,8 @@
 #include "../../include/Container/Container.hpp"
 // We need strings
 #include "../../include/Strings/Strings.hpp"
+// We need dynamic objects too
+#include "../../include/Types/DynamicObject.hpp"
 
 //   !!!!!!! WARNING !!!!!!!!
 //   If you modify something here you have to report the modification in UTIImpl.cpp
@@ -65,12 +67,19 @@ namespace UniversalTypeIdentifier
 
     typedef Type::VarT<Type::ObjectCopyPolicy>::Empty VarEmpty;
     typedef Type::VarT<Type::ObjectPtrPolicy>::Empty RefEmpty;
+    typedef Container::NotConstructible<Type::VarT<Type::ObjectPtrPolicy> >::IndexList RefArray;
+    typedef Container::WithCopyConstructor<Type::VarT<Type::ObjectCopyPolicy> >::Array VarArray;
 
     typedef Container::WithCopyConstructor<Strings::FastString>::Array StringArray;
 
     RegisterClassForVariantDecl(VarEmpty)
     RegisterClassForVariantDecl(RefEmpty)
     RegisterClassForVariantDecl(Strings::FastString)
+    RegisterClassForVariantDecl(NamedFunc);
+    RegisterClassForVariantDecl(NamedFuncRef);
+    RegisterClassForVariantDecl(DynObj);
+    RegisterClassForVariantDecl(VarArray);
+    RegisterClassForVariantDecl(RefArray);
 
 #ifndef DontHaveDatabaseCode
     // Database stuff is here

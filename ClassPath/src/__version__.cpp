@@ -83,12 +83,12 @@
         #define _MD5FlagName _
     #endif  
 
-    #if (WantReadWriteLock == 1)
-        #define _RWLockFlag 1024
-        #define _RWLockFlagName RWLock
+    #if (WantExtendedLock == 1)
+        #define _ExLockFlag 1024
+        #define _ExLockFlagName ExLock
     #else         
-        #define _RWLockFlag 0
-        #define _RWLockFlagName _
+        #define _ExLockFlag 0
+        #define _ExLockFlagName _
     #endif
     
     #if (WantSOAP == 1)
@@ -147,7 +147,36 @@
         #define _DebugFlag         0
         #define _DebugFlagName     Release
     #endif
-	
+
+    #ifdef _LINUX
+       #define _Platform           Linux
+       #define _PlatformVal        2
+    #elif defined(_MAC)
+       #define _Platform           Mac
+       #define _PlatformVal        4
+    #elif defined(_WIN32)
+       #define _Platform           Win32
+       #define _PlatformVal        8
+    #else
+       #define _PlatformVal        0
+    #endif
+
+    #if (_FILE_OFFSET_BITS == 64)
+       #define _LargeFileOffset    LFS
+       #define _LargeFileOffsetVal 16
+    #else
+       #define _LargeFileOffset    _
+       #define _LargeFileOffsetVal 0
+    #endif
+
+    #if (HAS_STD_ATOMIC == 1)
+       #define _Atomic             Atomic
+       #define _AtomicVal          64
+    #else
+       #define _Atomic             _
+       #define _AtomicVal          0
+    #endif
+
     #define _String(X) #X
     #define Stringize(X) _String(X) " "
 
@@ -155,11 +184,14 @@
     #define EVALUATOR(x,y)  PASTER(x,y)
     #define NAME(fun, TERM) EVALUATOR(fun, TERM)
 
-	#define FlagNames Stringize(_SSLFlagName) Stringize(_AESFlagName) Stringize(_TypeFlagName) Stringize(_FFMPEGFlagName) Stringize(_TLSFlagName) Stringize(_BaseFlagName) Stringize(_FloatFlagName) Stringize(_ChronoFlagName) Stringize(_AtomicFlagName) Stringize(_MD5FlagName) Stringize(_RWLockFlagName) Stringize(_SOAPFlagName) Stringize(_CompressFlagName) Stringize(_OwnPicFlagName) Stringize(_RegExFlagName) Stringize(_PingFlagName) Stringize(_BSCFlagName) Stringize(_DebugFlagName)
+    #define FlagNames Stringize(_SSLFlagName) Stringize(_AESFlagName) Stringize(_TypeFlagName) Stringize(_FFMPEGFlagName) Stringize(_TLSFlagName) Stringize(_BaseFlagName) Stringize(_FloatFlagName) Stringize(_ChronoFlagName) Stringize(_AtomicFlagName) Stringize(_MD5FlagName) Stringize(_ExLockFlagName) Stringize(_SOAPFlagName) Stringize(_CompressFlagName) Stringize(_OwnPicFlagName) Stringize(_RegExFlagName) Stringize(_PingFlagName) Stringize(_BSCFlagName) Stringize(_DebugFlagName)
+    #define _ClassPathBuildFlags (_DebugFlag + _PlatformVal + _LargeFileOffsetVal + _AtomicVal)
+
     namespace BuildInfo
     {
-        int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _RWLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), __BSCFlagName), _DebugFlagName) = ClassPathFlags;
+        int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _DebugFlagName) = ClassPathFlags;
         const char * getBuildFlagsName() { return FlagNames; }
+        int NAME(NAME(NAME(NAME(_checkSameBuildFlags_, _DebugFlagName), _Platform), _LargeFileOffset), _Atomic) = _ClassPathBuildFlags;
         #pragma message("Using ClassPath with flags " FlagNames)
     }
 
@@ -198,8 +230,8 @@
     #undef _MD5Flag
     #undef _MD5FlagName    
 
-    #undef _RWLockFlag
-    #undef _RWLockFlagName    
+    #undef _ExLockFlag
+    #undef _ExLockFlagName    
     
     #undef _SOAPFlag
     #undef _SOAPFlagName

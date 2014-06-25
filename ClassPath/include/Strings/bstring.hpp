@@ -134,16 +134,27 @@ namespace Bstrlib
 		String(char c, int len);
 		/** C-Style string constructor */
 		String(const char *s);
-		/** C-Style string with len limitation
+		/** C-Style string with len limitation.
+		    Use this code to force an allocation that's len bytes:
+			@code
+			    String ret(345, ""); // Allocated length for ret is 345 bytes
+			@endcode
             @warning len is the minimum size, s might be larger */
 		String(int len, const char *s);
 
 		/** Copy constructors */
 		String(const String& b);
 		String(const tagbstring& x);
-		/** Bulk construction from a given block */
+		/** Bulk construction from a given block.
+            The block is considered opaque and is not used.
+            The block is copyied so it's safe to reuse it in your code later on.
+            If you don't need to reuse the block, use the transitiveConstruct instead, as it avoid a memory allocation and copy */
 		String(const void * blk, int len);
-	
+        /** Transitive constructor. 
+            This is taking ownership of the opaque block passed in.
+            This avoids a memory allocation and copying, but the block must be allocated by malloc or realloc. */
+        String(const void * ownedBlock, const int len, const int allocLen);
+        
 		/** Destructor */
 		~String();
 
@@ -388,6 +399,19 @@ namespace Bstrlib
 
 #if (WantRegularExpressions == 1)
         // Regular expressions
+        enum RegExError
+        {
+            NotFound               = -1,
+            SyntaxError            = -2,
+            UnexpectedQuantifier   = -3,
+            UnbalancedBrackets     = -4,
+            BadSetOfCharacter      = -5,
+            BadMetaCharacter       = -6,
+            CapturesArrayTooSmall  = -7,
+            NotEnoughMemory        = -8,
+        };
+
+        
         /** Match this string against a regular expression and extract any captured element.
             The common regular expression syntax's term are supported but there is no extension.
             The supported syntax is:
@@ -396,8 +420,8 @@ namespace Bstrlib
                ^        Match beginning of a buffer
                $        Match end of a buffer
                ()       Grouping and substring capturing
-               [...]    Match any character from set
-               [^...]   Match any character but ones from set
+               [...]    Match any character from set, ranges (ex [a-z]) are supported
+               [^...]   Match any character but ones from set, ranges (ex [a-z]) are supported
                \s       Match whitespace
                \S       Match non-whitespace
                \d       Match decimal digit
@@ -410,6 +434,7 @@ namespace Bstrlib
                ?        Match zero or once
                \xDD     Match byte with hex value 0xDD
                \meta    Match one of the meta character: ^$().[*+\?
+               (?i)     If at the beginning of the regex, it makes match case-insensitive (override caseSensitive argument)
             @endverbatim
 
             @param regEx         The regular expression to match against. @sa RE macro to avoid double escape
@@ -417,35 +442,46 @@ namespace Bstrlib
             @param captures      If provided will be filled with the captures.
                                  The size of the array must match the regular expression capture's amount.
                                  No allocation is done in this method.
+            @param capturesCount On input, contains the size of the captures array, on output will be filled 
+                                 with the number of captures required. You can call with captures set to 0 in 
+                                 order to query the number of captures required.
             @param caseSensitive If set, the search is case sensitive
+            @param matchPos      If set, will be filled by the first position found where the regular expression match
 
-            @return An empty string on success, or the error string on failure */
-        String regExMatch(const String & regEx, String * captures, const bool caseSensitive = true) const;
+            @warning First capture does not match the whole string unlike some other engine to avoid useless 
+                     memory allocation and copying.
+                     In the regExReplace method, \0 does represent the whole string.
+            @return The last position the expression matched, or a negative value on error (check RegExError for details) */
+        int regExMatch(const String & regEx, String * captures, int & capturesCount, const bool caseSensitive = true, int * matchPos = 0) const;
+        
+        /** Simpler version of regExMatch that performs no capture.
+            @param regEx         The regular expression to match against. @sa RE macro to avoid double escape
+                                 of the backlash in some regular expression.
+            @param caseSensitive If set, the search is case sensitive.
+            @param capturesOpt   If provided and you need to search the same regular expression numerous time, then it's allocated to store the captures internally.
+                                 In that case, you need to free the returned pointer when not used anymore.
+            @param capturesCount If provided and you need to search the same regular expression numerous time, then it's set to the number of captures to use (no allocation is made)
+         
+            @return True if the string matches the given regular expression (partial match will return true too). */
+        bool regExFit(const String & regEx, const bool caseSensitive = true, void ** capturesOpt = 0, int * capturesCount = 0) const;
 
-        /** The opaque structure used to store the regular expression engine */
-        struct RegExOpaque;
-        /** Compile a regular expression to match later on.
-            You don't need this method to use regExMatch. You need this method if you intend to match a lot of Strings
-            with the same regular expression. In that case, you can save some time by first compiling the regular expression
-            and then match using this compiled object.
 
-            @param regEx        The regular expression to match. @sa RE macro to avoid double escape of backlashes.
-            @param opaque       On output, will be filled with an opaque structure you must pass to the match function. 
-                                You must delete the returned object with regExClean
-            @return The number of expected captures for this expression, or -1 on error (use regExMatch to figure out the error string)
-            @sa regExMatch */
-        static int regExCompile(const String & regEx, RegExOpaque *& opaque);
-        /** Match the expression against the compiled regular expression
-            @param opaque       The opaque object that's created with regExCompile
-            @param captures     If provided will be filled with the captures.
-                                The size of the array must match the regular expression capture's amount.
-                                No allocation is done in this method.
-            @param caseSensitive If set, the search is case sensitive
-
-            @return An empty string on success, or the error string on failure */
-        String regExMatchEx(RegExOpaque & opaque, String * captures, const bool caseSensitive = true) const;
-        /** Clean a precompiled regular expression opaque object */
-        static void regExClean(RegExOpaque *& opaque);
+        /** Return a string with value replaced as regular expression.
+            @param opaque           The opaque object that's created with regExCompile
+            @param replaceWith      The replacing pattern. @sa RE macro to avoid double escape of backlashes.
+            @param caseSensitive    If set, the search is case sensitive
+            @param iterations       The number of iterations to run, -1 for until it fails matching, default to one.
+            @return The replaced String or empty string on failure. 
+            The replace pattern follow this scheme:
+            @verbatim
+                \0      The complete input string
+                \n      The n-th matched group with capturing (typically \1, \2, etc...)
+            @endverbatim
+            The replacement only proceed to the position where the regular expression matches, so typically:
+            @code
+                String("aa1234 xy (3)").regExReplace("(\\d+)\\s*([x-y ]*)", "678\2") == "aa678xy (3)"
+            @endcode */
+        String regExReplace(const String & regEx, const String & replaceExp, const bool caseSensitive = true, int iterations = 1) const;        
 #endif
 
 		// Extraction method.
@@ -665,6 +701,8 @@ namespace Bstrlib
         /** Replace a token by another token
             @return A reference on this string, modified */
         String & replaceAllTokens(char from, char to);
+        /** Return a string with all occurences of "find" replaced by "by" */
+        String replacedAll(const String & find, const String & by) const;
 
 		// Write protection methods.
 		/** Write protect this string */
@@ -731,10 +769,27 @@ namespace Bstrlib
     /** This is used to create regular expression strings without double escaping the strings.
         Like this:
         @code
-            RE(var, "(\w+\d)"); // Equivalent to const char * var = "(\\w+\\d)"; ie. that puts (\w+\d) in var
+            REx(var, "(\w+\d)"); // Equivalent to const char * var = "(\\w+\\d)"; ie. that puts (\w+\d) in var
         @endcode
         @sa String::regExMatch method */
-    #define RE(var, re)  static char var##_[] = _STRINGIFY_(re); const char * var = ( var##_[ sizeof(var##_) - 2] = '\0',  (var##_ + 1) )
+    #define REx(var, re)  static char var##_[] = _STRINGIFY_(re); const char * var = ( var##_[ sizeof(var##_) - 2] = '\0',  (var##_ + 1) )
+    
+    template <size_t size>
+    struct StackStr
+    {
+        char data[size - 2];
+        operator const char *() const { return data; }
+        StackStr(const char (&str)[size]) { memcpy(data, str+1, size - 3); data[size - 3] = 0; }
+    };
+    /** This is used to create a regular expression strings without double escaping the strings.
+        Unlike RE, it does not create a named variable, but instead allocate space on the stack to 
+        store the regular expression in a temporary object 
+        Use like this:
+        @code
+            Logger::log(Logger::Dump, "Regular expression to match: %s", REI("(\w+\d)")); // Equivalent to (const char *)"(\\w+\\d)" 
+        @endcode
+        @sa String::regExMatch and String::regExReplace method */
+    #define RE(re) (const char*)::Bstrlib::StackStr<sizeof(_STRINGIFY_(re))>(_STRINGIFY_(re))
 
 } // namespace Bstrlib
 #endif

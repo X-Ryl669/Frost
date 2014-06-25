@@ -80,17 +80,17 @@ namespace Utils
         is specified at construction, and can be changed during lifetime with the sold() method.
         You can only sell a pointer that's owned, obviously.
 
-        Typically, OwnedPtr is a reference counted smart pointer for the poor, except that it
+        Typically, OwnPtr is a reference counted smart pointer for the poor, except that it
         doesn't come with the pain/overload of reference counting. In most use case, references in such smart pointer
-        never overcome 2, so it's often easier to just design the code with OwnedPtr and transfer ownership explicitely
+        never overcome 2, so it's often easier to just design the code with OwnPtr and transfer ownership explicitely
         when the refCount would reach 2 with a shared pointer (like a single place in the code).
 
         The interface using a reference (operator = and constructor) won't own the object by default, while the other will.
 
         @warning Copy constructor use move semantics, so this works as intended:
-                 OwnedPtr<A> a = new A(); */
+                 OwnPtr<A> a = new A(); */
     template <class T>
-    class OwnedPtr
+    class OwnPtr
     {
         // Members
     private:
@@ -102,14 +102,14 @@ namespace Utils
         // Helpers
     private:    
         /** Because we have overloaded & operator, we need this to get the object pointer itself */
-        ForcedInline(const OwnedPtr* pThis() const) { return this; }
+        ForcedInline(const OwnPtr* pThis() const) { return this; }
         /** The forget implementation */
         ForcedInline(T* const Forget(T * const other)) { T * const p = pointer; pointer = other; return p; }
 
         // Operators
     public:
         /** Assignment operator */
-        ForcedInline(OwnedPtr& operator = (OwnedPtr& other))
+        ForcedInline(OwnPtr& operator = (OwnPtr& other))
         {
             if (other.pThis() != this)
             {
@@ -123,7 +123,7 @@ namespace Utils
 
         /** Assignment operator 
             @warning This own the object passed in */
-        ForcedInline(OwnedPtr& operator = (T* const ownPtr))
+        ForcedInline(OwnPtr& operator = (T* const ownPtr))
         {
             if (pointer != ownPtr) 
             {
@@ -135,7 +135,7 @@ namespace Utils
         }
         /** Assignment operator
             @warning This doesn't own the object passed in */
-        ForcedInline(OwnedPtr& operator = (T& ownPtr))
+        ForcedInline(OwnPtr& operator = (T& ownPtr))
         {
             if (pointer != &ownPtr)
             {
@@ -163,21 +163,21 @@ namespace Utils
         // Construction
     public:
         /** Own the given object */
-        ForcedInline(OwnedPtr(T* const ownPtr = 0, const bool own = true)) : pointer (ownPtr), own(own)    { }
+        ForcedInline(OwnPtr(T* const ownPtr = 0, const bool own = true)) : pointer (ownPtr), own(own)    { }
         /** Doesn't own the given object */
-        ForcedInline(OwnedPtr(T& ownPtr)) : pointer (&ownPtr), own(false)    { }
+        ForcedInline(OwnPtr(T& ownPtr)) : pointer (&ownPtr), own(false)    { }
         /** Copy constructor with moveable semantic (require for function returning this object) */
-        ForcedInline(OwnedPtr(const OwnedPtr& other)) : pointer (other.pointer), own(other.own) { const_cast<OwnedPtr&>(other).pointer = 0; }
+        ForcedInline(OwnPtr(const OwnPtr& other)) : pointer (other.pointer), own(other.own) { const_cast<OwnPtr&>(other).pointer = 0; }
         /** Copy constructor with moveable semantic (require for function returning this object) */
-        ForcedInline(OwnedPtr(ScopePtr<T>& other)) : pointer (other.Forget()), own(true)     { }
+        ForcedInline(OwnPtr(ScopePtr<T>& other)) : pointer (other.Forget()), own(true)     { }
         /** Destructor */
-        ForcedInline(~OwnedPtr())                                         { if (own) delete pointer; }
+        ForcedInline(~OwnPtr())                                         { if (own) delete pointer; }
     };
 
-    template <class T> ForcedInline(bool operator== (const OwnedPtr<T> & ptr1, const T* const ptr2));
-    template <class T> bool operator== (const OwnedPtr<T> & ptr1, const T* const ptr2) { return (T*)ptr1 == ptr2; }
-    template <class T> ForcedInline(bool operator!= (const OwnedPtr<T> & ptr1, const T* const ptr2));
-    template <class T> bool operator!= (const OwnedPtr<T> & ptr1, const T* const ptr2) { return !(ptr1 == ptr2);  } 
+    template <class T> ForcedInline(bool operator== (const OwnPtr<T> & ptr1, const T* const ptr2));
+    template <class T> bool operator== (const OwnPtr<T> & ptr1, const T* const ptr2) { return (T*)ptr1 == ptr2; }
+    template <class T> ForcedInline(bool operator!= (const OwnPtr<T> & ptr1, const T* const ptr2));
+    template <class T> bool operator!= (const OwnPtr<T> & ptr1, const T* const ptr2) { return !(ptr1 == ptr2);  } 
         
 }
 

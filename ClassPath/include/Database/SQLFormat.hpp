@@ -154,7 +154,13 @@ namespace Database
 
         /** Check if the database already exists. This does not check if it fits the model. */
         static bool checkDatabaseExists(const uint32 dbIndex);
-        /** Create the similar database as the model */
+        /** Create the similar database as the model.
+            @param dbIndex              The database index in the multiple database connection array (usually 0 if you only have a single database)
+            @param model                A pointer to the table model used for the database 
+            @param databaseName         If the driver requires to specify the database name before creation/testing then this is required 
+            @param forceReinstall       By default, this function checks if the database exists, and if the number of tables is the same as the model (so it's fast).
+                                        If you need to recreate the table (for example if the model was updated) set this to true.
+            @return true on success, false if the creation of the table failed, or if the connection to the database was not working. */
         static bool createDatabaseLikeModel(const uint32 dbIndex, Database::DatabaseDeclaration * model, const String & databaseName = "", const bool forceReinstall = false);
         /** If you've declared your model with Macro::DeclaringTables::EndTableDeclarationRegister, then 
             you can call this method to automatically create all the database schema at once. */

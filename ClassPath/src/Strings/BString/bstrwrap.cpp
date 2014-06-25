@@ -49,7 +49,7 @@ namespace Bstrlib
 		{
 			mlen = len + 1;
 			slen = len;
-			data = (unsigned char *) malloc(mlen);
+			data = (uint8 * ) malloc(mlen);
 		}
 		if (!data)
 		{
@@ -62,6 +62,12 @@ namespace Bstrlib
 			data[slen] = '\0';
 		}
 	}
+    
+    String::String(const void * ownedBlock, const int len, const int allocLen)
+    {
+        slen = len; mlen = allocLen; data = (unsigned char*)ownedBlock;
+    }
+    
 	
 	String::String(char c, int len)
 	{
@@ -70,7 +76,7 @@ namespace Bstrlib
 		{
 			mlen = len + 1;
 			slen = len;
-			data = (unsigned char *) malloc(mlen);
+			data = (uint8 * ) malloc(mlen);
 		}
 		if (!data)
 		{
@@ -138,7 +144,7 @@ namespace Bstrlib
 			if (mlen < len)
 				mlen = len;
 			
-            data = (unsigned char *) malloc(mlen);
+            data = (uint8 * ) malloc(mlen);
             if (!data)
 			{
                 mlen = slen = 0;
@@ -154,7 +160,7 @@ namespace Bstrlib
 		mlen = slen + 1;
 		data = 0;
 		if (mlen > 0)
-			data = (unsigned char *) malloc(mlen);
+			data = (uint8 * ) malloc(mlen);
 		if (!data)
 		{
 			bstringThrow("Failure in (String) constructor");
@@ -172,7 +178,7 @@ namespace Bstrlib
 		mlen = slen + 1;
 		data = 0;
 		if (slen >= 0 && x.data != NULL)
-			data = (unsigned char *) malloc(mlen);
+			data = (uint8 * ) malloc(mlen);
 		if (!data)
 		{
 			bstringThrow("Failure in (tagbstring) constructor");
@@ -391,7 +397,7 @@ namespace Bstrlib
 		return retval;
 	}
 	
-	const String String::operator+(const unsigned char *s) const 
+	const String String::operator+(const uint8 * s) const 
 	{
 		String retval(*this);
 		if (s == NULL)	return retval;
@@ -560,7 +566,7 @@ namespace Bstrlib
 		return retval != 0;
 	}
 	
-	bool String::operator ==(const unsigned char * s) const 
+	bool String::operator ==(const uint8 *  s) const 
 	{
 		int retval;
 		if (NULL == s) return slen == 0;
@@ -578,7 +584,7 @@ namespace Bstrlib
 		return !((*this) == s);
 	}
 	
-	bool String::operator !=(const unsigned char * s) const 
+	bool String::operator !=(const uint8 *  s) const 
 	{
 		return !((*this) == s);
 	}
@@ -597,7 +603,7 @@ namespace Bstrlib
 		return strcmp((const char *)this->data, s) < 0;
 	}
 	
-	bool String::operator <(const unsigned char * s) const 
+	bool String::operator <(const uint8 *  s) const 
 	{
 		if (NULL == s) return false;
 		return strcmp((const char *)this->data, (const char *)s) < 0;
@@ -616,7 +622,7 @@ namespace Bstrlib
 		return strcmp((const char *)this->data, s) <= 0;
 	}
 	
-	bool String::operator <=(const unsigned char * s) const 
+	bool String::operator <=(const uint8 *  s) const 
 	{
 		if (NULL == s) return slen == 0;
 		return strcmp((const char *)this->data, (const char *)s) <= 0;
@@ -632,7 +638,7 @@ namespace Bstrlib
 		return !((*this) <= s);
 	}
 	
-	bool String::operator >(const unsigned char * s) const 
+	bool String::operator >(const uint8 *  s) const 
 	{
 		return !((*this) <= s);
 	}
@@ -647,7 +653,7 @@ namespace Bstrlib
 		return !((*this) < s);
 	}
 	
-	bool String::operator >=(const unsigned char * s) const 
+	bool String::operator >=(const uint8 *  s) const 
 	{
 		return !((*this) < s);
 	}
@@ -1168,7 +1174,7 @@ namespace Bstrlib
         else 
         {
             /* Aliasing case */
-            if ((unsigned int)(data - (unsigned char *) s) < (unsigned int) slen)
+            if ((unsigned int)(data - (uint8 * ) s) < (unsigned int) slen)
             {
                 Replace(pos, len, String(s), fill);
                 return;
@@ -1341,7 +1347,7 @@ namespace Bstrlib
 		return String(a) + b;
 	}
 	
-	const String operator+(const unsigned char *a, const String& b) 
+	const String operator+(const uint8 * a, const String& b) 
 	{
 		return String((const char *)a) + b;
 	}
@@ -1374,6 +1380,32 @@ namespace Bstrlib
         for (int i = 0; i < slen; i++)
             if (data[i] == from) data[i] = to;
         return *this;
+    }
+    
+    String String::replacedAll(const String & find, const String & by) const
+    {
+        int count = Count(find);
+        int replacedLength = (slen + count * (by.slen - find.slen)) + 1;
+        char * rep = (char*)malloc(replacedLength);
+        if (rep == NULL) return String();
+        int pos = 0, repos = 0, newPos = 0;
+        while ((newPos = Find(find, pos)) != -1)
+        {
+            memcpy(&rep[repos], &data[pos], (newPos - pos));
+            repos += (newPos - pos);
+            memcpy(&rep[repos], by.data, by.slen);
+            repos += by.slen;
+            newPos += find.slen;
+            pos = newPos;
+        }
+        // Copy the remaining part
+        if (pos < slen)
+        {
+            memcpy(&rep[repos], &data[pos], slen - pos);
+            repos += slen - pos;
+        }
+        rep[repos] = '\0';
+        return String(rep, replacedLength - 1, replacedLength);
     }
 
 
@@ -1493,482 +1525,598 @@ namespace Bstrlib
 	}
 
 #if (WantRegularExpressions == 1)
-    // Compiled regular expression
-    struct String::RegExOpaque 
-    {
-        unsigned char code[256];
-        unsigned char data[256];
-        int codeSize;
-        int dataSize;
-        int captureCount;   // Number of bracket pairs
-        int anchored;   // Must match from string start
-        bool caseInsensitive;
-        const char *errorText;   // Error string
-        
-        RegExOpaque() : codeSize(0), dataSize(0), captureCount(0), anchored(0), caseInsensitive(false), errorText(0) { memset(code, 0, ArrSz(code)); memset(data, 0, ArrSz(data)); }
-    };
 
-   // Forward declare the functions we'll be using
+    // Forward declare the functions we'll be using
     namespace RegExp
     {
-        typedef String::RegExOpaque RegExOpaque;
-        // Captured substring
-        struct cap 
+        #define TestReturn(cond, error) if (cond) return (error)
+
+        struct Branch
         {
-            const char *ptr;  // Pointer to the substring
-            int len;          // Substring length
+            /** Index of the bracket pair */
+            int bracketIndex;
+            /** Position of branching in the regular expression */
+            const char * branchPos;
         };
 
-        // Instruction set for our regular expressions processor
-        enum 
+        struct BracketPair
         {
-            END, BRANCH, ANY, EXACT, ANYOF, ANYBUT, OPEN, CLOSE, BOL, EOL, STAR, PLUS,
-            STARQ, PLUSQ, QUEST, SPACE, NONSPACE, DIGIT
+            /** Index of the branch for this pair */
+            int branchIndex;
+            /** The number of branches in this pair */
+            int branchesCount;
+            /** First char after '(' in expression  */
+            const char * ptr;
+            /** Text length in char between parenthesis */
+            int len;
         };
-
-        static const char * meta_characters = "|.^$*+?()[\\";
-        static const char * errorNoMatch = "No match";
-
-        static void setJumpOffset(RegExOpaque * r, const int pc, const int offset) 
+        
+        /** A Capture */
+        struct Cap
         {
-            if (r->codeSize - offset > 0xff) 
-                r->errorText = "Jump offset is too big";
-            else r->code[pc] = (unsigned char) (r->codeSize - offset);
-        }
-
-        static void emit(RegExOpaque *r, int code) 
+            const char * ptr;
+            int          len;
+        };
+        
+        
+        /** Default construct the information with stack based allocation, and only expand if required to heap based allocation */
+        struct RegexpInfo
         {
-            if (r->codeSize >= (int) (sizeof(r->code) / sizeof(r->code[0]))) 
-                r->errorText = "RE is too long (code overflow)";
-            else r->code[r->codeSize++] = (unsigned char) code;
-        }
-
-        static void storeCharInData(RegExOpaque *r, int ch) 
-        {
-            if (r->dataSize >= (int) sizeof(r->data)) 
-                r->errorText = "RE is too long (data overflow)";
-            else r->data[r->dataSize++] = ch;
-        }
-
-        static void exact(RegExOpaque *r, const char **re) 
-        {
-            int  oldDataSize = r->dataSize;
-
-            while (**re != '\0' && (strchr(meta_characters, **re)) == NULL) 
-                storeCharInData(r, *(*re)++);
-           
-            emit(r, EXACT); emit(r, oldDataSize); emit(r, r->dataSize - oldDataSize);
-        }
-
-        static int getEscapeChar(const char **re) 
-        {
-            switch (*(*re)++) 
+            enum RegExError
             {
-            case 'n':  return '\n';    
-            case 'r':  return '\r'; 
-            case 't':  return '\t';
-            case '0':  return 0; 
-            case 'S':  return NONSPACE << 8;
-            case 's':  return SPACE << 8;  
-            case 'd':  return DIGIT << 8;  
-            default:  return (*re)[-1];  
+                NotFound               = -1,
+                SyntaxError            = -2,
+                UnexpectedQuantifier   = -3,
+                UnbalancedBrackets     = -4,
+                BadSetOfCharacter      = -5,
+                BadMetaCharacter       = -6,
+                CapturesArrayTooSmall  = -7,
+                NotEnoughMemory        = -8,
+            };
+            
+            /** Store all branches in the regular expression. */
+            Branch * branches;
+            int branchesCount;
+            
+            /** Store all brackets pair in the expression. The first entry contains the whole expression */
+            BracketPair * brackets;
+            int bracketsCount;
+
+
+            /* Array of captures provided by the user */
+            Cap * caps;
+            int capsCount;
+            /** You can use (?i) to start the Regular Expression, or use caseInsensitive search while matching */
+            bool caseSensitive;
+            /** First position for the match */
+            int firstMatchPos;
+            
+            /** The stack based allocation for the branches */
+            Branch stackBranch[10];
+            /** The stack based allocation for the pairs */
+            BracketPair stackPair[10];
+            
+            /** Construction */
+            RegexpInfo(Cap * capts, int capsCount, bool caseSensitive = true)
+            : branches(stackBranch), branchesCount(0), brackets(stackPair), bracketsCount(0), caps(capts), capsCount(capsCount), caseSensitive(caseSensitive), firstMatchPos(-1)
+            {}
+            
+            ~RegexpInfo()
+            {
+                if (branches != stackBranch) { free(branches); branches = 0; }
+                if (brackets != stackPair) { free(brackets); brackets = 0; }
             }
-        }
-
-        static void anyof(RegExOpaque *r, const char **re) 
-        {
-            int  esc, oldDataSize = r->dataSize, op = ANYOF;
-
-            if (**re == '^') { op = ANYBUT; (*re)++; }
-
-            while (**re != '\0')
-                switch (*(*re)++) 
+            
+            /** This is used for marking allowed metacharacters and quantifiers */
+            static uint8 charMap[256];
+            
+            bool addBrackets(const char * ptr, int len)
+            {
+                if ((bracketsCount + 1) >= ArrSz(stackPair))
                 {
-                case ']':
-                    emit(r, op);
-                    emit(r, oldDataSize);
-                    emit(r, r->dataSize - oldDataSize);
-                return;
+                    // Need to re-allocate the brackets pair
+                    BracketPair * newPair = (BracketPair *)malloc((bracketsCount + 1) * sizeof(BracketPair));
+                    if (!newPair) return false;
+                    memcpy(newPair, brackets, bracketsCount * sizeof(BracketPair));
+                    if (brackets != stackPair) free(brackets);
+                    brackets = newPair;
+                }
+                brackets[bracketsCount].ptr = ptr;
+                brackets[bracketsCount].len = len;
+                bracketsCount++;
+                return true;
+            }
+            
+            bool addBranch(int index, const char * pos)
+            {
+                if ((branchesCount + 1) >= ArrSz(stackBranch))
+                {
+                    // Need to re-allocate the brackets pair
+                    Branch * newBranch = (Branch *)malloc((branchesCount + 1) * sizeof(Branch));
+                    if (!newBranch) return false;
+                    memcpy(newBranch, branches, branchesCount * sizeof(Branch));
+                    if (branches != stackBranch) free(branches);
+                    branches = newBranch;
+                }
+                branches[branchesCount].bracketIndex = index;
+                branches[branchesCount].branchPos = pos;
+                branchesCount++;
+                return true;
+            }
+            
+            /** Helper functions */
+            static inline int operatorLen(const char *re) { return re[0] == '\\' && re[1] == 'x' ? 4 : re[0] == '\\' ? 2 : 1; }
+            static inline int getOperatorLen(const char *re, int regExpLen)
+            {
+                if (re[0] != '[') return operatorLen(re);
+                int len = 1;
+                while (len < regExpLen && re[len] != ']') len += operatorLen(re + len);
+                return regExpLen > len ? len + 1 : 0;
+            }
+            static inline int hexToInteger(const uint8 * s) { return (charMap[s[0]] & 0xF0) | (charMap[s[1]] >> 4); }
+
+            int matchOperand(const uint8 * re, const uint8 * s)
+            {
+                int result = 0;
+                switch (*re)
+                {
+                // If we reach those, the expression is malformed
+                case '|': return SyntaxError;
+                case '$': return NotFound;
+                // All char would do, let's accept it
+                case '.': result++; break;
+                
                 case '\\':
-                    esc = getEscapeChar(re);
-                    if ((esc & 0xff) == 0) 
-                    { storeCharInData(r, 0); storeCharInData(r, esc >> 8); } 
-                    else storeCharInData(r, esc);
+                    // Metacharacters
+                    switch (re[1])
+                    {
+                    case 'S':
+                        TestReturn((charMap[*s] & 4), NotFound);
+                        result++;
+                        break;
+
+                    case 's':
+                        TestReturn(!(charMap[*s] & 4), NotFound);
+                        result++;
+                        break;
+
+                    case 'd':
+                        TestReturn(!(charMap[*s] & 8), NotFound);
+                        result++;
+                        break;
+
+                    case 'x':
+                        // Match byte, \xHH where HH is hexadecimal byte representaion
+                        TestReturn(hexToInteger(re + 2) != *s, NotFound);
+                        result++;
+                        break;
+
+                    default:
+                        // Valid metacharacter check is done in internalProcess()
+                        TestReturn(re[1] != s[0], NotFound);
+                        result++;
+                        break;
+                    }
                 break;
+
+                    // Any normal character
                 default:
-                    storeCharInData(r, (*re)[-1]);
-                break;
+                    if (!caseSensitive)
+                    {
+                        TestReturn(tolower(*re) != tolower(*s), NotFound);
+                    } else
+                    {
+                        TestReturn(*re != *s, NotFound);
+                    }
+                    result++;
+                    break;
                 }
+                return result;
+            }
 
-            r->errorText = "No closing ']' bracket";
-        }
-
-        static void relocate(RegExOpaque *r, int begin, int shift) 
-        {
-            emit(r, END);
-            memmove(r->code + begin + shift, r->code + begin, r->codeSize - begin);
-            r->codeSize += shift;
-        }
-
-        static void quantifier(RegExOpaque *r, int prev, int op) 
-        {
-            if (r->code[prev] == EXACT && r->code[prev + 2] > 1) 
+            // This is used to match a "[]" based set
+            int matchSet(const char *re, int regExpLen, const char *s)
             {
-                r->code[prev + 2]--;
-                emit(r, EXACT); emit(r, r->code[prev + 1] + r->code[prev + 2]); emit(r, 1);
-                prev = r->codeSize - 3;
-            }
-            relocate(r, prev, 2); r->code[prev] = op; setJumpOffset(r, prev + 1, prev);
-        }
-
-        static void exactOneChar(RegExOpaque *r, int ch) 
-        {
-            emit(r, EXACT); emit(r, r->dataSize); emit(r, 1);
-            storeCharInData(r, ch);
-        }
-
-        static void fixupBranch(RegExOpaque *r, int fixup) 
-        {
-            if (fixup > 0) 
-            { 
-                emit(r, END); setJumpOffset(r, fixup, fixup - 2); 
-            }
-        }
-
-        static void compile(RegExOpaque *r, const char **re) 
-        {
-            int  op, esc, branchStart, lastOp, fixup, capIndex, level;
-
-            fixup = 0;
-            level = r->captureCount;
-            branchStart = lastOp = r->codeSize;
-
-            for (;;)
-                switch (*(*re)++) 
+                int len = 0, result = -1, invert = re[0] == '^';
+                // If the set is inverted, eat the first char
+                if (invert) re++,regExpLen--;
+                
+                // Inverted logic, result should stay 0 for matching
+                while (len <= regExpLen && re[len] != ']' && result <= 0)
                 {
-                case '\0': (*re)--; return;
-                case '^': emit(r, BOL); break;
-                case '$': emit(r, EOL); break;
-
-                case '.': lastOp = r->codeSize; emit(r, ANY); break;
-                case '[': lastOp = r->codeSize; anyof(r, re); break;
-                case '?': quantifier(r, lastOp, QUEST); break;
-                case '\\':
-                    lastOp = r->codeSize;
-                    esc = getEscapeChar(re);
-                    if (esc & 0xff00) emit(r, esc >> 8);
-                    else exactOneChar(r, esc);
-                    break;
-
-                case '(':
-                    lastOp = r->codeSize; capIndex = ++r->captureCount;
-                    emit(r, OPEN); emit(r, capIndex);
-                    compile(r, re);
-                    if (*(*re)++ != ')') { r->errorText = "No closing bracket"; return; }
-                    emit(r, CLOSE); emit(r, capIndex);
-                    break;
-                case ')':
-                    (*re)--;
-                    fixupBranch(r, fixup);
-                    if (level == 0) { r->errorText = "Unbalanced brackets"; return; }
-                    return;
-
-                case '+':
-                case '*':
-                    op = (*re)[-1] == '*' ? STAR: PLUS;
-                    if (**re == '?') { (*re)++; op = op == STAR ? STARQ : PLUSQ; }
-                    quantifier(r, lastOp, op);
-                    break;
-
-                case '|':
-                    fixupBranch(r, fixup);
-                    relocate(r, branchStart, 3);
-                    r->code[branchStart] = BRANCH;
-                    setJumpOffset(r, branchStart + 1, branchStart);
-                    fixup = branchStart + 2;
-                    r->code[fixup] = 0xff;
-                    break;
-
-                default: (*re)--; lastOp = r->codeSize; exact(r, re); break;
+                    // Check range
+                    if (   (re[len] != '-' && re[len + 1] == '-' && re[len + 2] != ']')
+                        && (re[len + 2] != '\0'))
+                    {
+                        result = !caseSensitive ? (*s >= re[len] && *s <= re[len + 2]) :
+                                                  (tolower(*s) >= tolower(re[len]) && tolower(*s) <= tolower(re[len + 2]));
+                        len += 3;
+                    } else
+                    {
+                        result = matchOperand((uint8 * )re + len, (uint8 *)s);
+                        len += operatorLen(re + len);
+                    }
                 }
-        }
-
-        // Compile regular expression. If success, 1 is returned.
-        // If error, 0 is returned and RegExOpaque.errorText points to the error message.
-        static const char *compile2(RegExOpaque *r, const char *re) 
-        {
-            r->errorText = NULL;
-            r->codeSize = r->dataSize = r->captureCount = r->anchored = 0;
-
-            if (*re == '^') r->anchored++;
-
-            // This will capture what matches full RE
-            emit(r, OPEN);  emit(r, 0);
-
-            while (*re != '\0') compile(r, &re);
-
-            if (r->code[2] == BRANCH) fixupBranch(r, 4);
-
-            emit(r, CLOSE); emit(r, 0); emit(r, END);
-            return r->errorText;
-        }
-
-        static const char *match(const RegExOpaque *, int, const char *, int, int *, struct cap *);
-
-        static void loopGreedy(const RegExOpaque *r, int pc, const char *s, int len, int *ofs) 
-        {
-            int savedOffset = *ofs, matchedOffset = *ofs;
-            while (!match(r, pc + 2, s, len, ofs, NULL)) 
-            {
-                savedOffset = *ofs;
-                if (!match(r, pc + r->code[pc + 1], s, len, ofs, NULL)) 
-                    matchedOffset = savedOffset;
-                *ofs = savedOffset;
+                return (invert && result <= 0) || (!invert && result > 0) ? 1 : -1;
             }
 
-            *ofs = matchedOffset;
-        }
-
-        static void loopNonGreedy(const RegExOpaque *r, int pc, const char *s, int len, int *ofs) 
-        {
-            int  savedOffset = *ofs;
-
-            while (!match(r, pc + 2, s, len, ofs, NULL)) 
+       
+            int internalProcess(const char *re, int regExpLen, const char *s, int s_len, int bracketIndex)
             {
-                savedOffset = *ofs;
-                if (!match(r, pc + r->code[pc + 1], s, len, ofs, NULL)) break;
-            }
-
-            *ofs = savedOffset;
-        }
-
-        static int isAnyOf(const unsigned char *p, int len, const char *s, int *ofs) 
-        {
-            int ch = s[*ofs];
-
-            for (int i = 0; i < len; i++)
-                if (p[i] == ch) { (*ofs)++; return 1; }
-
-            return 0;
-        }
-
-        static int isAnyBut(const unsigned char *p, int len, const char *s, int *ofs) 
-        {
-            int ch = s[*ofs];
-
-            for (int i = 0; i < len; i++)
-                if (p[i] == ch) return 0;
-
-            (*ofs)++;
-            return 1;
-        }
-
-        static int lowercase(const char *s) 
-        {
-            return ::tolower(* (const unsigned char *) s);
-        }
-
-        static int casecmp(const void *p1, const void *p2, size_t len) 
-        {
-            const char *s1 = (const char*)p1, *s2 = (const char*)p2;
-            int diff = 0;
-
-            if (len > 0)
-            do 
-            {
-                diff = lowercase(s1++) - lowercase(s2++);
-            } while (diff == 0 && s1[-1] != '\0' && --len > 0);
-
-            return diff;
-        }
-
-        static const char *match(const RegExOpaque *r, int pc, const char *s, int len,
-                                 int *ofs, struct cap *caps) 
-        {
-            int n, savedOffset;
-            const char *errorText = NULL;
-            int (*cmp)(const void *string1, const void *string2, size_t len);
-
-            while (errorText == NULL && r->code[pc] != END) 
-            {
-                switch (r->code[pc]) 
+                int reIndex = 0, strIndex = 0, n, step;
+                
+                for (reIndex = strIndex = 0; reIndex < regExpLen && strIndex <= s_len; reIndex += step)
                 {
-                case BRANCH:
-                    savedOffset = *ofs;
-                    errorText = match(r, pc + 3, s, len, ofs, caps);
-                    if (errorText != NULL) { *ofs = savedOffset; errorText = match(r, pc + r->code[pc + 1], s, len, ofs, caps); }
-                    pc += r->code[pc + 2];
-                    break;
-
-                case EXACT:
-                    errorText = errorNoMatch;
-                    n = r->code[pc + 2];  // String length
-                    cmp = r->caseInsensitive ? casecmp : memcmp;
-                    if (n <= len - *ofs && !cmp(s + *ofs, r->data + r->code[pc + 1], n)) { (*ofs) += n; errorText = NULL; }
-                    pc += 3;
-                    break;
-
-                case QUEST:
-                    errorText = NULL;
-                    savedOffset = *ofs;
-                    if (match(r, pc + 2, s, len, ofs, caps) != NULL) *ofs = savedOffset;
-                    pc += r->code[pc + 1];
-                    break;
-
-                case STAR:
-                    errorText = NULL;
-                    loopGreedy(r, pc, s, len, ofs);
-                    pc += r->code[pc + 1];
-                    break;
-
-                case STARQ:
-                    errorText = NULL;
-                    loopNonGreedy(r, pc, s, len, ofs);
-                    pc += r->code[pc + 1];
-                    break;
-
-                case PLUS:
-                    if ((errorText = match(r, pc + 2, s, len, ofs, caps)) != NULL) break;
-                    loopGreedy(r, pc, s, len, ofs); pc += r->code[pc + 1];
-                    break;
-
-                case PLUSQ:
-                    if ((errorText = match(r, pc + 2, s, len, ofs, caps)) != NULL) break;
-                    loopNonGreedy(r, pc, s, len, ofs); pc += r->code[pc + 1];
-                    break;
-
-                case SPACE:
-                    errorText = errorNoMatch;
-                    if (*ofs < len && isspace(((unsigned char *)s)[*ofs])) { (*ofs)++; errorText = NULL; }
-                    pc++;
-                    break;
-
-                case NONSPACE:
-                    errorText = errorNoMatch;
-                    if (*ofs <len && !isspace(((unsigned char *)s)[*ofs])) { (*ofs)++; errorText = NULL; }
-                    pc++;
-                    break;
-
-                case DIGIT:
-                    errorText = errorNoMatch;
-                    if (*ofs < len && isdigit(((unsigned char *)s)[*ofs])) { (*ofs)++; errorText = NULL; }
-                    pc++;
-                    break;
-
-                case ANY:
-                    errorText = errorNoMatch;
-                    if (*ofs < len) { (*ofs)++; errorText = NULL; }
-                    pc++;
-                    break;
-
-                case ANYOF:
-                    errorText = errorNoMatch;
-                    if (*ofs < len) errorText = isAnyOf(r->data + r->code[pc + 1], r->code[pc + 2], s, ofs) ? NULL : errorNoMatch;
-                    pc += 3;
-                    break;
-
-                case ANYBUT:
-                    errorText = errorNoMatch;
-                    if (*ofs < len) errorText = isAnyBut(r->data + r->code[pc + 1], r->code[pc + 2], s, ofs) ? NULL : errorNoMatch;
-                    pc += 3;
-                    break;
-
-                case BOL:
-                    errorText = *ofs == 0 ? NULL : errorNoMatch;
-                    pc++;
-                    break;
-
-                case EOL:
-                    errorText = *ofs == len ? NULL : errorNoMatch;
-                    pc++;
-                    break;
-
-                case OPEN:
-                    if (caps != NULL) caps[r->code[pc + 1]].ptr = s + *ofs;
-                    pc += 2;
-                    break;
-
-                case CLOSE:
-                    if (caps != NULL) caps[r->code[pc + 1]].len = (s + *ofs) - caps[r->code[pc + 1]].ptr;
-                    pc += 2;
-                    break;
-
-                case END: pc++; break;
-                default: { static char buffer[128]; sprintf(buffer, "unknown cmd (%d) at %d", r->code[pc], pc); errorText = (const char*)buffer; } break;
+                    // Handle quantifiers. Get the length of the chunk.
+                    step = re[reIndex] == '(' ? brackets[bracketIndex + 1].len + 2 : getOperatorLen(re + reIndex, regExpLen - reIndex);
+                    
+                    TestReturn(charMap[(uint8)re[reIndex]] & 2, UnexpectedQuantifier);
+                    TestReturn(step <= 0, BadSetOfCharacter);
+                    
+                    // Is it a quantifier ?
+                    if (reIndex + step < regExpLen && (charMap[(uint8)re[reIndex + step]] & 2))
+                    {
+                        if (re[reIndex + step] == '?')
+                        {   // Zero or once
+                            int result = internalProcess(re + reIndex, step, s + strIndex, s_len - strIndex, bracketIndex);
+                            strIndex += result > 0 ? result : 0; // Silent failure
+                            reIndex++;
+                        } else if (re[reIndex + step] == '+' || re[reIndex + step] == '*')
+                        {   // Zero|One or more
+                            bool greedy = true;
+                            int strMatchEndIndex = strIndex, strEndIndex = strIndex, strFirstMatchIndex, strSecondMatchIndex = -1, reEndIndex;
+                            
+                            // Check for greedyness mode
+                            reEndIndex = reIndex + step + 1;
+                            if (reEndIndex < regExpLen && re[reEndIndex] == '?')
+                            {
+                                greedy = false;
+                                reEndIndex++;
+                            }
+                            
+                            do
+                            {
+                                // Match the quantified expression only once
+                                if ((strFirstMatchIndex = internalProcess(re + reIndex, step, s + strMatchEndIndex, s_len - strMatchEndIndex, bracketIndex)) > 0)
+                                    strMatchEndIndex += strFirstMatchIndex;
+                                
+                                // Is only one match required (and this one failed) ?
+                                if (re[reIndex + step] == '+' && strFirstMatchIndex < 0) break;
+                                
+                                // Check if we have something after quantifier
+                                if (reEndIndex >= regExpLen)
+                                    // Nothing left in expression after quantifier, let's try to eat as much as possible
+                                    strEndIndex = strMatchEndIndex;
+                                // Try to match the rest of the expression after the quantifier
+                                else if ((strSecondMatchIndex = internalProcess(re + reEndIndex, regExpLen - reEndIndex, s + strMatchEndIndex, s_len - strMatchEndIndex, bracketIndex)) >= 0)
+                                    // Matched after quantifier
+                                    strEndIndex = strMatchEndIndex + strSecondMatchIndex;
+                                
+                                // Continue if greedy and something else to eat
+                                if (strEndIndex > strIndex && !greedy) break;
+                            } while (strFirstMatchIndex > 0);
+                            
+                            // Try zero match too (try to match the rest of the expression after quantifier)
+                            if (strFirstMatchIndex < 0 && re[reIndex + step] == '*' && strSecondMatchIndex < 0 &&
+                                (strSecondMatchIndex = internalProcess(re + reEndIndex, regExpLen - reEndIndex, s + strIndex, s_len - strIndex, bracketIndex)) > 0)
+                                strEndIndex = strIndex + strSecondMatchIndex;
+                            
+                            TestReturn(re[reIndex + step] == '+' && strEndIndex == strIndex, NotFound);
+                            
+                            // Check the rest of the regex in case of zero match (ie: on *)
+                            TestReturn(strEndIndex == strIndex && reEndIndex < regExpLen && strSecondMatchIndex < 0, NotFound);
+                            
+                            // Expression matched completely
+                            return strEndIndex;
+                        }
+                        continue;
+                    }
+                    switch(re[reIndex])
+                    {
+                        // Is a set ?
+                        case '[':
+                            n = matchSet(re + reIndex + 1, regExpLen - (reIndex + 2), s + strIndex);
+                            TestReturn(n <= 0, NotFound);
+                            strIndex += n;
+                            break;
+                        // Is a bracket ?
+                        case '(':
+                            n = NotFound;
+                            bracketIndex++;
+                            TestReturn(bracketIndex >= bracketsCount, SyntaxError);
+                            
+                            if (regExpLen - (reIndex + step) <= 0)
+                            {
+                                // Nothing after the bracket
+                                n = processBranch(s + strIndex, s_len - strIndex, bracketIndex);
+                            } else
+                            {
+                                // Need to process the branch, and then the remaining expression
+                                int j2;
+                                for (j2 = 0; j2 <= s_len - strIndex; j2++)
+                                {
+                                    if (   (n = processBranch(s + strIndex, s_len - (strIndex + j2), bracketIndex)) >= 0
+                                        && internalProcess(re + reIndex + step, regExpLen - (reIndex + step), s + strIndex + n, s_len - (strIndex + n), bracketIndex) >= 0)
+                                        break;
+                                }
+                            }
+                            
+                            TestReturn(n < 0, n);
+                            if (caps != NULL && n > 0)
+                            {
+                                caps[bracketIndex - 1].ptr = s + strIndex;
+                                caps[bracketIndex - 1].len = n;
+                            }
+                            strIndex += n;
+                            break;
+                        case '^':
+                            TestReturn(strIndex != 0, NotFound);
+                            break;
+                        case '$':
+                            TestReturn(strIndex != s_len, NotFound);
+                            break;
+                        default:
+                            TestReturn(strIndex >= s_len, NotFound);
+                            n = matchOperand((uint8 * ) (re + reIndex), (uint8 * ) (s + strIndex));
+                            TestReturn(n <= 0, n);
+                            strIndex += n;
+                            break;
+                    }
                 }
+                
+                return strIndex;
+            }
+                                       
+            /* Process branch points */
+            int processBranch(const char *s, int s_len, int branchIndex)
+            {
+               const BracketPair * b = &brackets[branchIndex];
+               int i = 0, len, result;
+               const char *p;
+               
+               do
+               {
+                   p = i == 0 ? b->ptr : branches[b->branchIndex + i - 1].branchPos + 1;
+                   len = b->branchesCount == 0 ? b->len : (i == b->branchesCount ? b->ptr + b->len - p : branches[b->branchIndex + i].branchPos - p);
+                   result = internalProcess(p, len, s, s_len, branchIndex);
+               } while (result <= 0 && i++ < b->branchesCount);  /* At least 1 iteration */
+               
+               return result;
             }
 
-            return errorText;
-        }
-
-        // Return 1 if match, 0 if no match.
-        // If `captured_substrings' array is not NULL, then it is filled with the
-        // values of captured substrings. captured_substrings[0] element is always
-        // a full matched substring. The round bracket captures start from
-        // captured_substrings[1].
-        // It is assumed that the size of captured_substrings array is enough to
-        // hold all captures. The caller function must make sure it is! So, the
-        // array_size = number_of_round_bracket_pairs + 1
-        static const char *match2(const RegExOpaque *r, const char *buf, int len, struct cap *caps) 
-        {
-            int  i, ofs = 0;
-            const char *errorText = errorNoMatch;
-
-            if (r->anchored) 
-                errorText = match(r, 0, buf, len, &ofs, caps);
-            else for (i = 0; i < len && errorText != NULL; i++) 
+            int process(const char *s, int s_len)
+            {
+                int result = -1;
+                bool isAnchored = brackets[0].ptr[0] == '^';
+                
+                for (int i = 0; i <= s_len; i++)
                 {
-                    ofs = i;
-                    errorText = match(r, 0, buf, len, &ofs, caps);
+                    result = processBranch(s + i, s_len - i, 0);
+                    if (result >= 0)
+                    {   // Completed search
+                        firstMatchPos = i;
+                        result += i;
+                        break;
+                    }
+                    if (isAnchored) break;
                 }
-            return errorText;
-        }
+                
+                return result;
+            }
 
+            void setupBranchPoints()
+            {
+               int i, j;
+               Branch tmp;
+               
+               // Sort branches
+               for (i = 0; i < branchesCount; i++)
+               {
+                   for (j = i + 1; j < branchesCount; j++)
+                   {
+                       if (branches[i].bracketIndex > branches[j].bracketIndex)
+                       {
+                           tmp = branches[i];
+                           branches[i] = branches[j];
+                           branches[j] = tmp;
+                       }
+                   }
+               }
+               
+               // Sort brackets too to know beforehand where (and how many branches) the branches points
+               for (i = j = 0; i < bracketsCount; i++)
+               {
+                   brackets[i].branchesCount = 0;
+                   brackets[i].branchIndex = j;
+                   while (j < branchesCount && branches[j].bracketIndex == i)
+                   {
+                       brackets[i].branchesCount++;
+                       j++;
+                   }
+               }
+            }
+                                       
+            int analyze(const char *re, int regExpLen, const char *s, int s_len, int & capsRequired)
+            {
+                int step = 0, depth = 0;
+               
+                // Capture the complete expression in the first bracket
+                TestReturn(!addBrackets(re, regExpLen), NotEnoughMemory);
+               
+                // Compute the number of brackets and branches required, and test basic validity for the expression
+                for (int i = 0; i < regExpLen; i += step)
+                {
+                    step = getOperatorLen(re + i, regExpLen - i);
+                   
+                    if (re[i] == '|')
+                    {
+                        TestReturn(!addBranch(brackets[bracketsCount - 1].len == -1 ? bracketsCount - 1 : depth, re+i), NotEnoughMemory);
+                    } else if (re[i] == '\\')
+                    {
+                        TestReturn(i >= regExpLen - 1, BadMetaCharacter);
+                        if (re[i + 1] == 'x')
+                        {
+                            /* Hex digit specification must follow */
+                            TestReturn(re[i + 1] == 'x' && i >= regExpLen - 3, BadMetaCharacter);
+                            TestReturn(re[i + 1] == 'x' && !((charMap[(uint8)re[i + 2]] & 0xF8) && (charMap[(uint8)re[i + 3]] & 0xF8)), BadMetaCharacter);
+                        } else
+                        {
+                            TestReturn((RegexpInfo::charMap[(uint8)re[i + 1]] & 1) == 0, BadMetaCharacter);
+                        }
+                    } else if (re[i] == '(')
+                    {
+                        // Need to increment the depth to set the correct index on matching parenthesis
+                        depth++;
+                        TestReturn(!addBrackets(re+i+1, -1), NotEnoughMemory);
+                        capsRequired++;
+                        TestReturn(s && capsCount > 0 && bracketsCount - 1 > capsCount, CapturesArrayTooSmall);
+                    } else if (re[i] == ')')
+                    {
+                        // Fix index
+                        int ind = brackets[bracketsCount - 1].len == -1 ? bracketsCount - 1 : depth;
+                        brackets[ind].len = &re[i] - brackets[ind].ptr;
+                        depth--;
+                        TestReturn(depth < 0, UnbalancedBrackets);
+                        // Shortcut bad expression failure
+                        TestReturn(i > 0 && re[i - 1] == '(', NotFound);
+                    }
+                }
+               
+                TestReturn(depth != 0, UnbalancedBrackets);
+                setupBranchPoints();
+               
+                return 0;
+            }
+        };
+        
+        // Stores : bit 0 = metacharacter
+        //          bit 1 = quantifier
+        //          bit 2 = space
+        //          bit 3 = digit
+        
+        //          bit 4-7 = hex/decimal value
+        uint8 RegexpInfo::charMap[] =
+        {
+0 /*   0 */, 0 /*   1 */, 0 /*   2 */, 0 /*   3 */, 0 /*   4 */, 0 /*   5 */, 0 /*   6 */, 0 /*   7 */, 0 /*   8 */, 4 /*   9 */, 4 /*  10 */, 4 /*  11 */, 4 /*  12 */, 4 /*  13 */, 0 /*  14 */, 0 /*  15 */,
+0 /*  16 */, 0 /*  17 */, 0 /*  18 */, 0 /*  19 */, 0 /*  20 */, 0 /*  21 */, 0 /*  22 */, 0 /*  23 */, 0 /*  24 */, 0 /*  25 */, 0 /*  26 */, 0 /*  27 */, 0 /*  28 */, 0 /*  29 */, 0 /*  30 */, 0 /*  31 */,
+4 /* ' ' */, 0 /* '!' */, 0 /* '"' */, 0 /* '#' */, 1 /* '$' */, 0 /* '%' */, 0 /* '&' */, 0 /* ''' */, 1 /* '(' */, 1 /* ')' */, 3 /* '*' */, 3 /* '+' */, 0 /* ',' */, 0 /* '-' */, 1 /* '.' */, 0 /* '/' */,
+8 /* '0' */, 0x18 /* '1' */, 0x28 /* '2' */, 0x38 /* '3' */, 0x48 /* '4' */, 0x58 /* '5' */, 0x68 /* '6' */, 0x78 /* '7' */, 0x88 /* '8' */, 0x98 /* '9' */, 0 /* ':' */, 0 /* ';' */, 0 /* '<' */, 0 /* '=' */, 0 /* '>' */, 3 /* '?' */,
+0 /* '@' */, 0xA0 /* 'A' */, 0xB0 /* 'B' */, 0xC0 /* 'C' */, 0xD0 /* 'D' */, 0xE0 /* 'E' */, 0xF0 /* 'F' */, 0 /* 'G' */, 0 /* 'H' */, 0 /* 'I' */, 0 /* 'J' */, 0 /* 'K' */, 0 /* 'L' */, 0 /* 'M' */, 0 /* 'N' */, 0 /* 'O' */,
+0 /* 'P' */, 0 /* 'Q' */, 0 /* 'R' */, 1 /* 'S' */, 0 /* 'T' */, 0 /* 'U' */, 0 /* 'V' */, 0 /* 'W' */, 0 /* 'X' */, 0 /* 'Y' */, 0 /* 'Z' */, 1 /* '[' */, 1 /* '\' */, 1 /* ']' */, 1 /* '^' */, 0 /* '_' */,
+0 /* '`' */, 0xA0 /* 'a' */, 0xB0 /* 'b' */, 0xC0 /* 'c' */, 0xD1 /* 'd' */, 0xE0 /* 'e' */, 0xF0 /* 'f' */, 0 /* 'g' */, 0 /* 'h' */, 0 /* 'i' */, 0 /* 'j' */, 0 /* 'k' */, 0 /* 'l' */, 0 /* 'm' */, 0 /* 'n' */, 0 /* 'o' */,
+0 /* 'p' */, 0 /* 'q' */, 0 /* 'r' */, 1 /* 's' */, 0 /* 't' */, 0 /* 'u' */, 0 /* 'v' */, 0 /* 'w' */, 0 /* 'x' */, 0 /* 'y' */, 0 /* 'z' */, 0 /* '{' */, 1 /* '|' */, 0 /* '}' */, 0 /* '~' */, 0 /* '' */,
+        };
+
+        static int RegExpMatch(const char *regexp, const char *s, int s_len, Cap * caps, int capsCount, int & capsRequired, bool caseSensitive, int * matchPos = 0)
+        {
+            if (memcmp(regexp, "(?i)", 4) == 0)
+            {
+                caseSensitive = false;
+                regexp += 4;
+            }
+            RegexpInfo info(caps, capsCount, caseSensitive);
+            capsRequired = 0;
+            int res = info.analyze(regexp, strlen(regexp), s, s_len, capsRequired);
+            if (res != 0) return res;
+            if (!s) return 0;
+            res = info.process(s, s_len);
+            if (matchPos) *matchPos = info.firstMatchPos;
+            return res;
+        }
     }
     // Match the expression against the compiled regular expression
-    String String::regExMatch(const String & regEx, String * captures, const bool caseSensitive) const
+    int String::regExMatch(const String & regEx, String * captures, int & capCount, const bool caseSensitive, int * matchPos) const
     {
-        RegExOpaque obj;
-        const char * error = RegExp::compile2(&obj, (const char*)regEx);
-        if (error != NULL) return error;
+        // If no captures, run a trial run to get the amount of captures required
+        if (!captures)
+            return RegExp::RegExpMatch(regEx, (const char*)0, 0, 0, 0, capCount, caseSensitive);
 
-        RegExp::cap * caps = new RegExp::cap[obj.captureCount + 1];
-        if (!caps) return "Not enough memory for captures";
-        obj.caseInsensitive = !caseSensitive;
-        error = RegExp::match2(&obj, (const char*)data, slen, caps);
-        for (int i = 0; i < obj.captureCount + 1; i++)
+        RegExp::Cap * caps = new RegExp::Cap[capCount];
+        if (!caps) return NotEnoughMemory;
+        memset(caps, 0, capCount * sizeof(*caps));
+        
+        int res = RegExp::RegExpMatch(regEx, (const char*)data, slen, caps, capCount, capCount, caseSensitive, matchPos);
+        for (int i = 0; i < capCount; i++)
             captures[i] = String(caps[i].ptr, caps[i].len);
         delete[] caps;
-        return error;
+        return res;
     }
-    // Compile a regular expression to match later on.
-    int String::regExCompile(const String & regEx, String::RegExOpaque *& opaque) 
+    // Fit the regular expression for this string
+    bool String::regExFit(const String & regEx, const bool caseSensitive, void ** captOpt, int * captCount) const
     {
-        delete opaque;
-        opaque = new RegExOpaque;
-        const char * error = RegExp::compile2(opaque, (const char*)regEx);
-        if (error != NULL) return -1;
-        return opaque->captureCount + 1;
-    }
-    // Match the expression against the compiled regular expression
-    String String::regExMatchEx(String::RegExOpaque & opaque, String * captures, const bool caseSensitive) const
-    {
-        RegExp::cap * caps = new RegExp::cap[opaque.captureCount + 1];
-        if (!caps) return "Not enough memory for captures";
-        opaque.caseInsensitive = !caseSensitive;
-        const char * error = RegExp::match2(&opaque, (const char*)data, slen, caps);
-        if (captures)
+        int localCap = 0; void * localOpt = 0;
+        int & capturesCount = captCount ? *captCount : localCap;
+        void * & capturesOpt = captOpt ? *captOpt : localOpt;
+        if (!capturesCount || !capturesOpt)
         {
-            for (int i = 0; i < opaque.captureCount + 1; i++)
-                captures[i] = String(caps[i].ptr, caps[i].len);
+            if (RegExp::RegExpMatch(regEx, (const char*)0, 0, 0, 0, capturesCount, caseSensitive) < 0) return false;
+            // Allocate the buffer now
+            capturesOpt = malloc(capturesCount * sizeof(RegExp::Cap));
         }
-        delete[] caps;
-        return error;
+        // Cast the buffer to something we can support
+        RegExp::Cap * caps = (RegExp::Cap *)capturesOpt;
+        if (!caps) return false;
+        memset(caps, 0, capturesCount * sizeof(*caps));
+        
+        int req = 0;
+        int res = RegExp::RegExpMatch(regEx, (const char*)data, slen, caps, capturesCount, req, caseSensitive);
+        if (&capturesOpt == &localOpt) free(localOpt);
+        return res >= 0;
     }
-    // Clean a precompiled regular expression opaque object
-    void String::regExClean(RegExOpaque *& opaque)
+    
+    // Return a string with value replaced as regular expression
+    String String::regExReplace(const String & regEx, const String & _with, const bool caseSensitive, int iterations) const
     {
-        delete0(opaque);
+        int capCount = 0;
+        int res = RegExp::RegExpMatch(regEx, (const char*)0, 0, 0, 0, capCount, caseSensitive);
+        if (res) return "";
+        
+        RegExp::Cap * caps = new RegExp::Cap[capCount + 1];
+        if (!caps) return "";
+
+        int processedData = 0;
+        String ret;
+        while(iterations--)
+        {
+            memset(caps, 0, capCount * sizeof(*caps));
+            String with = _with;
+            int matchPos = 0;
+            res = RegExp::RegExpMatch(regEx, (const char*)data + processedData, slen - processedData, caps+1, capCount, capCount, caseSensitive, &matchPos);
+            if (res <= 0) break;
+            
+            caps[0].ptr = (const char*)data + processedData + matchPos; caps[0].len = res - processedData - matchPos;
+            
+            ret += midString(processedData, matchPos) + with.splitUpTo("\\");
+            while (with.slen)
+            {
+                int noMoreDigitPos = with.invFindAnyChar("0123456789");
+                if (noMoreDigitPos == 0) { ret += '\\'; }
+                else if (noMoreDigitPos == -1) { noMoreDigitPos = with.getLength(); }
+                
+                if (noMoreDigitPos > 0)
+                {
+                    int pos = with.midString(0, noMoreDigitPos).parseInt(10);
+                    if (pos <= capCount)
+                    {
+                        ret += String(caps[pos].ptr, caps[pos].len);
+                        with.splitAt(noMoreDigitPos);
+                    }
+                    else
+                    {
+                        // Output the slashed text
+                        ret += '\\'; ret += with.data[0];
+                        with.splitAt(1);
+                    }
+                }
+                // Output the rest
+                ret += with.splitUpTo("\\");
+            }
+            processedData += res;
+        }
+        // Copy the remaining part
+        ret += midString(processedData, slen);
+        delete[] caps;
+        return ret;
     }
 #endif
 } // namespace Bstrlib

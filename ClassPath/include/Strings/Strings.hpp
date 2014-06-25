@@ -74,11 +74,30 @@ namespace Strings
         VerySimpleReadOnlyString trimRight(const char ch) const { int len = length; while(len > 1 && data && data[len - 1] == ch) len--; return VerySimpleReadOnlyString(data, len); }
         /** Trim the string from the given char (and direction) */
         VerySimpleReadOnlyString trimLeft(const char ch) const { int len = length; while(len > 1 && data && data[length - len] == ch) len--; return VerySimpleReadOnlyString(data + (length - len), len); }
-		
+		/** Trim the string from any char in the given array (and direction) */
+        VerySimpleReadOnlyString leftTrim(const char* chars, int nlen = 0) const { int len = length; if (!nlen && chars) nlen = (int)strlen(chars); while(len > 1 && data && memchr(chars, data[length - len], nlen) != NULL) len--; return VerySimpleReadOnlyString(data + (length - len), len); }
+		/** Trim the string from any char in the given array */
+        VerySimpleReadOnlyString rightTrim(const char* chars, int nlen = 0) const { int len = length; if (!nlen && chars) nlen = (int)strlen(chars); while(len > 1 && data && memchr(chars, data[len - 1], nlen) != NULL) len--; return VerySimpleReadOnlyString(data, len); }
+		/** Trim the string from any char in the given array (and direction) */
+        VerySimpleReadOnlyString Trimmed(const char* chars, int nlen = 0) const
+        {
+            int llen = length, rlen = length;
+            if (!nlen && chars) nlen = (int)strlen(chars);
+            while(llen > 1 && data && memchr(chars, data[length - llen], nlen) != NULL) llen--;
+            while(rlen > 1 && data && memchr(chars, data[rlen - 1], nlen) != NULL) rlen--;
+            return VerySimpleReadOnlyString(data + (length - llen), rlen - (length  - llen));
+        }
+        
         /** Find the specific needle in the string.
             This is a very simple O(n*m) search. 
             @return the position of the needle, or getLength() if not found. */
         const unsigned int Find(const VerySimpleReadOnlyString & needle, unsigned int pos = 0) const;
+        /** Find any of the given set of chars 
+            @return the position of the needle, or getLength() if not found. */
+        const unsigned int findAnyChar(const char * chars, unsigned int pos = 0, int nlen = 0) const { int len = pos; if (!nlen && chars) nlen = (int)strlen(chars); while(len < length && data && memchr(chars, data[len], nlen) == NULL) len++; return len; }
+        /** Find first char that's not in the given set of chars
+            @return the position of the needle, or getLength() if not found. */
+        const unsigned int invFindAnyChar(const char * chars, unsigned int pos = 0, int nlen = 0) const { int len = pos; if (!nlen && chars) nlen = (int)strlen(chars); while(len < length && data && memchr(chars, data[len], nlen) != NULL) len++; return len; }
         /** Find the specific needle in the string, starting from the end of the string.
             This is a very simple O(n*m) search. 
             @return the position of the needle, or getLength() if not found. */
@@ -186,7 +205,9 @@ namespace Strings
 		/** The basic conversion operators */
 		operator int() const; 
 		/** The basic conversion operators */
-		operator unsigned int() const; 
+		operator unsigned int() const;
+        /** The basic conversion operators */
+        operator int64() const;
 		/** The basic conversion operators */
 		operator double() const;
 
@@ -194,6 +215,8 @@ namespace Strings
 		inline bool operator !() const { return length == 0; }
         /** So you can check the string directly for emptiness */		
 		inline operator bool() const { return length > 0; }		
+        /** Operator [] to access a single char */
+        char operator[] (int index) const { return index < length ? data[index] : 0; }
 
         // Construction and operators
     public:
@@ -373,6 +396,8 @@ namespace Strings
     
         /** Append an element to the end of the array */
         inline void Append(const T & ref) { if (currentSize+1 >= allocatedSize) Enlarge(); array[currentSize++] = new T(ref); }
+        /** Append an element to the end of the array */
+        inline void Append(const StringArrayT & ref) { if (currentSize+1 >= allocatedSize) Enlarge(); array[currentSize++] = new T(ref); }
         /** Append an element only if not present 
             @param ref The string to insert in the array 
             @return getSize() - 1 if appended correctly, else the position of the element if already present in the array */

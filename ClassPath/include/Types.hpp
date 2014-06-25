@@ -16,18 +16,41 @@
 #if (_LINUX == 1) || (_MAC == 1)
 #if __GNUC__ >= 4
     #define HAS_ATOMIC_BUILTIN 1
-    #if __x86_64__
-	    #define HAS_ATOMIC_BUILTIN64 1
-    #elif __ARMEL__
-	    #define NO_ATOMIC_BUILTIN64 1 // Should change that as soon as it's supported by the libs
+    #if __GCC_ATOMIC_LLONG_LOCK_FREE == 1
+        #define HAS_ATOMIC_BUILTIN64 1
     #else
-        #if defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8)
-        	#define HAS_ATOMIC_BUILTIN64 1
+        #if __x86_64__
+	       #define HAS_ATOMIC_BUILTIN64 1
+        #elif __ARMEL__
+	       #define NO_ATOMIC_BUILTIN64 1 // Should change that as soon as it's supported by the libs
         #else
-            #define NO_ATOMIC_BUILTIN64 1
+            #if defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8)
+        	    #define HAS_ATOMIC_BUILTIN64 1
+            #else
+                #define NO_ATOMIC_BUILTIN64 1
+            #endif
         #endif
     #endif
 #endif
+#elif defined(_WIN32)
+    #if _M_AMD64
+        #define HAS_ATOMIC_BUILTIN64 1
+    #else
+        #define NO_ATOMIC_BUILTIN64 1
+    #endif
+#endif
+
+// Check whether we can include <atomic>
+#if defined(__clang__)
+    #if __has_include( <atomic> )
+        #define HAS_STD_ATOMIC 1
+    #else
+        #define HAS_STD_ATOMIC 0
+    #endif
+#endif
+
+#if __cplusplus >= 201103L
+    #define HAS_STD_ATOMIC 1
 #endif
 
 // Safety checks for this configuration
@@ -341,6 +364,7 @@ inline uint64 BigEndian(uint64 a)
     #define ForcedInline(X) X
     #define Unused(X) X
 #endif
+#define ForceUndefinedSymbol(x) void* __ ## x ## _fp =(void*)&x;
 
 /** Delete a pointer and zero it */
 template <typename T> inline void delete0(T*& t) { delete t; t = 0; }
@@ -404,6 +428,7 @@ MakePOD(float);
 #endif
 
 #ifndef _REMOVE_USELESS_CHECK
+
     // This part is only used for debugging to compare installations
     #if (WantSSLCode == 1)
         #define _SSLFlag 1
@@ -485,12 +510,12 @@ MakePOD(float);
         #define _MD5FlagName _
     #endif
 
-    #if (WantReadWriteLock == 1)
-        #define _RWLockFlag 1024
-        #define _RWLockFlagName RWLock
+    #if (WantExtendedLock == 1)
+        #define _ExLockFlag 1024
+        #define _ExLockFlagName ExLock
     #else
-        #define _RWLockFlag 0
-        #define _RWLockFlagName _
+        #define _ExLockFlag 0
+        #define _ExLockFlagName _
     #endif
 
     #if (WantSOAP == 1)
@@ -549,11 +574,32 @@ MakePOD(float);
         #define _DebugFlag         0
         #define _DebugFlagName     Release
     #endif
-    
+
+    #ifdef _LINUX
+       #define _Platform           Linux
+    #elif defined(_MAC)
+       #define _Platform           Mac
+    #elif defined(_WIN32)
+       #define _Platform           Win32
+    #endif
+
+    #if (_FILE_OFFSET_BITS == 64)
+       #define _LargeFileOffset    LFS
+    #else
+       #define _LargeFileOffset    _
+    #endif
+
+    #if (HAS_STD_ATOMIC == 1)
+       #define _Atomic             Atomic
+    #else
+       #define _Atomic             _
+    #endif
+
 
     #define _ClassPathFlags (_SSLFlag + _AESFlag + _TypeFlag + _FFMPEGFlag + _TLSFlag + _BaseFlag + _FloatFlag + \
-                             _ChronoFlag + _AtomicFlag + _MD5Flag + _RWLockFlag + _SOAPFlag + _CompressFlag + \
+                             _ChronoFlag + _AtomicFlag + _MD5Flag + _ExLockFlag + _SOAPFlag + _CompressFlag + \
                              _OwnPicFlag + _RegExFlag + _PingFlag + _BSCFlag + _DebugFlag)
+
 
     #define _String(X) #X
     #define Stringize(X) _String(X) " "
@@ -568,9 +614,21 @@ MakePOD(float);
         // This is going to break your software in a very subtle way, since the binary will not match the sources, so debugging will be painful, if not impossible.
         // The solution is simple, make sure you are using the same flags for the both projects.
         enum { ClassPathFlags = _ClassPathFlags };
-        extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _RWLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _DebugFlagName);
-        inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _RWLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _DebugFlagName); }
+        extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _DebugFlagName);
+        inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _DebugFlagName); }
         extern const char * getBuildFlagsName();
+
+        extern int NAME(NAME(NAME(NAME(_checkSameBuildFlags_, _DebugFlagName), _Platform), _LargeFileOffset), _Atomic);
+        inline int checkBuildFlags() { return NAME(NAME(NAME(NAME(_checkSameBuildFlags_, _DebugFlagName), _Platform), _LargeFileOffset), _Atomic); }
+
+        // If the linker stops here, it's because you are trying to link to the library that was built with some different flags than what you included.
+        // The linker error shows the build flags the main program is expecting
+        // To figure out the build flags the library was built with, use this command:
+        // nm libClassPath.a 2>/dev/null | c++filt | grep "D BuildInfo::_checkSameBuildFlags"
+        // And
+        // nm libClassPath.a 2>/dev/null | c++filt | grep "D BuildInfo::_checkSameCompilationFlags"
+        static ForceUndefinedSymbol(checkBuildFlags);
+        static ForceUndefinedSymbol(getBuildFlags);
     }
 
     #undef NAME
@@ -608,8 +666,8 @@ MakePOD(float);
     #undef _MD5Flag
     #undef _MD5FlagName
 
-    #undef _RWLockFlag
-    #undef _RWLockFlagName
+    #undef _ExLockFlag
+    #undef _ExLockFlagName
 
     #undef _SOAPFlag
     #undef _SOAPFlagName
@@ -619,7 +677,7 @@ MakePOD(float);
 
     #undef _OwnPicFlag
     #undef _OwnPicFlagName
-    
+
     #undef _PingFlag
     #undef _PingFlagName
 
@@ -629,6 +687,11 @@ MakePOD(float);
     #undef _DebugFlag
     #undef _DebugFlagName
     
+    #undef _Platform
+    #undef _LargeFileOffset
+    #undef _Console
+    #undef _Atomic
+
 #endif
 
 #endif

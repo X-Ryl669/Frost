@@ -3,6 +3,8 @@
 
 // We need the base hash interface
 #include "BaseHash.hpp"
+// We need string for helper function
+#include "../Strings/Strings.hpp"
 
 namespace Hashing
 {
@@ -69,6 +71,8 @@ namespace Hashing
         /** Destructor */
         virtual ~SHA1(){}
     };
+    /** Hash a string with SHA1 and get a hexadecimal string on output */
+    Strings::FastString getSHA1Of(const Strings::FastString & data);
 }
 
 #endif

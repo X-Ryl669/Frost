@@ -15,6 +15,11 @@
     #error "This file shouldn't be included in C code"
 #endif
 
+#if HAS_STD_ATOMIC == 1
+#include <atomic>
+#endif
+
+
 namespace Threading
 {
 #ifndef _WIN32
@@ -30,7 +35,7 @@ namespace Threading
         Infinite = 0xFFFFFFFF,
 #endif
     };
-
+    
 
     /** This class implements inter-thread event objects 
         
@@ -82,9 +87,17 @@ namespace Threading
         /** The event type */
         enum Type
         {
-            ManualReset = true,  //!< The event needs to be reset by calling Reset() when Set()
-            AutoReset   = false, //!< The event automatically reset when a Wait succeed after a Set()
+            ManualReset = 1, //!< The event needs to be reset by calling Reset() when Set()
+            AutoReset   = 0, //!< The event automatically reset when a Wait succeed after a Set()
         };
+        
+        /** The initial state */
+        enum InitialState
+        {
+            InitiallyFree = 0, //!< The event was created initially free
+            InitiallySet = 1,  //!< The event was created initially set
+        };
+
 
         /** Build an event.
             Typically, manualReset is used when you want to wait on multiple event at once 
@@ -93,22 +106,24 @@ namespace Threading
             @param name         The event name (only useful for debugging) 
             @param manualReset  When true, the transition from Set to Unset requires calling Reset, else it's done automatically in a successful Wait
             @param initialState The event Set state when created */
-        Event(const char * name = NULL, const bool manualReset = true, const bool initialState = false)
+        Event(const char * name = NULL, const Type type = ManualReset, const InitialState initialState = InitiallyFree)
             : 
     #if (DEBUG==1)
             name(name),
     #endif
-            manualReset(manualReset),
+            manualReset(type == ManualReset),
 #ifdef _WIN32
             event(NULL)
             {   event = CreateEvent(NULL, manualReset ? TRUE : FALSE, initialState ? TRUE : FALSE, NULL);    }
 #elif defined (_POSIX)
-            state(initialState)
+            state(initialState == InitiallySet)
 /*          , event(PTHREAD_MUTEX_INITIALIZER)
             , condition(PTHREAD_COND_INITIALIZER)*/
             {
                 pthread_mutex_init(&event, NULL);
                 pthread_cond_init(&condition, NULL);
+                if (initialState == InitiallySet)
+                    _Set(0);
             }
 #else
             xQueue(0)
@@ -117,7 +132,8 @@ namespace Threading
                 xQueue = xQueueCreate( 1, sizeof( unsigned portLONG ) );
             }
 #endif
-        ~Event() 
+
+        ~Event()
 #ifdef _WIN32
         { if (event != NULL) CloseHandle(event); }
 #elif defined (_POSIX)
@@ -175,7 +191,7 @@ namespace Threading
 #endif
 
     public:
-        MutexLock(const char * name = NULL, const bool & initialOwner = false)  
+        MutexLock(const char * name = NULL, const bool initialOwner = false)  
     #if (DEBUG==1)
         :   name(name)
     #endif
@@ -274,7 +290,7 @@ namespace Threading
         /** Build a lock.
             @param name         The lock name (only useful for debugging)
             @param initialOwner When true, this is atomically equivalent to "Lock lock; lock.Acquire();" */
-        FastLock(const char * name = NULL, const bool & initialOwner = false)  
+        FastLock(const char * name = NULL, const bool initialOwner = false)
     #if (DEBUG==1)
         :   name(name)
     #endif
@@ -375,7 +391,7 @@ namespace Threading
         ScopedUnlock(volatile Lock & lock) : lock(lock) { lock.Release(); }
         ~ScopedUnlock() { lock.Acquire(); }
     };
-#if WantReadWriteLock == 1
+#if WantExtendedLock == 1
     /** The read write lock.
         This lock is used in case there is multiple reader but a single writer.
         When a reader read the protected structure, it takes the reader lock.
@@ -508,7 +524,102 @@ namespace Threading
         ScopedUpgradeLock(volatile ReadWriteLock & lock) : lock(lock) { lock.releaseReader(); lock.acquireWriter(); }
         ~ScopedUpgradeLock() { lock.releaseWriter(); lock.acquireReader(); }
     };
-    #define HasReadWriteLock 1
+
+    /** A simple synchronization point for thread.
+        This is typically used with ScopePP for safer thread synchronization.
+        When one thread need to interrupt another thread, it has to signal it somehow.
+        Then the other thread needs to tell when it's ready to be modified by the former thread.
+        Once the former thread has finished its work, it just release the other thread to resume its loop.
+        
+        Please notice that this still requires a Lock for protecting the data to be modified.
+        However, this is used when the data to be modified needs to be locked for long period of time by 
+        the thread, and where a classical "ScopedLock scope(lock)" protection would not work, since the 
+        external access will starve to get the lock. 
+        
+        @warning This only works when a single thread at a time needs to modify the other thread.
+                 If you need concurrent multiple thread access, then you should use ReadWriteLock instead. */
+    class PingPong
+    {
+        /** The required events */
+        Event ping, pong, done;
+        // Interface
+    public:
+        /** When you need to stop another thread, you have first to signal that you wait for it to pause its work */
+        bool wantToDo(const TimeOut timeout) { ping.Set(); return pong.Wait(timeout); }
+        /** If wantToDo returned true, you must release the other thread when you're done with your work */
+        void doneWork() { ping.Reset(); pong.Reset(); done.Set(); }
+        /** The other thread will need to call this at "synchronization points" where it's safe to get paused */
+        void checkHasToDo() { if (ping.Wait(InstantCheck)) { pong.Set(); done.Wait(); } }
+
+        /** Construction */
+        PingPong(const char * name = NULL) : done(name, Event::AutoReset) {}
+        /** Destruction */
+        ~PingPong() { done.Set(); }
+    };
+
+    class WithStartMarker;
+    /** This is used with a PingPong structure to synchronize thread for communication.
+        Typical usage code is like this:
+        @code
+        struct Whatever : public Thread, public WithStartMarker
+        {
+            PingPong      sync;
+            ImportantData data;
+            Lock          lock;
+     
+            // Interface external to the thread
+        public:
+            void modifyData() 
+            { 
+                ScopedPP scope(lock, this, sync);
+                data.changeSomething(); 
+            }
+            void start() { createThread(); waitUntilStarted(); }
+            
+            // Thread interface
+        public:
+            uint32 runThread() 
+            { 
+                started(); // Required by WithStartMarker
+                while(isRunning())
+                {
+                    // Checkpoint here. Without this, it's almost impossible for the external access to get the lock
+                    sync.checkHasToDo();
+                    
+                    // Then perform some work on the data
+                    ScopedLock scope(lock);
+                    data.process();
+                }
+            }
+            
+     
+            Whatever() { }
+            ~Whatever() { destroyThread(); }
+        };
+        
+        Whatever a;
+        a.modifyData(); // This works, even if the thread is not started yet.
+        a.start();
+        a.modifyData(); // This also works.
+        @endcode */
+    struct ScopedPP
+    {
+    private:
+        /** The lock to remember */
+        Lock & lock;
+        /** The pingpong object for communication */
+        PingPong & work;
+        
+        // Public interface
+    public:
+        ScopedPP(Lock & lock, const WithStartMarker * ts, PingPong & work);
+        ~ScopedPP() { work.doneWork(); lock.Release(); }
+    
+        // Prevent copying
+    private:
+        ScopedPP & operator = (const ScopedPP & other);
+    };
+    #define HasExtendedLock 1
 #endif
 
     /** This template wraps a volatile object and give access to it while this object is alive.
@@ -943,6 +1054,157 @@ namespace Threading
     };
 
 #if (WantAtomicClass == 1)
+#if HAS_STD_ATOMIC == 1
+    /** When you expect a value to be accessed or modified atomically, you can either use the SharedDataReader, SharedDataWriter or SharedDataReaderWriter on the value, if it's uint32.
+        Else, if you intend to use any other type, you can simply declare an Atomic<Type> variable.
+        This will not compile for type that can't be accessed atomically.
+        The warped type must support being constructed with 0. */
+    template <typename T>
+    class Atomic
+    {
+        // Members
+    private:
+        /** The object to manipulate */
+        std::atomic<T> obj;
+
+        // Interface
+    public:
+        /** Get direct access to the object.
+            This is unsafe, since there is no memory barrier involved in accessing the object */
+        inline volatile T & unsafeAccess() { return obj.load(std::memory_order_relaxed); }
+
+        /** Read the value atomically (and return a copy). */
+        inline T read() const { return obj.load(std::memory_order_consume); }
+
+        /** Save a new value atomically. */
+        inline void save(T newValue) { obj.store(newValue, std::memory_order_release); }
+
+        /** Swap the current value with the one given, returning the previous one, atomically.
+            Perform this operation atomically:
+            @code
+                T oldValue = obj;
+                obj = newValue;
+                return oldValue;
+            @endcode */
+        inline T swap(const T & value) { return obj.exchange(value, std::memory_order_seq_cst); }
+
+        /** Increments this value atomically
+            @return ++obj */
+        inline T operator++() { return obj.fetch_add(1, std::memory_order_acq_rel) + 1; }
+
+        /** Atomically decrements this value, returning the new value. */
+        inline T operator--() { return obj.fetch_sub(1, std::memory_order_acq_rel) - 1; }
+
+        /** Atomically adds the given amount
+            @return obj + amountToAdd */
+        inline T operator +=(const T & amountToAdd) { return obj.fetch_add(amountToAdd, std::memory_order_acq_rel) + amountToAdd; }
+
+        /** Atomically substracts the given amount
+            @return obj - amountToSubstract */
+        inline T operator -=(const T & amountToSubstract) { return obj.fetch_sub(amountToSubstract, std::memory_order_acq_rel) - amountToSubstract; }
+
+        /** The expected CAS (Compare And Set) method.
+            Perform this operation atomically:
+            @code
+                if (read() == comparand)
+                {
+                    save(newValue);
+                    return true;
+                }
+                return false;
+            @endcode
+            
+            It's typically used like this: 
+            @code
+                while (!atomic.compareAndSet(newValue, comparand)) comparand = atomic.read();
+            @endcode
+            @returns true on successful comparison and value change, else value is not modified.
+            @warning This method actually requires you loop on the CAS (it's based on the weak form)
+            @warning To avoid ABA problem, you should prefer the reference based version
+        */
+        inline bool compareAndSet(const T & newValue, T comparand, const bool weak) { return obj.compare_exchange_weak(comparand, newValue); }
+        /** CAS with update of comparand if it fails.
+            This is used to avoid ABA problem. 
+            Perform this operation atomically:
+            @code
+                if (read() == comparand)
+                {
+                    save(newValue);
+                    return true;
+                }
+                comparand = read();
+                return false;
+            @endcode
+            
+            It's typically used like this:
+            @code
+                while (!atomic.compareAndSet(newValue, comparand));
+            @endcode
+            @warning This form is unlikely to be generally useable
+            */
+        inline bool compareAndSet(const T & newValue, T & comparand, const bool weak) { return obj.compare_exchange_weak(comparand, newValue); }
+        /** The expected CAS (Compare And Set) method.
+            Perform this operation atomically:
+            @code
+                if (read() == comparand)
+                {
+                    save(newValue);
+                    return true;
+                }
+                return false;
+            @endcode
+            
+            It's typically used like this: 
+            @code
+                while (!atomic.compareAndSet(newValue, comparand)) comparand = atomic.read();
+            @endcode
+            @returns true on successful comparison and value change, else value is not modified.
+            @warning To avoid ABA problem, you should prefer the reference based version
+        */
+        inline bool compareAndSet(const T & newValue, T comparand) { return obj.compare_exchange_strong(comparand, newValue); }
+        /** CAS with update of comparand if it fails.
+            This is used to avoid ABA problem. 
+            Perform this operation atomically:
+            @code
+                if (read() == comparand)
+                {
+                    save(newValue);
+                    return true;
+                }
+                comparand = read();
+                return false;
+            @endcode
+            */
+        inline bool compareAndSet(const T & newValue, T & comparand) { return obj.compare_exchange_strong(comparand, newValue); }
+
+        // Construction and destruction
+    public:
+        /** Constructor */
+        inline Atomic(const T value = 0) : obj(value) 
+        {
+        }
+        /** Atomic copy constructor */
+        inline Atomic (const Atomic& other) : obj(other.obj) {}
+        /** Atomic copy operator. */
+        inline Atomic& operator= (const Atomic& other) { save(other.read()); return *this; }
+        /** Atomic copy operator. */
+        inline Atomic& operator= (const T & newValue)    { save(newValue); return *this; }
+
+        // Helpers
+    private:
+        /** Helper to perform a basic 32 bits to T conversion */
+        inline static T from(uint32 value) { return *(T*)&value; }
+        /** Helper to perform a basic 64 bits to T conversion */
+        inline static T from(uint64 value) { return *(T*)&value; }
+
+        // Prevent some operations
+    private:
+        // Not defined as it has no sense to use post increment and atomic variables
+        T operator-- (int);
+        // Not defined as it has no sense to use post increment and atomic variables
+        T operator++ (int); 
+    };
+#else
     /** @internal The internal virtual table function that's selected in the atomic class to avoid runtime cost based on choosing the right function */
     template <int size>
     struct FuncTable
@@ -1023,9 +1285,17 @@ namespace Threading
     };
 
 #if defined(NO_ATOMIC_BUILTIN64)
-    extern pthread_mutex_t    sxMutex;
-    #define _enter pthread_cleanup_push((void(*)(void*))pthread_mutex_unlock, &sxMutex); pthread_mutex_lock(&sxMutex)
-    #define _leave pthread_cleanup_pop(1)
+    #if (_POSIX == 1)
+        extern pthread_mutex_t    sxMutex;
+        #define _enter pthread_cleanup_push((void(*)(void*))pthread_mutex_unlock, &sxMutex); pthread_mutex_lock(&sxMutex)
+        #define _leave pthread_cleanup_pop(1)
+    #elif defined(_WIN32)
+        extern CRITICAL_SECTION sxMutex;
+        #define _enter EnterCriticalSection(&sxMutex);
+        #define _leave LeaveCriticalSection(&sxMutex);
+    #else
+        #error You can not build Atomic code without atomic primitives!
+    #endif
 #endif
     template <>
     struct FuncTable<8>
@@ -1035,7 +1305,7 @@ namespace Threading
 
         inline static uint64 read(volatile uint64 & obj)
         {
-#ifdef _MSC_VER
+#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return (uint64)PTRInterlockedExchangeAdd64(&obj, 0ULL);
 #elif (HAS_ATOMIC_BUILTIN64 == 1)
             return (uint64)__sync_add_and_fetch (&obj, 0);
@@ -1045,7 +1315,7 @@ namespace Threading
         }
         inline static uint64 swap(volatile uint64 & obj, uint64 value)
         {
-#ifdef _MSC_VER
+#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return (uint64)PTRInterlockedExchange64(&obj, value);
 #elif (HAS_ATOMIC_BUILTIN64 == 1)
             uint64 currentVal = obj;
@@ -1060,7 +1330,7 @@ namespace Threading
 
         static inline bool compareAndSet(volatile uint64 & obj, const uint64 value, const uint64 comparand)
         {
-#ifdef _MSC_VER
+#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return PTRInterlockedCompareExchange64(&obj, value, comparand) == comparand;
 #elif (HAS_ATOMIC_BUILTIN64 == 1)
             return __sync_bool_compare_and_swap((volatile uint64*) &obj, comparand, value);
@@ -1072,7 +1342,7 @@ namespace Threading
         }
         static inline uint64 add(volatile uint64 & obj, const int64 amount)
         {
-#ifdef _MSC_VER
+#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return (uint64)PTRInterlockedExchangeAdd64(&obj, amount);
 #elif (HAS_ATOMIC_BUILTIN64 == 1)
             return (uint64)__sync_add_and_fetch (&obj, amount);
@@ -1090,7 +1360,7 @@ namespace Threading
         }
         inline static uint64 inc(volatile uint64 & obj)
         {
-#ifdef _MSC_VER
+#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return (uint64)PTRInterlockedIncrement64(&obj);
 #elif (HAS_ATOMIC_BUILTIN64 == 1)
             return (uint64)__sync_add_and_fetch (&obj, 1);
@@ -1102,7 +1372,7 @@ namespace Threading
         }
         inline static uint64 dec(volatile uint64 & obj)
         {
-#ifdef _MSC_VER
+#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return (uint64)PTRInterlockedDecrement64(&obj);
 #elif (HAS_ATOMIC_BUILTIN64 == 1)
             return (uint64)__sync_add_and_fetch (&obj, -1);
@@ -1216,8 +1486,11 @@ namespace Threading
         // Not defined as it has no sense to use post increment and atomic variables
         T operator++ (int); 
     };
+#endif
+
 #define HasAtomicClass 1
 #endif
+
 }
 
 #endif

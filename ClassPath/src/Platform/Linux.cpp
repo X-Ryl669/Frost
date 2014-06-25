@@ -5,6 +5,7 @@
 
 #ifdef _POSIX
 #include <termios.h>
+#include <dlfcn.h>
 namespace Platform
 {
     void * malloc(size_t size, const bool)
@@ -64,7 +65,33 @@ namespace Platform
             buffer[--size] = 0;
             
         return true;
-    }    
+    }
+    
+    DynamicLibrary::DynamicLibrary(const char * pathToLibrary)
+        : handle(dlopen(pathToLibrary, RTLD_LAZY))
+    {
+        
+    }
+    
+    DynamicLibrary::~DynamicLibrary()
+    {
+        if (handle) dlclose(handle); handle = 0;
+    }
+    
+    
+    // Load the given symbol out of this library
+    void * DynamicLibrary::loadSymbol(const char * nameInUTF8) const
+    {
+        if (handle && nameInUTF8) return dlsym(handle, nameInUTF8);
+        return 0;
+    }
+    // Get the platform expected file name for the given library name
+    void DynamicLibrary::getPlatformName(const char * libraryName, char * outputName)
+    {
+        if (!libraryName || !outputName) return;
+        strcpy(outputName, libraryName);
+        strcat(outputName, ".so"); // On Mac OSX both .bundle and .so are valid, so let's use .so
+    }
 }
 
 #endif 

@@ -33,6 +33,20 @@ namespace Compression
             DataCorrupt     = -3,       //!< Compressed data is corrupt
             NotEnoughMemory = -4,       //!< Not enough memory
         };
+    private:
+        /** This is used to simplify the complexity of the caching done in the compress stream. */
+        struct MemoryBuffer;
+        /** The decompression header */
+        struct DecompressHeader
+        {
+            bool valid;
+            size_t blockSize;
+            size_t dataSize;
+            int8 recordSize, sortingContext;
+            uint32 curBlock;
+            DecompressHeader() : valid(false), blockSize(0), dataSize(0), recordSize(1), sortingContext(1), curBlock(0) {}
+        };
+        
     
         // Helpers
     private:
@@ -40,6 +54,10 @@ namespace Compression
         inline bool setError(Error val) { lastError = val; return val == Success; }
         /** Get the actual used buffer size */
         inline int getBufferSize() const { if (compressionFactor == -1) return 25*1024*1024; return ((int)(compressionFactor * 99) + 1) * 1024 * 1024; }
+        /** Resize the buffer */
+        void resizeBuffer(const size_t margin = 0);
+        /** Process a block of data to compress */
+        bool processBlock(Stream::OutputStream & outStream);
 
         // Members
     protected:
@@ -47,6 +65,16 @@ namespace Compression
         int     compressionFactor;
         /** The last error */
         Error   lastError;
+        /** The (de)compression buffer to accumulate into before launching (de)compression */
+        MemoryBuffer * memBuffer;
+        /** The output buffer for processing */
+        MemoryBuffer * outBuffer;
+        /** The decompression specific last block header read. This is used to speed up processing */
+        DecompressHeader decHeader;
+        /** The number of bytes received to compress at the very beginning of the stream (or the number of block for a decompression) */
+        int64   dataSize;
+        /** Check if the header was emmited or not */
+        bool    headerWritten;
         
         
         /** The opaque holder */
@@ -56,7 +84,7 @@ namespace Compression
         // Interface
     public:
         /** Set the compression factor (from 0.0 (fastest) to 1.0f (best) */
-        virtual void setCompressionFactor(const float factor = 1.0f) { compressionFactor = (int)(factor * 9 + .5f); }
+        virtual void setCompressionFactor(const float factor = 1.0f) { compressionFactor = (int)(factor * 9 + .5f); resizeBuffer(); }
         /** Get the last error */
         Error getLastError() const { return lastError; }
 
@@ -84,7 +112,7 @@ namespace Compression
             @param inStream         The input stream to read from.
             @param amountToProcess  The number of bytes to compress. Set to 0 to process the whole stream.
             @return true on success, false if not supported or an error occurred on the input stream */
-        virtual bool compressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, const uint32 amountToProcess = 0);
+        virtual bool compressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, const uint32 amountToProcess = 0, const bool lastCall = true);
 
         /** Continuous decompression process.
             Not all compressor support this (in that case, it's probably emulated or might return false).
@@ -96,8 +124,12 @@ namespace Compression
         virtual bool decompressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, const uint32 amountToProcess = 0);
         
         
-        /** Default constructor */
-        BSCLib();
+        /** Construct with a BSC format.
+            @param expectedDataSize     If the output stream does not support rewinding, there is no way for the compressor 
+                                        to write the final header to the stream. So you need to specify the source data size
+                                        at construction so the header is written once (on first output) and not rewind. 
+                                        This is only used for compression */
+        BSCLib(const uint64 expectedDataSize = 0);
         virtual ~BSCLib();
     };    
 }

@@ -75,6 +75,47 @@ namespace UniversalTypeIdentifier
     private:
         TypeIDImpl();
     };
+    
+    /** The type ID parser */
+    class TypeIDParser
+    {
+        // Members
+    private:
+        uint32 ID1, ID2, ID3, ID4;
+
+        // Construction and destruction
+    private:
+        /** Private default constructor with identifiers */
+        TypeIDParser(const uint32 _ID1 = 0, const uint32 _ID2 = 0, const uint32 _ID3 = 0, const uint32 _ID4 = 0) : ID1(_ID1), ID2(_ID2), ID3(_ID3), ID4(_ID4) {}
+
+    public:
+        /** The minimal TypeID length in a string */
+        enum { MinimumTypeIDLength = 35 };
+        /** The only allowed construction is through char array */
+        TypeIDParser(const char * typeName) : ID1(0), ID2(0), ID3(0), ID4(0)
+        {
+            if (typeName && strlen(typeName) == 35)
+            {
+                if (sscanf(typeName, "%08X-%08X-%08X-%08X", &ID1, &ID2, &ID3, &ID4) != 4)
+                    ID1 = ID2 = ID3 = ID4 = 0;
+            }
+        }
+        /** Or other TypeID */
+        TypeIDParser(TypeID type) : ID1(type ? type->getID1() : 0), ID2(type ? type->getID2() : 0), ID3(type ? type->getID3() : 0), ID4(type ? type->getID4() : 0) {}
+        /** Save the current TypeID identifier to a char array */
+        inline bool saveTo(char * typeName, const uint32 typeSize)
+        {
+            if (typeSize < 36 || !typeName) return false;
+            return sprintf(typeName, "%08X-%08X-%08X-%08X", ID1, ID2, ID3, ID4) > 0;
+        }
+        /** Check if the read TypeID is valid */
+        inline bool isValid() { return !(ID1 == 0 && ID2 == 0 && ID3 == 0 && ID4 == 0); }
+        /** Check if the parsed type is the same as the one given */
+        inline const bool operator == (TypeID type) const { if (!type) return false; return type->getID1() == ID1 && type->getID2() == ID2 && type->getID3() == ID3 && type->getID4() == ID4; }
+        /** Check if the parsed type is the same as the one given */
+        inline const bool operator == (const char * typeName) const { if (!typeName) return false; TypeIDParser other(typeName); return ID1 == other.ID1 && ID2 == other.ID2 && ID3 == other.ID3 && ID4 == other.ID4; }
+    };
+    
 
     /** Qualifier cleaning template
         @cond Private
@@ -284,15 +325,18 @@ namespace UniversalTypeIdentifier
             return NULL;
         }
 
-        /** Check if this type is already registered
+        /** Check if this type is already registered.
             Compile-time version */
         template <typename T>
             inline bool isRegistered(T* t) const { return isRegistered(UniversalTypeIdentifier::getTypeID(t)); }
 
-        /** Check if this type is already registered
+        /** Check if this type is already registered.
             Run-time version */
         inline bool isRegistered(TypeID typeID) const { return (findType(typeID) != (PCreationMethods)NotFound);    }
 
+        /** Get the type name.
+            Run-time version */
+        inline const char * getTypeName(TypeID typeID) const { PCreationMethods ptr = findType(typeID); return ptr ? (*ptr->getTypeName)() : ""; }
 
         /** Return the data source export and import function */
         inline PGetDataSourceFunc getDataSourceOutFunc(TypeID typeID) const

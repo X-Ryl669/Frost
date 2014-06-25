@@ -166,6 +166,15 @@ namespace Strings
 
 
 	/** The basic conversion operators */
+	VerySimpleReadOnlyString::operator int64() const
+	{
+#ifdef _MSC_VER
+        return (int64)_strtoi64(data, NULL, 10);
+#else
+	    return (int64)strtoll(data, NULL, 10);
+#endif
+	}
+	/** The basic conversion operators */
 	VerySimpleReadOnlyString::operator int() const
 	{
 	    return atoi(data);
@@ -339,6 +348,7 @@ namespace Strings
     // Here is the implementation for findLength of an ASCII based string
     const unsigned int findLength(tCharPtr _input)
     {
+#ifdef OwnStringLength
         unsigned int hasZeroByte = 0;
         const char * input = const_cast<const char *>(_input);
         if (!input) return 0;
@@ -366,6 +376,9 @@ namespace Strings
                 if (!(*(dual.c - 1) & 0xff000000)) return (unsigned int)(dual.inp - input) - 1;
             }
         }
+#else
+        return _input ? (unsigned int)strlen((const char*)_input) : 0;
+#endif
         // We should never reach this point
         Platform::breakUnderDebugger();
         return 0;

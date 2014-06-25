@@ -335,8 +335,10 @@ namespace Threading
         friend void ::GetSigStack(int, siginfo_t *, void *);
         /** @endcond */
 #endif      
-        /** The platform independent Sleep method */
-        static void Sleep(const uint32 milliseconds = 0);
+        /** The platform independent Sleep method.
+            @param milliseconds  The amount of time to sleep, 0 for yielding the current thread
+            @param hard          On POSIX system, this actually ensure the given time has been spent. Set to false to accept being interrupted by a signal. */
+        static void Sleep(const uint32 milliseconds = 0, const bool hard = true);
         /** Interruptible sleep.
             Sleep the given amount of millisecond while still watching the isRunning flag at regular interval and exits if the thread should be stopped.
             @param milliseconds   The sleep time in milliseconds
@@ -441,7 +443,10 @@ namespace Threading
         // Construction
     public:
         /** Default constructor */
-        WithStartMarker(const char * name = NULL) : start(name, true) {}
+        WithStartMarker(const char * name = NULL) : start(name, Event::ManualReset) {}
+        
+        /** Allow ScopedPP to access us directly */
+        friend struct ScopedPP;
     };
 
     /** A simple scheduling thread.

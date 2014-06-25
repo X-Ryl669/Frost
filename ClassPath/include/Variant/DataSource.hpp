@@ -12,7 +12,7 @@ namespace Type
     typedef VarT<ObjectCopyPolicy> Var;
     /** This variant type only transmit pointers to internal data when copied */
     typedef VarT<ObjectPtrPolicy>  Ref;
-
+    
     /** Thrown when the conversion is not allowed */
     struct ConversionNotAllowed {};
 

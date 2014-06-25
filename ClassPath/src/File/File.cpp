@@ -652,15 +652,15 @@ namespace File
         return ret;
     }
     // Replace the file content with the given string.
-    bool Info::setContent(const String & content, const bool appendToFile)
+    bool Info::setContent(const String & content, const Info::SetContentMode mode)
     {
-        if (appendToFile)
+        if (mode.type != AtomicReplace)
         {
 #ifdef _WIN32
             Strings::ReadOnlyUnicodeString fileName = Strings::convert(getFullPath());
-            FILE * file = _wfopen(fileName.getData(), L"a+b");
+            FILE * file = _wfopen(fileName.getData(), mode.type == Overwrite ? L"wb" : L"a+b");
 #else
-            FILE * file = fopen(getFullPath(), "a+b");
+            FILE * file = fopen(getFullPath(), mode.type == Overwrite ? "wb" : "a+b");
 #endif
             if (!file) return false;
             size_t ret = fwrite((const char *)content, 1, content.getLength(), file);
@@ -1719,6 +1719,15 @@ namespace File
             foundPos = (char*)memchr(buffer, '\r', len);
             if (!foundPos) foundPos = (char*)memchr(buffer, '\n', len);
             break;
+        case Platform::AutoDetect:
+            {
+                char * endLine = buffer + len;
+                for (foundPos = &buffer[0]; foundPos < endLine && *foundPos != '\r' && *foundPos != '\n'; foundPos++)
+                    {}
+                // Search for '\r\n' pattern
+                if (*foundPos == '\r' && foundPos + 1 < endLine && *(foundPos+1) == '\n') foundPos++;
+            }
+            break;
         }
         if (!foundPos)
         {
@@ -2143,8 +2152,9 @@ namespace File
     }
 
     // Check if it's possible to read from this stream
-    bool AsyncStream::isReadPossible(const int timeout) const
+    bool AsyncStream::isReadPossible(const Time::TimeOut & timeout) const
     {
+        if (timeout <= 0) return false;
 #ifdef _WIN32
         if (asyncSize && tmpBuffer)
         {
@@ -2166,13 +2176,16 @@ namespace File
         while ((ret = ::select(FD_SETSIZE, &set, NULL, NULL, timeout < 0 ? NULL : &tv)) == -1)
         {
             if (errno != EINTR) return false;
+            if (timeout.timedOut()) return false;
         }
+        timeout.filterError(ret);
         return ret >= 1;
 #endif
     }
     // Check if it's possible to write to this stream
-    bool AsyncStream::isWritePossible(const int timeout) const
+    bool AsyncStream::isWritePossible(const Time::TimeOut & timeout) const
     {
+        if (timeout <= 0) return false;
 #ifdef _WIN32
         if (asyncSize && tmpBuffer)
         {
@@ -2194,7 +2207,9 @@ namespace File
         while ((ret = ::select(FD_SETSIZE, NULL, &set, NULL, timeout < 0 ? NULL : &tv)) == -1)
         {
             if (errno != EINTR) return false;
+            if (timeout.timedOut()) return false;
         }
+        timeout.filterError(ret);
         return ret >= 1;
 #else
         return 0;
@@ -2287,11 +2302,13 @@ namespace File
     uint32 MonitoringPool::getSize() const { return size; }
 
     // Select the pool for at least an element that is ready
-    bool MonitoringPool::select(const bool reading, const bool writing, const int timeout) const
+    bool MonitoringPool::select(const bool reading, const bool writing, const Time::TimeOut & timeout) const
     {
+        if (timeout <= 0) return false;
 #ifdef _WIN32
         waitSet = reading ? (writing ? bothSet : readSet) : (writing ? writeSet : 0);
         triggerCount = WaitForMultipleObjects(size, waitSet, FALSE, timeout);
+        timeout.success(); // If we timed out, this will be marked as such too
         if (triggerCount >= WAIT_OBJECT_0 && triggerCount <= (WAIT_OBJECT_0 + size))
             return true;
         return false;
@@ -2324,14 +2341,16 @@ namespace File
         }
 
         // Then wait for the asked amount of time
-        return eventReady.Wait((Threading::TimeOut)timeout);
+        bool ret = eventReady.Wait((Threading::TimeOut)(int)timeout);
+        timeout.success(); // If we timed out, this will be marked as such too
+        return ret;
 #endif
     }
 
     // Check if at least a stream in the pool is ready for reading
-    bool MonitoringPool::isReadPossible(const int timeout)  const { return select(true, false, timeout); }
+    bool MonitoringPool::isReadPossible(const Time::TimeOut & timeout)  const { return select(true, false, timeout); }
     // Check if at least a stream in the pool is ready for writing
-    bool MonitoringPool::isWritePossible(const int timeout) const { return select(false, true, timeout); }
+    bool MonitoringPool::isWritePossible(const Time::TimeOut & timeout) const { return select(false, true, timeout); }
 
     // Check which stream was ready in the given pool
     int MonitoringPool::getNextReadyStream(const int index) const
@@ -2369,7 +2388,7 @@ namespace File
 #ifdef _WIN32
         : pool(0), size(0), readSet(0), writeSet(0), bothSet(0), triggerCount(0), own(own), waitSet(0)
 #else
-        : pool(0), size(0), indexPool(0), eventReady(NULL, true, false), triggerCount(0), own(own)
+        : pool(0), size(0), indexPool(0), eventReady(NULL, Threading::Event::ManualReset), triggerCount(0), own(own)
 #endif
     { }
 

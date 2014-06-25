@@ -2,7 +2,12 @@
 #include <memory.h>
 // We need SHA1 declaration
 #include "../../include/Hashing/SHA1.hpp"
-
+// We need Strings too
+#include "../../include/Strings/Strings.hpp"
+// We need Memory blocks too
+#include "../../include/Utils/MemoryBlock.hpp"
+// We need Scoped pointers too
+#include "../../include/Utils/ScopePtr.hpp"
 
 // Is the system little or Big endian.
 #if (('1234' >> 24) == '1')
@@ -132,6 +137,17 @@ void Hashing::SHA1::Finalize(uint8 * outBuffer)
 
     for(i = 0; i < SHA1DigestSize; ++i)
         outBuffer[i] = (uint8)(hash[i >> 2] >> 8 * (~i & 3));
+}
+
+// Hash a string with MD5 and get a hexadecimal string on output
+Strings::FastString Hashing::getSHA1Of(const Strings::FastString & data)
+{
+    Utils::MemoryBlock buffer(Hashing::SHA1::DigestSize);
+    Hashing::SHA1 hash;
+    hash.Start(); hash.Hash((const uint8*)(const char*)data, data.getLength()); hash.Finalize(buffer.getBuffer());
+
+    Utils::ScopePtr<Utils::MemoryBlock> outBuf(buffer.toBase16());
+    return Strings::FastString(outBuf->getConstBuffer(), outBuf->getSize());
 }
 
 /*

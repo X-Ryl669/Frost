@@ -61,8 +61,7 @@ namespace Stream
     }
     uint64 InputFileStream::read(void * const buffer, const uint64 size) const throw()
     {
-        if (!buffer || !stream) return false;
-        if (!size) return true;
+        if (!buffer || !stream || !size) return 0;
 
         return ((File::BaseStream*)stream)->read((char*)buffer, (int)min((uint64)INT_MAX, size));
     }
@@ -84,8 +83,7 @@ namespace Stream
     }
     uint64 InputStringStream::read(void * const buffer, const uint64 size) const throw()
     {
-        if (!buffer) return false;
-        if (!size) return true;
+        if (!buffer || !size) return 0;
 
         uint32 readSize = (uint32)min((uint64)0xFFFFFFFF, (size + position) < (uint64)content.getLength() ? size : ((uint64)content.getLength() - position));
 
@@ -485,8 +483,7 @@ namespace Stream
     }
     uint64 OutputStringStream::write(const void * const buffer, const uint64 _size) throw()
     {
-        if (!buffer) return false;
-        if (!_size) return true;
+        if (!buffer || !_size) return 0;
 
         uint32 size = (uint32)min((uint64)0xFFFFFFFF, _size);
         if ((size + position) > (uint64)content.getLength())
@@ -569,31 +566,50 @@ namespace Stream
     // The copy stream function
     bool copyStream(const InputStream & is, OutputStream & os, const uint64 forcedSize)
     {
-        uint8 buffer[4096];
         uint64 total = forcedSize ? forcedSize : is.fullSize();
+
+        const MappableStream * ms = is.getMappable();
+        if (ms) return os.write(ms->getBuffer(), total) == total;
+        
+        uint8 buffer[4096];
         uint64 data = is.read(buffer, min(total, (uint64)4096)); // This works because if fullSize() returns -1 (size not known), it's seens as (uint64)-1, ie the biggest number possible
         while(data == 4096)
         {
-            if (os.write(buffer, data) != data) return false;
+            if (os.write(buffer, data, false) != data) return false;
             total -= data;
             data = is.read(buffer, min(total, (uint64)4096));
         }
-        return os.write(buffer, data) == data;
+        return data < 4096 && os.write(buffer, data, true) == data;
     }
     // The copy stream function
     bool copyStream(const InputStream & is, OutputStream & os, CopyCallback & callback, const uint64 forceOutputSize)
     {
-        uint8 buffer[4096];
         uint64 total = forceOutputSize ? forceOutputSize : is.fullSize(), current = 0;
+        const MappableStream * ms = is.getMappable();
+        if (ms)
+        {
+            // Cut the amount in 100 so we can call the callback at regular interval
+            const uint64 step = total / 100;
+            for (int i = 0; i < 100; i++)
+            {
+                if (os.write(&ms->getBuffer()[current], step, false) != step) return false;
+                current += step;
+                if (!callback.copiedData(current, total)) return false;
+            }
+            if (os.write(&ms->getBuffer()[current], total - current, true) != (total - current)) return false;
+            return callback.copiedData(total, total);
+        }
+        
+        uint8 buffer[4096];
         uint64 data = is.read(buffer, min(total, (uint64)4096));
         while(data == 4096)
         {
-            if (os.write(buffer, data) != data) return false;
+            if (os.write(buffer, data, false) != data) return false;
             current += 4096;
             if (!callback.copiedData(current, total)) return false;
             data = is.read(buffer, min(total - current, (uint64)4096));
         }
-        if (os.write(buffer, data) != data) return false;
+        if (data < 4096 && os.write(buffer, data, true) != data) return false;
         return callback.copiedData(current + data, total);
     }
 

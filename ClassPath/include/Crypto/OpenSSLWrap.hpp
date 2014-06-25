@@ -1085,16 +1085,17 @@ namespace Crypto
         PublicKey   key;
     public:
         /** Establish the DH session.
-            @param privateKey       The private key used to generate the message
-            @param publicInfo       The public information that should have been agreed before committing
-            @param publicInfoLen    The public info length (in bytes)
-            @param message          The message that can be sent to the other party
+            Please check the startSession method for example code.
+         
+            @param privateKey       The private key used to decode the message
+            @param message          The message that's received from the other party
             @param messageLen       The message length (in bytes)
             @param secret           The computed secret
             @param secretLen        The secret length (in bytes)
             @return true if match, false on error or doesn't match
+            @sa startSession
             @warning Depending on algorithms, it's possible for the message to be empty. In that case, no transmission is required. */
-        virtual bool EstablishSession(const Key & privateKey, const uint8 * publicInfo, const uint32 publicInfoLen, const uint8 * message, const uint32 messageLen, uint8 * secret, const uint32 secretLen) const
+        virtual bool establishSession(const Key & ourPrivateKey, const uint8 * message, const uint32 messageLen, uint8 * secret, const uint32 secretLen) const
         {
             if (!message || messageLen < getMessageLength()) return false;
             // The idea with elliptic curve is to compute
@@ -1102,31 +1103,62 @@ namespace Crypto
 
             PublicKey pubKey;
             if (!pubKey.Import(message, messageLen)) return false;
-            const PrivateKey & privKey = (const PrivateKey&)privateKey;
+            const PrivateKey & privKey = (const PrivateKey&)ourPrivateKey;
 
             return ::ECDH_compute_key(secret, secretLen, ::EC_KEY_get0_public_key(pubKey.context), const_cast<PrivateKey&>(privKey).context, ourKDF) > 0;
         }
-        /** Start a DH session, the message can be sent on the wire, it can't be used to find
+        /** Start a DH session, the public info can be sent on the wire, it can't be used to find
             our private key and is only useful by the other party.
-            @param privateKey       The private key used to generate the message
-            @param publicInfo       The public information that should have been agreed before committing
-            @param publicInfoLen    The public info length (in bytes)
-            @param message          The message that can be sent to the other party
-            @param messageLen       The message length (in bytes)
+            You must load the other party's public key first and use it like this:
+            @code
+                BaseSecret & dh = ...;
+                BaseSecret::Key & otherKey = ...get other side's public key...;
+                dh.setPublicKey(otherKey);
+                BaseSecretChild::PrivateKey ephemeralPrivKey;
+                Utils::MemoryBlock message(dh.getMessageLength());
+                Utils::MemoryBlock secret(dh.getSecretLength());
+                if (!dh.startSession(ephemeralPrivKey, message.getBuffer(), message.getSize(), secret.getBuffer(), secret.getSize())) return false;
+                
+                // Now you can use the secret on this side too
+                // If you don't need the private key anymore, destroy it
+                ephemeralPrivKey.Destroy();
+                // Send the message to the other side
+            @endcode
+            On the other side, you'll do something like this:
+            @code
+                BaseSecret & dh = ...;
+                BaseSecret::Key & privKey = ... load private key ...;
+                Utils::MemoryBlock message = ... received from other side ...;
+                Utils::MemoryBlock secret(dh.getSecretLength());
+                if (!dh.establishSession(privKey, message.getConstBuffer(), message.getSize(), secret.getBuffer(), secret.getSize())) return false;
+                
+                // Now you can use the secret on this side too
+                // If you don't need the private key anymore, destroy it
+                privKey.Destroy();
+            @endcode
+         
+            @param privateKey       On output, contains the ephemeral privateKey used to generate the message. You unlikely need this key anymore.
+            @param message          The public information that can be send on the wire after starting the session.
+            @param messageLen       The public info length (in bytes)
+            @param secret           The secret that's generated from both party
+            @param secretLen        The secret length (in bytes)
             @return true on success
             @warning You should delete your key from memory as soon as it's not required anymore
             @warning Depending on algorithms, it's possible for the message to be empty. In that case, no transmission is required. */
-        virtual bool StartSession(const Key & privateKey, const uint8 * publicInfo, const uint32 publicInfoLen, uint8 * message, const uint32 messageLen) const
+        virtual bool startSession(Key & privateKey, uint8 * message, const uint32 messageLen, uint8 * secret, const uint32 secretLen) const
         {
-            if (!message || messageLen < getMessageLength() || !publicInfo || publicInfoLen < key.getRequiredArraySize()) return false;
+            if (!secret || secretLen < getSecretLength() || !message || messageLen < key.getRequiredArraySize()) return false;
             // The idea with elliptic curve is to compute
             // Message = ECDH(privateKey, publicInfo)
 
-            PublicKey pubKey;
-            if (!pubKey.Import(publicInfo, publicInfoLen)) return false;
-            const PrivateKey & privKey = (const PrivateKey&)privateKey;
-
-            return ::ECDH_compute_key(message, messageLen, ::EC_KEY_get0_public_key(pubKey.context), const_cast<PrivateKey&>(privKey).context, ourKDF) > 0;
+            // Generate ephemeral keys for the session
+            OSSL_ECDH ephemeral;
+            if (!ephemeral.generateKeys(privateKey)) return false;
+            
+            const PublicKey & pubKey = (const PublicKey &)ephemeral.getPublicKey();
+            if (!pubKey.Export(message, messageLen)) return false;
+            
+            return ::ECDH_compute_key(secret, secretLen, ::EC_KEY_get0_public_key(key.context), static_cast<PrivateKey&>(privateKey).context, ourKDF) > 0;
         }
 
         // Required to derive our key
@@ -1142,7 +1174,7 @@ namespace Crypto
             Public key is stored in the object, use getPublicKey to retrieve it.
             @param privateKey where to store the private key
             @return true on success */
-        virtual bool GenerateKeys(Key & privateKey)
+        virtual bool generateKeys(Key & privateKey)
         {
             PrivateKey & privKey = (PrivateKey&)privateKey;
             privKey.Destroy();
@@ -1161,7 +1193,7 @@ namespace Crypto
         /** Get the signature length in byte */
         virtual uint32 getSecretLength() const { return 32; }
         /** Get the message length in byte */
-        virtual uint32 getMessageLength() const { return 32; }
+        virtual uint32 getMessageLength() const { return key.getRequiredArraySize(); }
         /** Get the public key */
         virtual const Key & getPublicKey() const  { return key; }
         /** Set the public key */

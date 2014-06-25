@@ -1,23 +1,23 @@
 #include "../../include/Threading/Lock.hpp"
+#include "../../include/Threading/Threads.hpp"
 
 #ifndef _WIN32
 typedef void (*PThreadVoid)(void*);
 #endif
 
-#if defined(HasReadWriteLock) 
+#if defined(HasExtendedLock) 
 // We need asserts
 #include "../../include/Utils/Assert.hpp"
 bool Threading::ReadWriteLock::acquireReader(const Threading::TimeOut timeout) volatile
 {
-	ScopedLock scope(lock);
-	int prevReadCount = currentReaderCount;
-	if(!writerCount)
-	{   // Enter successful without wait
-		++currentReaderCount;
-		Assert(currentReaderCount > prevReadCount);
-		return true;
-	}
-//	        else return timeout ? readerWait(timeout) : false;
+    ScopedLock scope(lock);
+    int prevReadCount = currentReaderCount;
+    if(!writerCount)
+    {   // Enter successful without wait
+        ++currentReaderCount;
+        Assert(currentReaderCount > prevReadCount);
+        return true;
+    }
     else
     {
         if (timeout)
@@ -65,7 +65,7 @@ bool Threading::ReadWriteLock::readerWait(const Threading::TimeOut timeout) vola
 {
 	bool canRead = false;
 	++waitingReaderCount;
-	if (!read) read = new Event(NULL, true, false);
+	if (!read) read = new Event(NULL, Event::ManualReset, Event::InitiallyFree);
 	
 	if(timeout == Infinite) 
 	{
@@ -140,7 +140,7 @@ bool Threading::ReadWriteLock::writerWaitAndLeaveCSIfSuccess(const Threading::Ti
 	int prevWriterCount = ++writerCount;
 	if(	prevWriterCount == 1 && read) read->Reset();
 
-    if (!write) write = new Event(NULL, false, false);
+    if (!write) write = new Event(NULL, Event::AutoReset, Event::InitiallyFree);
 	lock.Release();
 
 	bool canWrite = write->Wait(timeout); 
@@ -223,9 +223,15 @@ void Threading::ReadWriteLock::writerRelease(const bool downgrade) volatile
 		if(!downgrade) write->Set();
 	}
 }
+
+Threading::ScopedPP::ScopedPP(Lock & lock, const WithStartMarker * ts, PingPong & work)
+            : lock(lock), work(work)
+{
+    if(ts->start.Wait(InstantCheck)) { work.wantToDo(Infinite); }
+    lock.Acquire();
+}
 #endif
 #undef BreakUnless
-
 
 
 
@@ -532,8 +538,16 @@ void Threading::FastLock::_Unlock(void * arg) volatile
 HMUTEX Threading::SharedData<uint32>::sxMutex = PTHREAD_MUTEX_INITIALIZER;
 #endif 
 #if defined(NO_ATOMIC_BUILTIN64)
+#if defined(_POSIX)
 HMUTEX Threading::sxMutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
-
 #endif
-
+#else // _WIN32
+CRITICAL_SECTION Threading::sxMutex;
+struct AutoRegisterAtomicCS
+{
+    AutoRegisterAtomicCS() { InitializeCriticalSectionAndSpinCount(&Threading::sxMutex, 4000); }
+    ~AutoRegisterAtomicCS() { DeleteCriticalSection(&Threading::sxMutex); }
+};
+static AutoRegisterAtomicCS __aracs;
+#endif

@@ -568,17 +568,17 @@ bool Thread::destroyThread(const bool & rcbDontWait) volatile
     return true;
 }
 
-void Thread::Sleep(const uint32 lMilliseconds)
+void Thread::Sleep(const uint32 lMilliseconds, const bool hard)
 {
 #ifdef _WIN32
     ::Sleep((DWORD)lMilliseconds);
 #else
     if (lMilliseconds == 0) sched_yield();
-    else 
-    { 
+    else
+    {
 #ifdef _POSIX
         struct timespec req = { lMilliseconds / 1000, (lMilliseconds % 1000) * 1000000 };
-        while (nanosleep(&req, &req) < 0);
+        while (nanosleep(&req, &req) < 0 && hard);
 #else
         portTickType xDelay = lMilliseconds / portTICK_RATE_MS;
         portTickType xLastWakeTime = xTaskGetTickCount();

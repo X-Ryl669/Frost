@@ -65,7 +65,7 @@ namespace Compression
             @param inStream         The input stream to read from.
             @param amountToProcess  The number of bytes of the input stream to compress. Set to 0 to process the whole stream.
             @return true on success, false if not supported or an error occurred on the input stream */
-        virtual bool compressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, const uint32 amountToProcess = 0); 
+        virtual bool compressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, const uint32 amountToProcess = 0, const bool lastCall = true); 
         /** Continuous decompression process.
             Not all compressor support this (in that case, it's probably emulated or might return false).
             

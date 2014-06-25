@@ -8,10 +8,6 @@
 
 namespace Time
 {
-    enum
-    {
-        DefaultTimeOut = 3000 //!< The default timeout in millisecond
-    };
     /** Get the current time as number of second since Epoch */
     double getPreciseTime();
 

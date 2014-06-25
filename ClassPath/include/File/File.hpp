@@ -11,6 +11,8 @@
 #include "../Container/Container.hpp"
 // We need time
 #include "../Time/Time.hpp"
+// We need timeout too
+#include "../Time/Timeout.hpp"
 // We need locks and events
 #include "../Threading/Lock.hpp"
 
@@ -138,6 +140,24 @@ namespace File
             All                     =   0,
             AllButAccessTime        =   1,
             AllButTimes             =   2,
+        };
+
+        /** The possible mode for setContent */
+        enum ContentMode
+       	{
+            AtomicReplace = 0,   //<! Generate a temporary file and atomically move it over the file to replace
+            Append        = 1,   //<! Append to the existing file instead of replacing the content
+       	    Overwrite     = 2,   //<! Overwrite the file, but this is not atomic
+        };
+
+        /** The set content additional mode */
+        struct SetContentMode
+        {
+            /** The possible mode type */
+            ContentMode type;
+
+            SetContentMode(const ContentMode type) : type(type) {}
+            SetContentMode(const bool append = false) : type(append ? Append : AtomicReplace) {} 
         };
 
         // Members
@@ -275,9 +295,10 @@ namespace File
             The replacement is atomic (so the file contains either the previous content or the new one). 
             If the file doesn't exist, it's created.
             @param content       The new file's content.
-            @param appendToFile  If the file exists, the content is appended to the file instead of overwriting it. In that case, the change is not atomic.
+            @param mode          Depending on the mode chose, either the file is replaced atomically, either it's appended, 
+                                 either it's not replaced atomically. @sa ContentMode
             @return false if it was not possible to set the content (either disk full, either permissions issues) */
-        bool setContent(const String & content, const bool appendToFile = false);
+        bool setContent(const String & content, const SetContentMode mode = AtomicReplace);
         /** Get the parent folder (if any applicable).
             This method actually resolves any symbolic link, path substitution and stack abuse */
         String getParentFolder() const;
@@ -652,10 +673,10 @@ namespace File
     public:
         /** Check if it's possible to read from this stream 
             @param timeout  The time to wait for a state change. */
-        bool isReadPossible(const int timeout = Time::DefaultTimeOut) const;
+        bool isReadPossible(const Time::TimeOut & timeout = Time::DefaultTimeOut) const;
         /** Check if it's possible to write to this stream 
             @param timeout  The time to wait for a state change. */
-        bool isWritePossible(const int timeout = Time::DefaultTimeOut) const;
+        bool isWritePossible(const Time::TimeOut & timeout = Time::DefaultTimeOut) const;
 
         // The required access to the monitoring pool
     private:    
@@ -773,12 +794,12 @@ namespace File
             @param writing When true, the select return true as soon as the socket is ready to be written to
             @param timeout The timeout in millisecond to wait for before returning (negative for infinite time) 
             @return false on timeout or error, or true if at least one socket in the pool is ready */
-        virtual bool select(const bool reading, const bool writing, const int timeout = Time::DefaultTimeOut) const; 
+        virtual bool select(const bool reading, const bool writing, const Time::TimeOut & timeout = Time::DefaultTimeOut) const; 
 
         /** Check if at least a socket in the pool is ready for reading */
-        virtual bool isReadPossible(const int timeout = Time::DefaultTimeOut) const;
+        virtual bool isReadPossible(const Time::TimeOut & timeout = Time::DefaultTimeOut) const;
         /** Check if at least a socket in the pool is ready for writing */
-        virtual bool isWritePossible(const int timeout = Time::DefaultTimeOut) const;
+        virtual bool isWritePossible(const Time::TimeOut & timeout = Time::DefaultTimeOut) const;
 
         /** Check which socket was ready in the given pool
             @param index    Start by this index when searching (start by -1)

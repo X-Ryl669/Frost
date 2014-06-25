@@ -73,11 +73,12 @@
     Default: enabled */
 #define WantAtomicClass 1  
 
-/** Enable this if you need read/write lock.
+/** Enable this if you need read/write lock or the ScopedPingPong class.
     R/W Locks are used in multiple consumer / few producer pattern to avoid stagnation.
     If not enabled, the library defaults to the basic FastLock (a single consumer or producer at a time), but performance suffers on part using them.
+    The ScopedPingPong is a simple system to synchronize two threads without locking.
     Default: enabled */
-#define WantReadWriteLock 1  
+#define WantExtendedLock 1
 
 /** Enable SOAP communication building.
     SOAP is a big beast that allows remote procedure calling. 

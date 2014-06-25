@@ -30,9 +30,9 @@ namespace Hashing
         };
         
         /** The first part of the checksum */
-        int32       a;
+        uint32       a;
         /** The second part of the checksum */
-        int32       b;
+        uint32       b;
         
     public:
         /** Start the hashing */

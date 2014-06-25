@@ -251,7 +251,7 @@ namespace Hashing
         }
     };
 
-    /** Get the hash for the given algorithm. 
+    /** Get the hash from the given algorithm.
         This is a shortcut to calling all methods successively.
         @param inBuffer     The input buffer to hash with the method 
         @param inSize       The input buffer size in bytes 
@@ -259,6 +259,8 @@ namespace Hashing
     template <class Hasher>
     void getHashFor(const uint8 * inBuffer, const uint32 inSize, uint8 * output)
     { Hasher hash; hash.Start(); hash.Hash(inBuffer, inSize); hash.Finalize(output); }
+    
+#define HasHashingCode   1
 }
 
 #endif

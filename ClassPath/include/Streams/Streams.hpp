@@ -11,6 +11,8 @@
 #include "../Platform/Platform.hpp"
 // If specified, we have to declare Base64 based streams
 #include "../Utils/MemoryBlock.hpp"
+// We need scoped pointers too
+#include "../Utils/ScopePtr.hpp"
 
 #if (WantAES == 1)
 // If specified, we have to declare AES based streams
@@ -94,6 +96,19 @@ namespace Stream
         virtual bool setPosition(const uint64 newPos) = 0;
     };
 
+    /** The mappable stream interface.
+        Only streams backed up by memory buffer can implement this interface.
+        Use BaseStream::getMappable() to figure out if you can access this interface. */
+    struct MappableStream
+    {
+        /** Get the current buffer from the stream */
+        virtual const uint8 * getBuffer() const = 0;
+        /** Get the current buffer from the stream */
+        virtual uint8 * getBuffer() { return 0; }
+        
+        virtual ~MappableStream() {}
+    };
+
     /** The base input stream interface */
     class InputStream : public BaseStream
     {
@@ -110,6 +125,16 @@ namespace Stream
             This should give the same results as setPosition(currentPosition() + value),
             but implementation can be faster for non-seek-able stream. */
         virtual bool goForward(const uint64 skipAmount) = 0;
+        /** Check if this stream is map-able (seen as a memory buffer).
+            This can lead to significant optimizations if we can work directly on the 
+            memory buffer, and avoid the copy of the buffer to a temporary buffer.
+            @return A pointer to a "MappableStream" if convertible, 0 else */
+        virtual MappableStream * getMappable() { return 0; }
+        /** Check if this stream is map-able (seen as a memory buffer).
+            This can lead to significant optimizations if we can work directly on the 
+            memory buffer, and avoid the copy of the buffer to a temporary buffer.
+            @return A pointer to a "MappableStream" if convertible, 0 else */
+        virtual const MappableStream * getMappable() const { return 0; }
         
         /** A useful helper when what you read is typed and you don't react on errors, just bailing out. 
             @param val  The value to read into
@@ -122,6 +147,8 @@ namespace Stream
         template <typename T, size_t N>
         bool read(T (&val)[N]) const throw() { return read(&val[0], (uint64)(sizeof(val[0]) * N)) == (uint64)(sizeof(val[0]) * N); }
     };
+    
+
     
     /** This is a useful wrapper class if you intend to forward most calls to an existing input stream */
     class ForwardInputStream : public InputStream
@@ -250,9 +277,11 @@ namespace Stream
         // The interface
     public:
         /** Try to write the given amount of data to the specified buffer
-            @return the number of byte truly written (this method doesn't throw)
-        */
+            @return the number of byte truly written (this method doesn't throw) */
         virtual uint64 write(const void * const buffer, const uint64 size) throw() = 0;
+        /** Try to write the given amount of data to the specified buffer.
+            Unlike the former version, this version also tells if the stream needs to be flushed */
+        virtual uint64 write(const void * const buffer, const uint64 size, const bool flush) throw() { return write(buffer, size); }
 
         /** A useful helper when what you write is typed and you don't react on errors, just bailing out.
             @param val  The value to write onto
@@ -264,13 +293,21 @@ namespace Stream
             @return true when val was completely written into the stream */
         template <typename T, size_t N>
         bool write(const T (&val)[N]) throw() { return write(&val[0], (const uint64)(sizeof(val[0]) * N)) == (uint64)(sizeof(val[0]) * N); }
+        /** A useful helper for writing strings to this stream.
+            @param val  The string to write to the stream.
+            @return true when val was completely written into the stream */
+        bool write(const Strings::FastString & val) throw() { return write((const unsigned char*)val, (const uint64)val.getLength()) == (uint64)val.getLength(); }
+        /** A useful helper to write a memory block to this stream.
+            @param val  The memory block to write to the stream.
+            @return true when val was completely written into the stream */
+        bool write(const Utils::MemoryBlock & val) throw() { return write(val.getConstBuffer(), (const uint64)val.getSize()) == (uint64)val.getSize(); }
     };
 
     namespace Private
     {
         /** @internal */
         template <class String>
-        String readNextLine(const InputStream & is, String *) throw()
+        String readNextLine(const InputStream & is, const bool allowCRAtEOL, String *) throw()
         {
             Strings::FastString s; char buffer[256], ch = 0;
             int positionInBuffer = 0;
@@ -281,9 +318,9 @@ namespace Stream
                 if (ch == '\n') break;
 
                 buffer[positionInBuffer++] = ch;
-                if (positionInBuffer == 256){ s += String(buffer, positionInBuffer); positionInBuffer = 0; }
+                if (positionInBuffer == 256) { s += String(buffer, positionInBuffer); positionInBuffer = 0; }
             }
-            if (positionInBuffer) s += String(buffer, positionInBuffer);
+            if (positionInBuffer) s += String(buffer, buffer[positionInBuffer - 1] == '\r' && !allowCRAtEOL ? positionInBuffer - 1 : positionInBuffer);
             return s;
         }
     }
@@ -302,7 +339,7 @@ namespace Stream
     public:
         /** Read the next line
             @return The String containing the next line (should end by LF or CRLF) */
-        virtual String readNextLine() const throw() { return Private::readNextLine(*this, (String*)0); }
+        virtual String readNextLine() const throw() { return Private::readNextLine(*this, true, (String*)0); }
     };
     
     /** Transform an input stream to a line split stream */
@@ -310,8 +347,10 @@ namespace Stream
     {
         const InputStream & is;
     public:
-        /** Read the next line from the input stream */
-        virtual Strings::FastString readNextLine() const throw() { return Private::readNextLine(is, (Strings::FastString*)0); }
+        /** Read the next line from the input stream. 
+            @param allowCRAtEOL   If true, allow \r at end of line (so line ended by \r\n will be returned ended by \r only). 
+                                  Else, the line is trimmed from both \r and \n */
+        virtual Strings::FastString readNextLine(const bool allowCRAtEOL = true) const throw() { return Private::readNextLine(is, allowCRAtEOL, (Strings::FastString*)0); }
         /** Default constructor */
         LineBasedInputStream(const InputStream & is) : is(is) {}
     };
@@ -346,12 +385,10 @@ namespace Stream
         virtual bool setPosition(const uint64 newPos);
         /** Move the stream position forward of the given amount
             This should give the same results as setPosition(currentPosition() + value),
-            but implementation can be faster for non-seek-able stream.
-        */
+            but implementation can be faster for non-seek-able stream. */
         virtual bool goForward(const uint64 skipAmount);
         /** Try to read the given amount of data to the specified buffer
-            @return the number of byte truly read (this method doesn't throw)
-        */
+            @return the number of byte truly read (this method doesn't throw) */
         virtual uint64 read(void * const buffer, const uint64 size) const throw();
 
         // Construction
@@ -514,7 +551,7 @@ namespace Stream
     };
     
     /** An output stream that's using a resizable memory buffer underneath. */
-    class OutputMemStream : public OutputStream 
+    class OutputMemStream : public OutputStream, public MappableStream
     {
         // Members
     private:
@@ -554,7 +591,11 @@ namespace Stream
             return size;
         }
         /** Get the buffer directly */
-        inline const uint8 * getBuffer() const { return content.getConstBuffer(); }
+        virtual const uint8 * getBuffer() const { return content.getConstBuffer(); }
+        /** Get the mappable interface */
+        virtual MappableStream * getMappable() { return (MappableStream*)this; }
+        /** Get the mappable interface */
+        virtual const MappableStream * getMappable() const { return (const MappableStream*)this; }
 
         // Construction
     public:
@@ -568,7 +609,7 @@ namespace Stream
 
 
     /** A buffered input stream based on a existing memory block */
-    class MemoryBlockStream : public InputStream
+    class MemoryBlockStream : public InputStream, public MappableStream
     {
         // Members
     private:
@@ -608,7 +649,9 @@ namespace Stream
         }
 
         /** Get the buffer */
-        inline const uint8 * getBuffer() { return buffer; }
+        virtual const uint8 * getBuffer() const { return buffer; }
+        /** Get the mappable interface */
+        virtual const MappableStream * getMappable() const { return (const MappableStream*)this; }
 
         // Construction
     public:
@@ -629,7 +672,7 @@ namespace Stream
         }
     };
     /** A buffered output stream based on a existing memory block */
-    class MemoryBlockOutStream : public OutputStream
+    class MemoryBlockOutStream : public OutputStream, public MappableStream
     {
         // Members
     private:
@@ -672,7 +715,13 @@ namespace Stream
         }
 
         /** Get the buffer */
-        inline uint8 * getBuffer() { return buffer; }
+        virtual uint8 * getBuffer() { return buffer; }
+        /** Get the buffer */
+        virtual const uint8 * getBuffer() const { return buffer; }
+        /** Get the mappable interface */
+        virtual MappableStream * getMappable() { return (MappableStream*)this; }
+        /** Get the mappable interface */
+        virtual const MappableStream * getMappable() const { return (const MappableStream*)this; }
 
         // Construction
     public:
@@ -689,8 +738,9 @@ namespace Stream
     };
 
 
-    /** A buffered memory-based input stream */
-    class MemoryBufferedInputStream : public InputStream
+    /** A buffered memory-based input stream.
+        This class reads the given input stream completely in a memory buffer. */
+    class MemoryBufferedInputStream : public InputStream, public MappableStream
     {
         // Members
     private:
@@ -729,7 +779,9 @@ namespace Stream
         }
 
         /** Get the buffer */
-        inline uint8 * getBuffer() { return buffer; }
+        virtual const uint8 * getBuffer() const { return buffer; }
+        /** Get the mappable interface */
+        virtual const MappableStream * getMappable() const { return (const MappableStream*)this; }
 
         // Construction
     public:
@@ -758,7 +810,136 @@ namespace Stream
         MemoryBufferedInputStream(const MemoryBufferedInputStream &);
     };
 
+    /** A buffered input stream that reads in block on the given stream.
+        If only read, the underlying inputstream must support returning a monotonic currentPos.
+        If it's needed to seek in the given input stream, please make sure the feature is supported for the underlying stream. */
+    class BufferedInputStream : public InputStream
+    {
+        // Members
+    private:
+        /** The given input stream as reference */
+        Utils::OwnPtr<InputStream> inputStream;
+        /** The buffer */
+        mutable uint8       *        buffer;
+        /** The current size */
+        mutable uint32               bufferSize;
+        /** The construction size */
+        const uint32                 bufferInitialSize;
+        /** The current position in the (pseudo read) stream */
+        mutable uint64               currentPos;
 
+        // The interface
+    public:
+        /** Get the buffer size */
+        uint32 getBufferSize() const { return bufferSize; }
+        /** This method returns the stream length in byte, if known
+            If the length is equal or higher than 2^32 - 1, the returned value is 0xfffffffe */
+        virtual uint64 fullSize() const  { return inputStream->fullSize();}
+        /** This method returns true if the end of stream is reached */
+        virtual bool endReached() const  { return buffer && currentPos == inputStream->fullSize(); }
+        /** This method returns the position of the next byte that could be read from this stream */
+        virtual uint64 currentPosition() const { return currentPos; }
+        /** Try to seek to the given absolute position (return false if not supported) */
+        virtual bool setPosition(const uint64 newPos) 
+        { 
+            if (currentPos == newPos) return true;
+            if (newPos >= inputStream->fullSize()) return false;
+            // Check if seeking is actually required on the input stream
+            uint64 hiPos = inputStream->currentPosition();
+            uint64 lowPos = hiPos - bufferSize;
+            // Is buffer refilling required ?
+            if (newPos >= lowPos && newPos < hiPos)
+            {
+                // No, it's not, let change the buffer positions
+                currentPos = newPos;
+                return true;
+            }
+            // Optimization to avoid using setPosition that might not be accessible
+            uint64 basePos = (newPos / bufferInitialSize) * bufferInitialSize;
+            if (newPos > hiPos)
+            {
+                if (!inputStream->goForward(basePos - hiPos)) return false;
+            } else
+            {
+                if (!inputStream->setPosition(basePos)) return false;
+            }
+            if (!refillBuffer()) return false;
+            currentPos = newPos; 
+            return true; 
+        }
+        /** Move the stream position forward of the given amount
+            This should give the same results as setPosition(currentPosition() + value),
+            but implementation can be faster for non-seek-able stream. */
+        virtual bool goForward(const uint64 skipAmount) 
+        { 
+            if (skipAmount + currentPos >= inputStream->fullSize()) return false; 
+            return setPosition(currentPos + skipAmount); 
+        }
+        /** Try to read the given amount of data to the specified buffer
+            @return the number of byte truly read (this method doesn't throw) */
+        virtual uint64 read(void * const _buffer, const uint64 size) const throw() 
+        {
+            // Need to compute the positions and check the buffer
+            if (!bufferSize) return (uint64)-1;
+            uint64 done = 0;
+            while (done < size)
+            {
+                // Check how many bytes are left in the buffer
+                uint32 bytesInBuffer = (uint32)(inputStream->currentPosition() - currentPos);
+                // Let's empty the buffer first
+                uint32 amount = (uint32)min(size - done, (uint64)bytesInBuffer);
+                if (_buffer) memcpy(&((uint8*)_buffer)[done], &buffer[bufferSize - bytesInBuffer], amount);
+                currentPos += amount;
+                done += amount;
+                if (done == size) break;
+                if (inputStream->endReached()) return done;
+                if (!refillBuffer()) return (uint64)-1;
+            }
+            return done; 
+        }
+
+        /** Refill the buffer */
+        inline bool refillBuffer() const
+        { 
+            if (!buffer) return false;
+            bufferSize = (uint32)inputStream->read(buffer, bufferInitialSize);
+            if (bufferSize == (uint32)-1)
+            {
+                bufferSize = 0;
+                return false;
+            }
+            return true;
+        }
+
+        // Construction
+    public:
+        /** Construct a buffered input stream.
+            @param is           A reference on a stream that should exists for the whole lifetime of this object
+            @param bufferSize   The buffer size to use while reading the stream */
+        BufferedInputStream(InputStream & is, const uint32 bufferSize = 32768) 
+            : inputStream(is), buffer(0), bufferSize(bufferSize), bufferInitialSize(bufferSize), currentPos(0)
+        {
+            buffer = new uint8[bufferSize];
+            refillBuffer();
+        }
+        /** Construct a buffered input stream.
+            @param is           A pointer of a input stream that's owned by the object
+            @param bufferSize   The buffer size to use while reading the stream */
+        BufferedInputStream(InputStream * is, const uint32 bufferSize = 32768) 
+            : inputStream(is), buffer(0), bufferSize(bufferSize), bufferInitialSize(bufferSize), currentPos(0)
+        {
+            buffer = new uint8[bufferSize];
+            refillBuffer();
+        }       
+        /** The only allowed destructor */
+        ~BufferedInputStream()     { delete[] buffer; buffer = 0; }
+
+    private:
+        /** Deny copying */
+        BufferedInputStream(const BufferedInputStream &);
+    };
+    
+    
     /** A buffered memory-based input stream */
     class MemoryBufferedOutputStream : public OutputStream
     {
@@ -1158,8 +1339,7 @@ namespace Stream
     /** The copy stream function.
         @param is               The input stream to copy from
         @param os               The output stream to copy to
-        @param forceInputSize   If provided, this override the input stream size by this one. You can use this to limit the copy to a certain size.
-        @warning You can't copy MemoryBuffered stream this way as there no way for them to know before hand the required size */
+        @param forceInputSize   If provided, this override the input stream size by this one. You can use this to limit the copy to a certain size. */
     bool copyStream(const InputStream & is, OutputStream & os, const uint64 forceInputSize = 0);
 
     /** The copy callback that is called while the copy is running. */
@@ -1177,8 +1357,7 @@ namespace Stream
         @param os               The output stream to copy to
         @param callback         The callback object with a copiedData method that'll be called while copy is in progress
         @param forceInputSize   If provided, this override the input stream size by this one. You can use this to limit the copy to a certain size.
-        @warning You can't copy MemoryBuffered stream this way as there no way for them to know before hand the required size
-        @warning If you don't care about the copy progress, don't use a callback as it's much slower */
+        @warning If you don't care about the copy progress, don't use a callback as it's much slower. */
     bool copyStream(const InputStream & is, OutputStream & os, CopyCallback & callback, const uint64 forceInputSize = 0);
     
     /** Clone a stream.

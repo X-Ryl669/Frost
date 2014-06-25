@@ -50,7 +50,8 @@ namespace Utils
             @param size     The buffer size in byte (or the reservation size if buffer is 0).
             @return false if the allocation failed. */
         bool Append(const uint8 * buffer, const uint32 size);
-        /** Empty some data from buffer.
+        /** Empty some data from buffer head.
+            After this operation, the size bytes from the beginning of the buffer are cut.
             @note If you need to reset the block, you can call "block.Extract(0, block.getSize())" 
             @param buffer   The buffer to extract the memory block into. Can be 0 to free some space from the beginning of the block.
             @param size     The buffer size in byte (or the freeing size if buffer is 0).
@@ -71,6 +72,19 @@ namespace Utils
             @warning    You'll need this if you're calling a function that can't tell beforehand how much data it'll consume.
                         However, you must call Extract(0, usedSize) after the operation. */
         const uint8 * getConstBuffer() const { return buffer; }
+        /** Forget the buffer.
+            This actually forget the buffer allocation, size and allocated size, and return it.
+            After this call, the object is like if it was destructed.
+            Use this to avoid making copy of buffers 
+            @warning If you need to use this method in a code that also expect a size, don't do that:
+                     @code 
+                     // This is unsafe as it depends on argument order evaluation (undefined)
+                     String ret(block.Forget(), block.getSize()); // Size might be 0 if called after Forget
+                     // This is safe:
+                     uint32 size = block.getSize();
+                     String ret(block.Forget(), (int)size);
+                     @endcode */
+        uint8 * Forget() { uint8 * ret = buffer; buffer = 0; size = allocSize = 0; return ret; }
         /** Strip the buffer to the given size. 
             @warning the stripped data isn't cleared, only the size is set */
         void stripTo(const uint32 newSize) { size = newSize < size ? newSize : size; }
@@ -80,6 +94,16 @@ namespace Utils
             @param newSize     The new allocated size for this buffer
             @param setSizeToo  If true, the consumed size is set to the allocated size */
         bool ensureSize(const uint32 newSize, const bool setSizeToo = false) { if (!resizeBuffer(newSize)) return false; if (setSizeToo) size = newSize; return true; }
+        /** Swap with the other block.
+            This actually exchange the memory block internal pointers, and sizes.
+            @param other    The block to swap with. */
+        void swapWith(MemoryBlock & other)
+        {
+            uint8 * _buffer = buffer; buffer = other.buffer; other.buffer = _buffer;
+            uint32 tmp = size; size = other.size; other.size = tmp;
+            tmp = allocSize; allocSize = other.allocSize; other.allocSize = tmp;
+        }
+            
 
 #if (HasBaseEncoding == 1)
         /** Create a memory block from an encoded string.
@@ -124,9 +148,11 @@ namespace Utils
         const bool operator == (const MemoryBlock & other) const;
 
         // Construction and destruction
-    public:    
+    public:
         /** Default construction */
         MemoryBlock(const uint32 size = 0) : buffer((uint8*)Platform::safeRealloc(0, size)), size(size), allocSize(size) {}
+        /** Copy from exisiting buffer and size */
+        MemoryBlock(const uint8 * _buffer, const uint32 _size) : buffer((uint8*)Platform::safeRealloc(0, _size)), size(_size), allocSize(_size) { if (size) memcpy(buffer, _buffer, size); }
         /** Copy constructor */
         MemoryBlock(const MemoryBlock & other) : buffer((uint8*)Platform::safeRealloc(0, other.size)), size(other.size), allocSize(other.size) { if (size) memcpy(buffer, other.buffer, size); }
         /** Destruction */
@@ -136,6 +162,35 @@ namespace Utils
     /** This deletion function zero the memory block before deleting it.
         This is particularly useful for Crypto code, as you'll usually need to clear private key's memory. */
     void cleanAndDelete(MemoryBlock *const block);
+    
+#if (HasHashingCode == 1)
+    /** Get the hash from the given algorithm.
+        This is a shortcut to calling all methods successively.
+        This methods takes a MemoryBlock as input and output.
+        @param in     The input block to hash with the method
+        @return out   The output block that contains the hash. You must delete the returned object. */
+    template <class Hasher>
+    static inline MemoryBlock * getHashFor(const MemoryBlock & in)
+    { Hasher hash; MemoryBlock * out = new MemoryBlock(hash.hashSize()); hash.Start(); hash.Hash(in.getConstBuffer(), in.getSize()); hash.Finalize(out->getBuffer()); return out; }
+#endif
+
+#ifdef hpp_Strings_hpp
+    /** Convert from a memory block (that's own and deleted) to a String.
+        This is used like this:
+        @code
+        MemoryBlock src;
+        const Strings::FastString & ret = convert(src.toBase64());
+        @endcode */
+    inline Strings::FastString convert(MemoryBlock * in)
+    {
+        if (!in) return "";
+        uint8 ch = 0;
+        if (!in->Append(&ch, 1)) { delete in; return ""; }
+        int size = (int)in->getSize(); uint8 * buffer = in->Forget();
+        delete in;
+        return Strings::FastString(buffer, size-1, size); // This is optimal to avoid a memory allocation on failure
+    }
+#endif
 
 }
 

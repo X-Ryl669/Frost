@@ -374,6 +374,9 @@ namespace Type
 	    inline bool isEmpty() const { return table == getTable((Empty*)0); }
         /** Check if this variant is a plain old data type (POD) */
         inline bool isPOD() const { return table->PODDiscriminant(); }
+        /** Get the stored type name. 
+            @warning Don't use that to compare Variant types, use isExactly() instead. */
+        inline const char * getTypeName() const { return UniversalTypeIdentifier::getTypeFactory()->getTypeName(table->getTypeID()); }
 
 	    /** Reset the variant */
 	    inline void Reset() 
@@ -416,6 +419,175 @@ namespace Type
     extern VarT<ObjectCopyPolicy> EmptyVar;
     /** Use this if you want to pass default variant parameters to functions */
     extern VarT<ObjectPtrPolicy> EmptyRef;
+    
+
+    /** Error handler callback.
+        If provided, and in case of invokation error, this is called before returning an empty variant.
+        You can throw in the callback, the object does not catch any exception, so it'll bubble up your handling code, 
+        or you can retry or escape or ... */
+    struct ErrorCallback
+    {
+        /** The error type when invoking a method */
+        enum ErrorType
+        {
+            Success = 0,            //!< No error is detected
+            BadArgumentCount = 1,   //!< Not enough arguments provided
+            BadArgumentType = 2,    //!< Bad argument type provided (and no conversion succeeded)
+            MethodFailed = 3,       //!< Calling the method failed
+            BadThisPointer = 4,     //!< The pointer to this object is not as expected.
+            
+            Unknown = 255,          //!< Unknown error
+        };
+        /** Will be called by the Dynamic object, providing the error type and a error message */
+        virtual Var & errorDetected(Var & ret, const ErrorType type, const Strings::FastString & msg) const { return ret; }
+        /** Syntactic sugar */
+        inline Var & operator() (Var & ret, const ErrorType type, const Strings::FastString & msg) const { return errorDetected(ret, type, msg); }
+        
+        virtual ~ErrorCallback() {}
+    };
+    /** When none specified, this one is used and it does nothing. */
+    extern ErrorCallback defaultHandling;
+        
+    
+    /** This store the context and arguments for an unknown function call. */
+    template <typename Policy>
+    class FunctionArgsT
+    {
+        // Type definition and enumeration
+    public:
+        /** The type of object we are using */
+        typedef VarT<Policy> Var;
+        
+        // Members
+    public:
+        /** A reference on this object if any (can be empty for a static function pointer) */
+        void * thisObj;
+        /** The argument list */
+        const Var * args;
+        const size_t count;
+        /** The error callback, if provided */
+        const ErrorCallback & errorCb;
+        
+    private:
+        // Prevent copy
+        FunctionArgsT(const FunctionArgsT & other);
+        FunctionArgsT & operator = (const FunctionArgsT & other);
+        
+        // Construction and destruction
+    public:
+        /** The object does not own the arguments array passed in. */
+        FunctionArgsT(void * const thisObj, const Var * args, const size_t argsCount)
+           : thisObj(thisObj), args(args), count(argsCount), errorCb(defaultHandling)
+        {}
+        /** The object does not own the arguments array passed in. */
+        FunctionArgsT(void * const thisObj, const Var * args, const size_t argsCount, const ErrorCallback & cb)
+           : thisObj(thisObj), args(args), count(argsCount), errorCb(cb)
+        {}
+    };
+
+    /** The functions type.
+        If you need to store a function pointer to a variant, you need to write a wrapper like this:
+        @code
+            void myFunc();
+            int sum(int a, int b);
+            
+            // Write a wrapper like this:
+            Var myFunc_wrap(const FunctionsArgs & args) { myFunc(); return Var(); }
+            Var sum_wrap(const FunctionArgs & args) { int t; Var ret = sum(args.args[0].like(&t), args.args[1].like(&t)); return ret; }
+            
+            Var funcPtr = sum_wrap;
+            // Call like this:
+            int ret = Invoke(funcPtr)(1, 2).like(ret);
+        @endcode */
+    typedef VarT<ObjectCopyPolicy> (*NamedFunc)(const FunctionArgsT<ObjectCopyPolicy> & args);
+    typedef VarT<ObjectPtrPolicy> (*NamedFuncRef)(const FunctionArgsT<ObjectPtrPolicy> & args);
+
+
+    /** A class used to invoke a method from unknown object.
+        If you need to store a function pointer to a variant, you need to write a wrapper like this:
+        @code
+            void myFunc();
+            int sum(int a, int b);
+            
+            // Write a wrapper like this (error code omitted):
+            Var myFunc_wrap(const FunctionsArgs & args) { myFunc(); return Var(); }
+            Var sum_wrap(const FunctionArgs & args) { int t; Var ret = sum(args.args[0].like(&t), args.args[1].like(&t)); return ret; }
+            
+            Var funcPtr = sum_wrap;
+            // Call like this:
+            int ret = Invoke(funcPtr)(1, 2).like(ret);
+        @endcode
+        
+        For object with methods, you'll write something like this:
+        @code
+            struct A
+            {
+                int sum(int a);
+            };
+            
+            // Write a wrapper like this:
+            Var sum_wrap(const FunctionArgs & args) { A * a = (A*)args.thisObj.toPointer((void**)0); int t; Var ret = a->sum(args.args[0].like(&t)); return ret; }
+            // Call like this:
+            A a;
+            int ret = Invoke(&a, sum_wrap)(3);
+        @endcode
+        
+        @warning If you don't want to register each class you want to invoke method from, then you must convert them to and from void *. 
+                 To avoid strong mistakes, you might want to dynamic_cast the class to assert it's the type expected after void* downgrading (if RTTI is on).
+    */
+    template <typename Policy>
+    class InvokeT
+    {
+        // Type definition and enumeration
+    public:
+        /** The Variant class we are using */
+        typedef VarT<Policy> Var;
+        /** The type of arguments we expect */
+        typedef FunctionArgsT<Policy> Args;
+        /** The function pointer type we expect */
+        typedef Var (*FuncPtr)(const Args &);
+        
+        
+        // Operators
+    public:
+        /** Basic 0 ary argument */
+        inline Var operator()() const { return (*ptr)(Args(thisObj, 0, 0)); }
+        /** Basic unary argument */
+        inline Var operator()(const Var & arg) const { return (*ptr)(Args(thisObj, &arg, 1)); }
+        /** Basic binary argument */
+        inline Var operator()(const Var & arg1, const Var & arg2) const { const Var args[] = { arg1, arg2 }; return (*ptr)(Args(thisObj, args, 2)); }
+        /** Basic ternary argument */
+        inline Var operator()(const Var & arg1, const Var & arg2, const Var & arg3) const { const Var args[] = { arg1, arg2, arg3 }; return (*ptr)(Args(thisObj, args, 3)); }
+        /** Basic four-ary argument */
+        inline Var operator()(const Var & arg1, const Var & arg2, const Var & arg3, const Var & arg4) const { const Var args[] = { arg1, arg2, arg3, arg4 }; return (*ptr)(Args(thisObj, args, 4)); }
+        /** Basic five-ary argument */
+        inline Var operator()(const Var & arg1, const Var & arg2, const Var & arg3, const Var & arg4, const Var & arg5) const { const Var args[] = { arg1, arg2, arg3, arg4, arg5 }; return (*ptr)(Args(thisObj, args, 5)); }
+        /** List based argument calling */
+        inline Var operator()(const Var * args, const size_t count) const { return (*ptr)(Args(thisObj, args, count)); }
+        
+        // Construction and destruction
+    public:
+        /** Construct the invoker with a pointer to a function */
+        InvokeT(FuncPtr ptr) : ptr(ptr), thisObj(0) {}
+        /** Construct the invoker with a pointer to a method, it's not owned */
+        InvokeT(void * thisObj, FuncPtr ptr) : ptr(ptr), thisObj(thisObj) {}
+        
+        // Members
+    private:
+        /** The function pointer to invoke */
+        FuncPtr ptr;
+        /** The object to use as context (might be empty) */
+        void * thisObj;
+    };
+    
+    /** The function args for copied parameters */
+    typedef FunctionArgsT<ObjectCopyPolicy> FuncArgs;
+    /** The function args for pointers parameters */
+    typedef FunctionArgsT<ObjectPtrPolicy> FuncArgsRef;
+    /** The invoker for copied parameters */
+    typedef InvokeT<ObjectCopyPolicy> Invoke;
+    /** The invoker for pointer parameters */
+    typedef InvokeT<ObjectPtrPolicy> InvokeRef;
 }
 
 #endif

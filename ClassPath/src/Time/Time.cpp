@@ -245,7 +245,6 @@ namespace Time
         return timeSinceEpoch.tv_sec - offset;
     }
     
-
     bool Time::fromDate(const char * _date)
     {
 #if defined(_WIN32) || defined(_POSIX)

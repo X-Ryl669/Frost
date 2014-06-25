@@ -139,15 +139,18 @@ namespace Query
         static void getFinalText(String & result, const QueryArrayT & query, const String & actionName, const size_t fromPos, const size_t wherePos, const String & tableName)
         {
             result = actionName;
+            bool fromInc = false;
             for (size_t i = 0; i < query.getSize(); i++)
             {
                 const OpArg & op = query.getElementAtPosition(i);
                 if ((fromPos == (size_t)-1 && i == wherePos) || i == fromPos)
+                {
                     result += " FROM " + tableName + " ";
-                    
+                    fromInc = true;
+                }
                 result += op.op + op.arg;
             }
-            if ((fromPos == (size_t)-1 || fromPos == query.getSize()) && tableName )
+            if ((fromPos == (size_t)-1 || fromPos == query.getSize()) && tableName && !fromInc)
             {
                 result += " FROM " + tableName + " ";
             }
@@ -166,15 +169,19 @@ namespace Query
             getFinalText(subQuery, query, actionName, fromPos, wherePos, tableName);
             
             result = "SELECT ";
+            bool fromInc = false;
             for (size_t i = 0; i < query.getSize(); i++)
             {
                 const OpArg & op = query.getElementAtPosition(i);
                 if ((fromPos == (size_t)-1 && i == wherePos) || i == fromPos)
+                {
                     result += ", (SELECT COUNT(*) FROM (" + subQuery + ")) AS xZ_X_Count_T823 FROM " + tableName + " ";
+                    fromInc = true;
+                }
                     
                 result += op.op + op.arg;
             }
-            if ((fromPos == (size_t)-1 || fromPos == query.getSize()) && tableName )
+            if ((fromPos == (size_t)-1 || fromPos == query.getSize()) && tableName && !fromInc)
                 result += ", (SELECT COUNT(*) FROM (" + subQuery + ")) AS xZ_X_Count_T823 FROM " + tableName + " ";
             return true;
         }

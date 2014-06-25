@@ -808,9 +808,9 @@ namespace Frost
     {
         struct MatchAFile { virtual bool isExcluded(const String & relPath) const { return false; } virtual ~MatchAFile() {} };
         struct MatchSimpleRule : public MatchAFile { String rule; virtual bool isExcluded(const String & relPath) const { return relPath.Find(rule) != -1; } MatchSimpleRule(const String & rule) : rule(rule) {} };
-        struct MatchRegEx : public MatchAFile { String::RegExOpaque * opaque; virtual bool isExcluded(const String & relPath) const { return !relPath.regExMatchEx(*opaque, 0); }
-                                               ~MatchRegEx() { String::regExClean(opaque); } MatchRegEx(const String & regEx) : opaque(0) { String::regExCompile(regEx, opaque); } };
-                                               
+        struct MatchRegEx : public MatchAFile { String regEx; mutable void * capts; int capCount; virtual bool isExcluded(const String & relPath) const { int capCount = 0; return relPath.regExFit(regEx, true, &capts, &capCount); }
+                                                MatchRegEx(const String & regEx) : regEx(regEx), capts(0), capCount(0) {} ~MatchRegEx() { free(capts); capCount = 0; } };
+
         Container::NotConstructible<MatchAFile>::IndexList matches;
     public:
         bool isExcluded(const String & relPath) const
@@ -1853,7 +1853,7 @@ int showHelpMessage(const Frost::String & error = "")
 {
     if (error) fprintf(stderr, "error: %s\n\n", (const char*)TRANS(error));
     
-    printf("Frost (C) Copyright 2013 - Cyril RUSSO (This software is BSD licensed) \n");
+    printf("Frost (C) Copyright 2014 - Cyril RUSSO (This software is BSD licensed) \n");
     printf(TRANS("Frost is a tool used to efficiently backup and restore files to/from a remote\n"
            "place with no control other the remote server software.\n"
            "No warranty of any kind is provided for the use of this software.\n"
@@ -1879,12 +1879,13 @@ int showHelpMessage(const Frost::String & error = "")
            "\t                     \tIf you have a large amount of data to backup, a bigger number will create less files in the backup directory, the downside being that purging will take more time\n"
            "\t                     \tIf you backup often, and purge at regular interval, the default should allow fast restoring and purging\n"
            "\t--compression [bsc]\tYou can change the compression library to use (default is zlib). Using 'bsc' is faster than LZMA and gives better compression ratio.\n"
-           "\t                     \tHowever, 'bsc' also changes the multichunk size to 10240.\n"
+           "\t                     \tHowever, 'bsc' also changes the multichunk size to 25600.\n"
            "\t--strategy [mode]    \tThe purging strategy, 'fast' for removing lost chunk from database, but does not reassemble multichunks\n"
            "\t                     \t'slow' for rebuilding multichunks after fast pruning. This will save the maximum backup amount, at the price of much longer processing\n"
            "\t--exclude list.exc \tYou can specify a file containing the exclusion list for backup. This file is read line-by-line (one rule per line)\n"
-           "\t                     \tIf a line starts by 'r/' the exclusion rule is considered as a regular expression otherwise the rule is matched if the analyzed file path containing the rule.\n"
+           "\t                     \tIf a line starts by 'r/' the exclusion rule is considered as a regular expression otherwise the rule is matched if the analyzed file path contains the rule.\n"
            "\t                     \tThis also means that if you need to exclude a file whose name starts by 'r/', you need to write 'r/r/'.\n"
+           "\t                     \tEven if the regular expression returns a partial match, the file is excluded, so you need to be very strict on the rules declaration.\n"
            "\t                     \tTo get more details about the regular expression engine, run --help regex\n"
            ),
 #include "build/build-number.txt"
@@ -1894,7 +1895,7 @@ int showHelpMessage(const Frost::String & error = "")
 
 int showSecurityMessage()
 {
-    printf("Frost (C) Copyright 2013 - Cyril RUSSO (This software is BSD licensed) \n");
+    printf("Frost (C) Copyright 2014 - Cyril RUSSO (This software is BSD licensed) \n");
     printf(TRANS("Frost is a tool used to efficiently backup and restore files to/from a remote\n"
            "place with no control other the remote server software.\n"
            "No warranty of any kind is provided for the use of this software.\n"
@@ -1932,7 +1933,7 @@ int showSecurityMessage()
 
 int showRegExMessage()
 {
-    printf("Frost (C) Copyright 2013 - Cyril RUSSO (This software is BSD licensed) \n");
+    printf("Frost (C) Copyright 2014 - Cyril RUSSO (This software is BSD licensed) \n");
     printf(TRANS("Frost is a tool used to efficiently backup and restore files to/from a remote\n"
            "place with no control other the remote server software.\n"
            "No warranty of any kind is provided for the use of this software.\n"
@@ -1973,18 +1974,21 @@ int checkTests(Strings::StringArray & options)
     if ((optionPos = options.indexOf("--test")) != options.getSize())
     {
         Strings::FastString testName = "key";
+        Strings::FastString arg = "";
         if (optionPos + 1 != options.getSize()) testName = options[optionPos+1].Trimmed();
+        if (optionPos + 2 != options.getSize()) arg = options[optionPos+2].Trimmed();
         
         // Run tests now
         if (testName == "help")
         {
-            printf("Frost (C) Copyright 2013 - Cyril RUSSO All right reserved \n");
+            printf("Frost (C) Copyright 2014 - Cyril RUSSO All right reserved \n");
             printf(TRANS("Current version: %d. \n\nTest mode help:\n"
                    "\tkey\t\tTest cryptographic system, by creating a new vault, and master key, and reading it back\n"
                    "\tdb\t\tTest database code, by creating a default database, filling it and reading it back\n"
                    "\troundtrip\tTest a complete roundtrip backup and restore, of fake created file, with specific attributes\n"
                    "\tpurge\t\tTest an update to a previous roundtrip test, and purging the initial revision\n"
-                   "\tfs\t\tTest some simple filesystem operations (independant from any other tests)\n"),
+                   "\tfs\t\tTest some simple filesystem operations (independant from any other tests)\n"
+                   "\tcomp\t\tTest compression and decompression engine for pseudo random input (independant from any other tests) (use compf if it fails, to reproduce same condition)\n"),
 #include "build/build-number.txt"
                    );
             return EXIT_SUCCESS;
@@ -2180,6 +2184,9 @@ int checkTests(Strings::StringArray & options)
                     ERR("Can't copy lyric file in the test directory");
                 if (!File::Info("./ex/RomeoAndJulietS2.txt").copyTo("./test/"))
                     ERR("Can't copy scene 2 file in the test directory");
+                // Change the user permission for this file
+                if (!File::Info("./test/basicFile.txt").setPermission(0600))
+                    ERR("Can't set the permission for the basic file");
             }
             
             // Then, let backup this!
@@ -2259,8 +2266,152 @@ int checkTests(Strings::StringArray & options)
             Frost::finalizeDatabase();
             fprintf(stderr, "Success\n");
             return EXIT_SUCCESS;
-#undef ERR
         }
+        else if (testName == "comp")
+        {
+            // Test compression engines on random and pseudo random data
+            // Generate a seed for making sure the tests are reproducable
+            uint32 seed[4];
+            if (!arg)
+            {
+                Random::fillBlock((uint8*)seed, sizeof(seed), true);
+                fprintf(stderr, "Seed used: %08X%08X%08X%08X\n", seed[0], seed[1], seed[2], seed[3]);
+            }
+            else
+            {
+                // Parse the seed argument
+                if (sscanf((const char*)arg, "%08X%08X%08X%08X", &seed[0], &seed[1], &seed[2], &seed[3]) != 4)
+                {
+                    fprintf(stderr, "Can not parse the seed format\n");
+                    return -1;
+                }
+            }
+            Random::getDefaultGenerator().Init((uint8*)seed, sizeof(seed));
+            while (true)
+            {
+                // Generate a bloc of random memory, filling only one byte out of two
+                Utils::MemoryBlock mem(64*1024*1024);
+                Random::fillBlock(mem.getBuffer(), 16*1024*1024);
+                // Then mix up some byte to make compression works
+                uint8 * buf = mem.getBuffer();
+                for (int i = 0; i < 16*1024*1024; i+= 2)
+                {
+                    buf[i + 16*1024*1024] = buf[i+1];
+                    buf[i + 1] = buf[i];
+                }
+                // Not so simple, let's make it harder for compression
+                for (int i = 0; i < 32*1024*1024; i+= 5)
+                {
+                    buf[i + 2] = (buf[i] - buf[i+1]) > 10 ? buf[i]+2 : buf[i+1];
+                    buf[i + 4] = (buf[i+3] + buf[i+2] + buf[i+1] + buf[i]) / 3;
+                    buf[i + 32*1024*1024] = buf[i+2];
+                    buf[i + 32*1024*1024 + 3] = buf[i];
+                    buf[i + 32*1024*1024 + 4] = buf[i+1];
+                }
+
+                // Ok, let's spread a lot of common word in the buffer to compress too
+                for (int i = 0; i < 100000; i++)
+                {
+                    memcpy(buf+Random::numberBetween(0, 63*1024*1024), "igloo ", 6);
+                    memcpy(buf+Random::numberBetween(0, 63*1024*1024), " house ", 7);
+                    memcpy(buf+Random::numberBetween(0, 63*1024*1024), "modern fixture", 14);
+                    memcpy(buf+Random::numberBetween(0, 63*1024*1024), "WTF", 4);
+                }
+
+                // Buffer ready, let's save it to a file for later inspection
+                fprintf(stderr, "Buffer ready for compression\n");
+                ::Stream::MemoryBlockStream srcData(buf, mem.getSize());
+                {
+                    ::Stream::OutputFileStream ofs("origin.raw");
+                    if (!::Stream::copyStream(srcData, ofs))
+                        ERR("Can not save to origin.raw\n");
+                    srcData.setPosition(0);
+                }
+                fprintf(stderr, "Buffer saved to origin.raw\n");
+                ::Stream::OutputMemStream compressedStream;
+                // Compress the data
+                {
+                    ::Stream::CompressOutputStream compressor(compressedStream, new Compression::BSCLib);
+                    if (!::Stream::copyStream(srcData, compressor))
+                        ERR("Compressing failed\n");
+                }
+                fprintf(stderr, "Buffer compressed\n");
+
+                // Copy the compressed output to a file too 
+                {
+                    ::Stream::OutputFileStream ofs("comp.bsc");
+                    ::Stream::copyStream(::Stream::MemoryBlockStream(compressedStream.getBuffer(), compressedStream.fullSize()), ofs);
+                }
+                fprintf(stderr, "Compressed buffer saved to comp.bsc\n");
+
+                // Uncompress the data now
+                ::Stream::OutputMemStream decompressedStream;
+                ::Stream::MemoryBlockStream compressedInStream(compressedStream.getBuffer(), compressedStream.fullSize());
+                {
+                     ::Stream::DecompressInputStream decompressor(compressedInStream, new Compression::BSCLib);
+                     if (!::Stream::copyStream(decompressor, decompressedStream))
+                         ERR("Can not decompressed the compressed data\n");
+                }
+                fprintf(stderr, "Compressed buffer decompressed\n");
+                // Save the decompressed file for later inspection
+                {
+                    ::Stream::OutputFileStream ofs("decomp.raw");
+                    ::Stream::copyStream(::Stream::MemoryBlockStream(decompressedStream.getBuffer(), decompressedStream.fullSize()), ofs);
+                }
+                fprintf(stderr, "Decompressed buffer saved to decomp.raw\n");
+
+                // Compare the stream now, byte by byte
+                const uint8 * bufDec = decompressedStream.getBuffer();
+                if (decompressedStream.fullSize() != mem.getSize())
+                    ERR("Mismatch in data round file size (got %lld, expected %lld)\n", decompressedStream.fullSize(), (uint64)mem.getSize());
+                for (uint32 i = 0; i < mem.getSize(); i++)
+                {
+                    if (buf[i] != bufDec[i])
+                       ERR("Error at position %u (got %02X expected %02X)\n", i, bufDec[i], buf[i]);
+                }
+                fprintf(stderr, "Success\n");
+                return EXIT_SUCCESS;
+            }
+        }
+        else if (testName == "compf")
+        {
+            ::Stream::InputFileStream srcData("origin.raw");
+
+            ::Stream::OutputMemStream compressedStream;
+            // Compress the data
+            {
+                ::Stream::CompressOutputStream compressor(compressedStream, new Compression::BSCLib);
+                if (!::Stream::copyStream(srcData, compressor))
+                    ERR("Compressing failed\n");
+            }
+            fprintf(stderr, "Buffer compressed\n");
+
+            // Copy the compressed output to a file too
+            {
+                ::Stream::OutputFileStream ofs("comp.bsc");
+                ::Stream::copyStream(::Stream::MemoryBlockStream(compressedStream.getBuffer(), compressedStream.fullSize()), ofs);
+            }
+            fprintf(stderr, "Compressed buffer saved to comp.bsc\n");
+
+            // Uncompress the data now
+            ::Stream::OutputMemStream decompressedStream;
+            ::Stream::MemoryBlockStream compressedInStream(compressedStream.getBuffer(), compressedStream.fullSize());
+            {
+                ::Stream::DecompressInputStream decompressor(compressedInStream, new Compression::BSCLib);
+                if (!::Stream::copyStream(decompressor, decompressedStream))
+                    ERR("Can not decompressed the compressed data\n");
+            }
+            fprintf(stderr, "Compressed buffer decompressed\n");
+            // Save the decompressed file for later inspection
+            {
+                ::Stream::OutputFileStream ofs("decomp.raw");
+                ::Stream::copyStream(::Stream::MemoryBlockStream(decompressedStream.getBuffer(), decompressedStream.fullSize()), ofs);
+            }
+            fprintf(stderr, "Decompressed buffer saved to decomp.raw\n");
+            fprintf(stderr, "Success\n");
+            return EXIT_SUCCESS;
+        }
+#undef ERR
         else
         {
             showHelpMessage();
@@ -2513,8 +2664,8 @@ int main(int argc, char ** argv)
     if (optionsMap["compression"] && *optionsMap["compression"] == "bsc")
     {   // Remember the compressor selected
         Frost::Helpers::compressor = Frost::Helpers::BSC;
-        File::MultiChunk::setMaximumSize(10240 * 1024);
-        optionsMap.storeValue("multichunk", new Strings::FastString("10240"), true);
+        File::MultiChunk::setMaximumSize(25*1024*1024);
+        optionsMap.storeValue("multichunk", new Strings::FastString("25600"), true);
     }
     
     // Test mode first

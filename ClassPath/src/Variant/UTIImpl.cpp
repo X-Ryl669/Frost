@@ -8,6 +8,10 @@ namespace Type
     VarT<ObjectCopyPolicy> EmptyVar;
     /** Use this if you want to pass default parameters to functions */
     VarT<ObjectPtrPolicy> EmptyRef;
+    /** The default error handling */
+    ErrorCallback defaultHandling;
+    /** The default error on throwing */
+    DynObj::ThrowOnError defaultThrow;
 }
 
 namespace UniversalTypeIdentifier
@@ -200,12 +204,17 @@ RegisterClassFunctions(Database::TableDefinition*, ("<Value></Value>"), throw Co
 
     typedef Type::VarT<Type::ObjectCopyPolicy>::Empty VarEmpty;
     typedef Type::VarT<Type::ObjectPtrPolicy>::Empty RefEmpty;
+    typedef Container::NotConstructible<Type::VarT<Type::ObjectPtrPolicy> >::IndexList RefArray;
+    typedef Container::WithCopyConstructor<Type::VarT<Type::ObjectCopyPolicy> >::Array VarArray;
 
     typedef Container::WithCopyConstructor<Strings::FastString>::Array StringArray;
 
     RegisterClassForVariantImpl(VarEmpty , 0x00000000, 0x00000000, 0x00000001, 0x00000000, ("<Value></Value>"), ; )
     RegisterClassForVariantImpl(RefEmpty , 0x00000000, 0x00000000, 0x00000002, 0x00000000, ("<Value></Value>"), ; )
+    RegisterClassForVariantImpl(Type::NamedFunc             , 0x00000000, 0x00000000, 0x00000003, 0x00000000, ("<Value>[native func at %p]</Value>", (void*)pData), sSrc.fromFirst("at ").Scan("%p", &pData) )
+    RegisterClassForVariantImpl(Type::NamedFuncRef          , 0x00000000, 0x00000000, 0x00000003, 0x00000001, ("<Value>[native func at %p]</Value>", (void*)pData), sSrc.fromFirst("at ").Scan("%p", &pData) )
     RegisterClassForVariantImpl(Strings::FastString         , 0x00000000, 0x00000000, 0x00000000, 0xc34def32, ("<Value>%s</Value>", (const char *)*(Strings::FastString*)pData), *(Strings::FastString*)pData = sSrc)
+    RegisterClassForVariantImpl(Type::DynObj                , 0x00000000, 0x00000000, 0x00000000, 0x0b3ec1d1, ("<Value></Value>"), ; )
 
 #ifndef DontHaveDatabaseCode
     // Database stuff is here
@@ -227,7 +236,12 @@ RegisterClassFunctions(Database::TableDefinition*, ("<Value></Value>"), throw Co
 #endif
 
     RegisterClassForVariantImpl(StringArray                 , 0x00000000, 0x00000000, 0x00000008, 0xc34def32, ("<Value>"); for(uint32 iter = 0; iter < ((StringArray*)pData)->getSize(); iter++) sSrc+="<l>"+((*(StringArray*)pData)[iter])+"</l>"; sSrc+="</Value>", \
-                                while(sSrc.getLength()) {sSrc = sSrc.fromFirst("<l>"); (*(StringArray*)pData).Append(sSrc.upToFirst("</l>")); sSrc = sSrc.fromFirst("</l>"); })
-
+                                ((StringArray*)pData)->Clear(); while(sSrc.getLength()) {sSrc = sSrc.fromFirst("<l>"); (*(StringArray*)pData).Append(sSrc.upToFirst("</l>")); sSrc = sSrc.fromFirst("</l>"); })
+    RegisterClassForVariantImpl(VarArray                    , 0x00000000, 0x00000000, 0x00000009, 0x00000000, ("<Value>"); for(uint32 iter = 0; iter < ((VarArray*)pData)->getSize(); iter++) \
+                                { sSrc+="<l>"; DataSource * lds = ((VarArray*)pData)->getElementAtUncheckedPosition(iter).getDataSource(); Strings::FastString tmp; if (lds) lds->getValue().extractTo(tmp); sSrc+=tmp; sSrc+= "</l>"; delete lds; } sSrc+="</Value>", \
+                                ((VarArray*)pData)->Clear(); while(sSrc.getLength()) {sSrc = sSrc.fromFirst("<l>"); Var tmp; tmp.setDataSource(new TextDataSource(sSrc.upToFirst("</l>"))); (*(VarArray*)pData).Append(tmp); sSrc = sSrc.fromFirst("</l>"); })
+    RegisterClassForVariantImpl(RefArray                    , 0x00000000, 0x00000000, 0x0000000A, 0x00000000, ("<Value>"); for(uint32 iter = 0; iter < ((RefArray*)pData)->getSize(); iter++) \
+                                { sSrc+="<l>"; DataSource * lds = ((RefArray*)pData)->getElementAtPosition(iter).getDataSource(); Strings::FastString tmp; if (lds) lds->getValue().extractTo(tmp); sSrc+=tmp; sSrc+= "</l>"; delete lds; } sSrc+="</Value>", \
+                                ((RefArray*)pData)->Clear(); while(sSrc.getLength()) {sSrc = sSrc.fromFirst("<l>"); Ref * tmp = new Ref; if (!tmp) break; tmp->setDataSource(new TextDataSource(sSrc.upToFirst("</l>"))); (*(RefArray*)pData).Append(tmp); sSrc = sSrc.fromFirst("</l>"); })
 #endif // !DOXYGEN
 

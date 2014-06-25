@@ -43,7 +43,7 @@ CXXFLAGS += -O2
 CFLAGS += -O2
 endif
 
-CXXFLAGS += -pthread -Wno-multichar
+CXXFLAGS += -pthread -Wno-multichar -std=c++11
 CFLAGS += -pthread -Wno-multichar
 
 

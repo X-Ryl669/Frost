@@ -10,121 +10,10 @@
 #include "../Compress/BaseCompress.hpp"
 // We need ZLib implementation too for default usage 
 #include "../Compress/ZLib.hpp"
-// We need scoped pointers too
-#include "../Utils/ScopePtr.hpp"
+
 
 namespace Stream
 {
-    /** A buffered input stream that reads in block on the given stream.
-        It needs to seek in the given input stream, so please make sure the feature is supported. */
-    class BufferedInputStream : public InputStream
-    {
-        // Members
-    private:
-        /** The given input stream as reference */
-        Utils::OwnedPtr<InputStream> inputStream;
-        /** The buffer */
-        mutable uint8       *        buffer;
-        /** The current size */
-        mutable uint32               bufferSize;
-        /** The construction size */
-        const uint32                 bufferInitialSize;
-        /** The current position in the (pseudo read) stream */
-        mutable uint64               currentPos;
-
-        // The interface
-    public:
-        /** This method returns the stream length in byte, if known
-            If the length is equal or higher than 2^32 - 1, the returned value is 0xfffffffe */
-        virtual uint64 fullSize() const  { return inputStream->fullSize();}
-        /** This method returns true if the end of stream is reached */
-        virtual bool endReached() const  { return buffer && currentPos == inputStream->fullSize(); }
-        /** This method returns the position of the next byte that could be read from this stream */
-        virtual uint64 currentPosition() const { return currentPos; }
-        /** Try to seek to the given absolute position (return false if not supported) */
-        virtual bool setPosition(const uint64 newPos) 
-        { 
-            if (currentPos == newPos) return true;
-            if (newPos >= inputStream->fullSize()) return false; 
-            // Need to refill the buffer first
-            uint64 basePos = (newPos / bufferInitialSize) * bufferInitialSize;
-            if (!inputStream->setPosition(basePos)) return false;
-            if (!refillBuffer()) return false;
-            currentPos = newPos; 
-            return true; 
-        }
-        /** Move the stream position forward of the given amount
-            This should give the same results as setPosition(currentPosition() + value),
-            but implementation can be faster for non-seek-able stream. */
-        virtual bool goForward(const uint64 skipAmount) 
-        { 
-            if (skipAmount + currentPos >= inputStream->fullSize()) return false; 
-            return setPosition(currentPos + skipAmount); 
-        }
-        /** Try to read the given amount of data to the specified buffer
-            @return the number of byte truly read (this method doesn't throw) */
-        virtual uint64 read(void * const _buffer, const uint64 size) const throw() 
-        {
-            // Need to compute the positions and check the buffer
-            if (!bufferSize) return (uint64)-1;
-            uint64 done = 0;
-            while (done < size)
-            {
-                // Check how many bytes are left in the buffer
-                uint32 bytesInBuffer = (uint32)(inputStream->currentPosition() - currentPos);
-                // Let's empty the buffer first
-                uint32 amount = (uint32)min(size - done, (uint64)bytesInBuffer);
-                if (_buffer) memcpy(&((uint8*)_buffer)[done], &buffer[bufferSize - bytesInBuffer], amount);
-                currentPos += amount;
-                done += amount; 
-                if (inputStream->endReached()) return done;
-                if (!refillBuffer()) return (uint64)-1;
-            }
-            return done; 
-        }
-
-        /** Refill the buffer */
-        inline bool refillBuffer() const
-        { 
-            if (!buffer) return false;
-            bufferSize = (uint32)inputStream->read(buffer, bufferInitialSize);
-            if (bufferSize == (uint32)-1)
-            {
-                bufferSize = 0;
-                return false;
-            }
-            return true;
-        }
-
-        // Construction
-    public:
-        /** Construct a buffered input stream.
-            @param is           A reference on a stream that should exists for the whole lifetime of this object
-            @param bufferSize   The buffer size to use while reading the stream */
-        BufferedInputStream(InputStream & is, const uint32 bufferSize = 32768) 
-            : inputStream(is), buffer(0), bufferSize(bufferSize), bufferInitialSize(bufferSize), currentPos(0)
-        {
-            buffer = new uint8[bufferSize];
-            refillBuffer();
-        }
-        /** Construct a buffered input stream.
-            @param is           A pointer of a input stream that's owned by the object
-            @param bufferSize   The buffer size to use while reading the stream */
-        BufferedInputStream(InputStream * is, const uint32 bufferSize = 32768) 
-            : inputStream(is), buffer(0), bufferSize(bufferSize), bufferInitialSize(bufferSize), currentPos(0)
-        {
-            buffer = new uint8[bufferSize];
-            refillBuffer();
-        }       
-        /** The only allowed destructor */
-        ~BufferedInputStream()     { delete[] buffer; buffer = 0; }
-
-    private:
-        /** Deny copying */
-        BufferedInputStream(const BufferedInputStream &);
-    };
-
-
     /** An input stream that's decompressing on-the-fly while being read.
         This is a pseudo stream, in the sense that a real stream is used 
         underneath to refill the compressed buffer when necessary. 
@@ -134,7 +23,7 @@ namespace Stream
         // Members
     private:
         /** The input stream to read from */
-        Utils::OwnedPtr<const InputStream> stream;
+        Utils::OwnPtr<const InputStream> stream;
         /** The compressor to use */
         Utils::ScopePtr<Compression::BaseCompressor> compressor;
         /** The current accumulator of output bytes */
@@ -220,7 +109,7 @@ namespace Stream
         // Members
     private:
         /** The stream to write to */
-        Utils::OwnedPtr<OutputStream> stream;
+        Utils::OwnPtr<OutputStream> stream;
         /** The amount written */
         uint64  amount; 
         /** The compressor to use */
@@ -254,6 +143,17 @@ namespace Stream
             }
             return (uint64)-1;
         }
+        /** Try to write the given amount of data to the specified buffer.
+            Unlike the former version, this version also tells if the stream needs to be flushed */
+        virtual uint64 write(const void * const buffer, const uint64 size, const bool flush) throw()
+        {
+            if (compressor->compressStream(*stream, MemoryBlockStream((const uint8*)buffer, size), 0, flush))
+            {
+                amount += size;
+                return size;
+            }
+            return (uint64)-1;
+        }
 
            
         // Construction and destruction 
@@ -279,7 +179,7 @@ namespace Stream
         
         ~CompressOutputStream() 
         {
-            // Before actually destructing the compressor, we have to read nothing out of the compressor.
+            // Before actually destructing the compressor, we have to write nothing out of the compressor.
             // Some compression engine might require doing cleanup stuff and this is the signal for it.
             compressor->compressStream(*stream, MemoryBlockStream(0, 0)); // We don't care about the result.
         }

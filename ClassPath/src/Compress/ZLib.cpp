@@ -284,7 +284,7 @@ namespace Compression
         return true;
     }
 
-    bool CommonZlib::compressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, uint32 amountToProcess)
+    bool CommonZlib::compressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, uint32 amountToProcess, const bool lastCall)
     {
         // Special cases first
         if (!opaque) return false;

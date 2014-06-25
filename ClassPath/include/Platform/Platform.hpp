@@ -19,7 +19,8 @@ namespace Platform
         Default = LF,
 #endif
 
-        Any  =   0x7,   //!< Any end of line is accepted 
+        Any         =   0x7,   //!< Any end of line is accepted
+        AutoDetect  =   0x8,   //!< Auto detect end of line, stop on either "\r" or "\n", if stopping on "\r", eat the next "\n" if found.
     };
 
 #ifdef _WIN32
@@ -167,6 +168,39 @@ namespace Platform
     };
 #endif
 
+    /** This structure is used to load some code dynamically from a file on the filesystem */
+    class DynamicLibrary
+    {
+        // Members
+    private:
+        /** The library internal handle */
+        void * handle;
+        
+        // Interface
+    public:
+        /** Load the given symbol out of this library
+            @param nameInUTF8   The name of the symbol. It's up to the caller to ensure cross platform name are used 
+            @return A pointer on the loaded symbol, or 0 if not found */
+        void * loadSymbol(const char * nameInUTF8) const;
+        /** Load a symbol and cast it to the given format.
+            @param nameInUTF8   The name of the symbol. It's up to the caller to ensure cross platform name are used 
+            @sa loadSymbol */
+        template <class T>
+        inline T loadSymbolAs(const char * nameInUTF8) const { return reinterpret_cast<T>(loadSymbol(nameInUTF8)); }
+        /** Get the platform expected file name for the given library name 
+            @param libraryName   The name of the library, excluding suffix (like .DLL, or .so).
+            @param outputName    A pointer to a buffer that at least 10 bytes larger than the libraryName buffer. */
+        static void getPlatformName(const char * libraryName, char * outputName);
+        /** Check if the library has loaded correctly */
+        inline bool isLoaded() const { return handle != 0; }
+    
+        // Construction and destruction
+    public:
+        /** The constructor */
+        DynamicLibrary(const char * pathToLibrary);
+        /** The destructor */
+        ~DynamicLibrary();
+    };
 }
 
 #endif
