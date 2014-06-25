@@ -137,6 +137,30 @@ right: 0px;
         /* shadow */
         text-shadow: 0 0 0.5em #444;
       }
+      .blk
+      {
+         float: left;
+         height: 60px;
+         border: 1px solid black;
+         box-shadow: 0 0 10px #333;
+         background-color: #464;
+         padding: 10px;
+         margin: 5px;
+      }
+      .ar
+      {
+         width: 0; 
+	 height: 0; 
+         margin-top: 35px;
+         border-top: 10px solid rgba(0, 0, 0, 0);
+         border-bottom: 10px solid rgba(0, 0, 0, 0);
+         border-left: 10px solid #464;
+         float: left;
+      }
+      .hint { display: none; }
+
+      .d1:hover ~ .h1, .d2:hover ~ .h2, .d3:hover ~ .h3, .d4:hover ~ .h4, .d5:hover ~ .h5, .d6:hover ~ .h6, .d7:hover ~ .h7 { display: block; }
+      .rest .blk { background-color: #644; }
 
 .animated{-webkit-animation-fill-mode:both;-moz-animation-fill-mode:both;-ms-animation-fill-mode:both;-o-animation-fill-mode:both;animation-fill-mode:both;-webkit-animation-duration:2s;-moz-animation-duration:2s;-ms-animation-duration:2s;-o-animation-duration:2s;animation-duration:2s;}.animated.hinge{-webkit-animation-duration:2s;-moz-animation-duration:2s;-ms-animation-duration:2s;-o-animation-duration:2s;animation-duration:2s;}@-webkit-keyframes 
 hinge {
@@ -441,6 +465,50 @@ ratio</a>.</p>
 <p>Unfortunately, it's slower than Zlib, and less common, so caution kicks in here, and Zlib stays the default.</p>
 <em>Please notice that checksum are used everywhere, so any corruption in the data will be detected anyway.</em>
 
+<h3>Data processing schematic</h3>
+<p><em>Hover the block to get more information</em></p>
+<div>
+<h4>Backup process</h4>
+<div class='blk d1'>Directories</div><div class='ar'></div>
+<div class='blk d2'>Files</div><div class='ar'></div>
+<div class='blk d3'>Chunks</div><div class='ar'></div>
+<div class='blk d4'>Multichunks</div><div class='ar'></div>
+<div class='blk d5'>Compression</div><div class='ar'></div>
+<div class='blk d6'>Encryption</div><div class='ar'></div>
+<div class='blk d7'>Output files</div>
+
+
+<div style='clear:both'> </div>
+<div class='h1 hint'>The software scans directories to find out the files it contains.</div>
+<div class='h2 hint'>Files are cut in chunks whose size is based the file's content.</div>
+<div class='h3 hint'>Existing chunks are not saved twice, but the index still reference them.</div>
+<div class='h4 hint'>Remaining chunks are accumulated in multichunks.</div>
+<div class='h5 hint'>Multichunks are compressed to avoid backup space loss.</div>
+<div class='h6 hint'>Compressed multichunks are encrypted and are ready for being saved to disk.</div>
+<div class='h7 hint'>Output files contains both multichunks and index database.</div>
+</div>
+
+<div class='rest'>
+<h4>Restore process</h4>
+<div class='blk d1'>Backup files</div><div class='ar'></div>
+<div class='blk d2'>Multichunks</div><div class='ar'></div>
+<div class='blk d3'>Encryption</div><div class='ar'></div>
+<div class='blk d4'>Compression</div><div class='ar'></div>
+<div class='blk d5'>Chunks</div><div class='ar'></div>
+<div class='blk d6'>Directories</div><div class='ar'></div>
+<div class='blk d7'>Files</div>
+
+
+<div style='clear:both'> </div>
+<div class='h1 hint'>Index database is analyzed and matched against the backup files.</div>
+<div class='h2 hint'>Required multichunks for the selected revision are verified.</div>
+<div class='h3 hint'>Required multichunks are then decrypted.</div>
+<div class='h4 hint'>Required multichunks are then decompressed.</div>
+<div class='h5 hint'>Chunks are extracted from the multichunks.</div>
+<div class='h6 hint'>Required directories are created.</div>
+<div class='h7 hint'>Files are created and their content regenerated.</div>
+
+</div>
           </div>
 
           <div id="tab-content5" class="tab-content animated fadeIn tab5">
