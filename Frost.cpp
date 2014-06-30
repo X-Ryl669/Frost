@@ -2350,7 +2350,7 @@ int checkTests(Strings::StringArray & options)
                 {
                      ::Stream::DecompressInputStream decompressor(compressedInStream, new Compression::BSCLib);
                      if (!::Stream::copyStream(decompressor, decompressedStream))
-                         ERR("Can not decompressed the compressed data\n");
+                         ERR("Can not decompress the compressed data\n");
                 }
                 fprintf(stderr, "Compressed buffer decompressed\n");
                 // Save the decompressed file for later inspection
@@ -2399,7 +2399,7 @@ int checkTests(Strings::StringArray & options)
             {
                 ::Stream::DecompressInputStream decompressor(compressedInStream, new Compression::BSCLib);
                 if (!::Stream::copyStream(decompressor, decompressedStream))
-                    ERR("Can not decompressed the compressed data\n");
+                    ERR("Can not decompress the compressed data\n");
             }
             fprintf(stderr, "Compressed buffer decompressed\n");
             // Save the decompressed file for later inspection

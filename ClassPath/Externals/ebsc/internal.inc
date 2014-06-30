@@ -46,6 +46,31 @@
 namespace BSC
 {
 
+#if !defined(__ARM_FEATURE_UNALIGNED) && (defined(__ARMEL__) || defined(__ppc__) || defined(__sparc__))
+static inline int readInt(const void * in) { int a; memcpy(&a, in, 4); return a; }
+static inline uint32 readUint(const void * in) { uint32 a; memcpy(&a, in, 4); return a; }
+
+static inline void saveInt(void * in, int a) { memcpy(in, &a, 4); }
+static inline void saveUint(void * in, uint32 a) { memcpy(in, &a, 4); }
+
+static inline int readInt16(const void * in) { int16 a; memcpy(&a, in, 2); return a; }
+static inline uint32 readUint16(const void * in) { uint16 a; memcpy(&a, in, 2); return a; }
+
+static inline void saveInt16(void * in, int16 a) { memcpy(in, &a, 2); }
+static inline void saveUint16(void * in, uint16 a) { memcpy(in, &a, 2); }
+#else
+#define readInt(x) *(int*)(x)
+#define readUint(x) *(uint32*)(x)
+
+#define saveInt(x, y) *(int*)(x) = y
+#define saveUint(x, y) *(uint32*)(x) = y
+#define readInt16(x) *(int16*)(x)
+#define readUint16(x) *(uint16*)(x)
+
+#define saveInt16(x, y) *(int16*)(x) = y
+#define saveUint16(x, y) *(uint16*)(x) = y
+#endif
+
 static const uint32 code_table[4096] =
 {
          0,      0,  65536, 103872, 131072, 152169, 169408, 183982, 196608, 207744, 217705, 226717,
@@ -829,14 +854,14 @@ if(ssize == 0) { return; }\
 
 
 const char log2Table[256] = {
-    -1,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
-    5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
-    6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
-    6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
+(char)-1,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
+       5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+       6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+       6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+       7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+       7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+       7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+       7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
 };
 
 static INLINE int ss_ilg(int n)
@@ -4716,11 +4741,13 @@ private:
 
     union ari
     {
+        #pragma pack(push, 1)
         struct u
         {
             unsigned int low32;
             unsigned int carry;
         } u;
+        #pragma pack(pop)
         unsigned long long low;
     } ari;
 
@@ -4736,12 +4763,13 @@ private:
 
     INLINE void OutputShort(unsigned short s)
     {
-        *ari_output++ = s;
+        saveUint16(ari_output, s); ++ari_output;
     };
 
     INLINE unsigned short InputShort()
     {
-        return *ari_input++;
+        uint16 in = readUint16(ari_input);
+        ari_input++; return in;
     };
 
     INLINE void ShiftLow()
@@ -5451,7 +5479,7 @@ const int F_RUN_MM_LR2 =   10;
 
 void qlfc_memset_2048(void * dst, int size)
 {
-    for (int i = 0; i < size / 2; ++i) ((short *)dst)[i] = 2048;
+    for (int i = 0; i < size / 2; ++i) { saveInt16((short*)dst + i, 2048); }
 }
 
 QlfcStatisticalModel::QlfcStatisticalModel()
@@ -6882,8 +6910,9 @@ EOS coder_compress_serial(const uint8 * input, uint8 * output, int n, Coder code
             result = inputSize; memcpy(output + outputPtr, input + inputStart, inputSize);
         }
 
-        *(int *)(output + 1 + 8 * blockId + 0) = inputSize;
-        *(int *)(output + 1 + 8 * blockId + 4) = result.value();
+
+        saveInt(output + 1 + 8 * blockId + 0, inputSize);
+        saveInt(output + 1 + 8 * blockId + 4, result.value());
 
         outputPtr += result.value();
     }
@@ -6930,8 +6959,8 @@ EOS coder_compress_parallel(const uint8 * input, uint8 * output, int n, Coder co
                     compressionResult[blockId] = bsc_coder_encode_block(input + blockStart, buffer + blockStart, blockSize, blockSize, coder);
                     if (compressionResult[blockId].getError() != Success) compressionResult[blockId] = blockSize;
 
-                    *(int *)(output + 1 + 8 * blockId + 0) = blockSize;
-                    *(int *)(output + 1 + 8 * blockId + 4) = compressionResult[blockId];
+                    saveInt(output + 1 + 8 * blockId + 0, blockSize);
+                    saveInt(output + 1 + 8 * blockId + 4, compressionResult[blockId]);
                 }
 
                 #pragma omp single
@@ -7019,13 +7048,13 @@ EOS coder_decompress(const uint8 * input, uint8 * output, Coder coder, int featu
         #pragma omp parallel for schedule(dynamic)
         for (int blockId = 0; blockId < nBlocks; ++blockId)
         {
-            int inputPtr  = 0; for (int p = 0; p < blockId; ++p) inputPtr  += *(int *)(input + 1 + 8 * p + 4);
-            int outputPtr = 0; for (int p = 0; p < blockId; ++p) outputPtr += *(int *)(input + 1 + 8 * p + 0);
+            int inputPtr  = 0; for (int p = 0; p < blockId; ++p) inputPtr  += readInt(input + 1 + 8 * p + 4);
+            int outputPtr = 0; for (int p = 0; p < blockId; ++p) outputPtr += readInt(input + 1 + 8 * p + 0);
 
             inputPtr += 1 + 8 * nBlocks;
 
-            int inputSize  = *(int *)(input + 1 + 8 * blockId + 4);
-            int outputSize = *(int *)(input + 1 + 8 * blockId + 0);
+            int inputSize  = readInt(input + 1 + 8 * blockId + 4);
+            int outputSize = readInt(input + 1 + 8 * blockId + 0);
 
             if (inputSize != outputSize)
                 decompressionResult[blockId] = coder_decode_block(input + inputPtr, output + outputPtr, coder);
@@ -7042,13 +7071,13 @@ EOS coder_decompress(const uint8 * input, uint8 * output, Coder coder, int featu
     {
         for (int blockId = 0; blockId < nBlocks; ++blockId)
         {
-            int inputPtr  = 0; for (int p = 0; p < blockId; ++p) inputPtr  += *(int *)(input + 1 + 8 * p + 4);
-            int outputPtr = 0; for (int p = 0; p < blockId; ++p) outputPtr += *(int *)(input + 1 + 8 * p + 0);
+            int inputPtr  = 0; for (int p = 0; p < blockId; ++p) inputPtr  += readInt(input + 1 + 8 * p + 4);
+            int outputPtr = 0; for (int p = 0; p < blockId; ++p) outputPtr += readInt(input + 1 + 8 * p + 0);
 
             inputPtr += 1 + 8 * nBlocks;
 
-            int inputSize  = *(int *)(input + 1 + 8 * blockId + 4);
-            int outputSize = *(int *)(input + 1 + 8 * blockId + 0);
+            int inputSize  = readInt(input + 1 + 8 * blockId + 4);
+            int outputSize = readInt(input + 1 + 8 * blockId + 0);
 
             if (inputSize != outputSize)
                 decompressionResult[blockId] = coder_decode_block(input + inputPtr, output + outputPtr, coder).value();
@@ -7781,9 +7810,9 @@ EOS lzp_encode_block(const uint8 * input, const uint8 * inputEnd, uint8 * output
             if (value > 0)
             {
                 const uint8 * reference = inputStart + value;
-                if ((*(uint32 *)(input + minLen - 4) == *(uint32 *)(reference + minLen - 4)) && (*(uint32 *)(input) == *(uint32 *)(reference)))
+                if ((readUint(input + minLen - 4) == readUint(reference + minLen - 4)) && (readUint(input) == readUint(reference)))
                 {
-                    if ((heuristic > input) && (*(uint32 *)heuristic != *(uint32 *)(reference + (heuristic - input))))
+                    if ((heuristic > input) && (readUint(heuristic) != readUint(reference + (heuristic - input))))
                     {
                         goto LIBBSC_LZP_MATCH_NOT_FOUND;
                     }
@@ -7791,7 +7820,7 @@ EOS lzp_encode_block(const uint8 * input, const uint8 * inputEnd, uint8 * output
                     int len = 4;
                     for (; input + len < inputMinLenEnd; len += 4)
                     {
-                        if (*(uint32 *)(input + len) != *(uint32 *)(reference + len)) break;
+                        if (readUint(input + len) != readUint(reference + len)) break;
                     }
                     if (len < minLen)
                     {
@@ -7892,8 +7921,7 @@ EOS lzp_decode_block(const uint8 * input, const uint8 * inputEnd, uint8 * output
 
                         reference -= offset[output - reference];
                     }
-
-                    while (output < outputEnd) { *(uint32 *)output = *(uint32*)reference; output += 4; reference += 4; }
+                    while (output < outputEnd) { saveUint(output, readUint(reference)); output += 4; reference += 4; }
 
                     output = outputEnd; context = output[-1] | (output[-2] << 8) | (output[-3] << 16) | (output[-4] << 24);
                 }
@@ -7945,8 +7973,8 @@ EOS lzp_compress_serial(const uint8 * input, uint8 * output, int n, int hashSize
             result = inputSize; memcpy(output + outputPtr, input + inputStart, inputSize);
         }
 
-        *(int *)(output + 1 + 8 * blockId + 0) = inputSize;
-        *(int *)(output + 1 + 8 * blockId + 4) = result.value();
+        saveInt(output + 1 + 8 * blockId + 0, inputSize);
+        saveInt(output + 1 + 8 * blockId + 4, result.value());
 
         outputPtr += result.value();
     }
@@ -7987,8 +8015,8 @@ EOS lzp_compress_parallel(const uint8 * input, uint8 * output, int n, int hashSi
                     compressionResult[blockId] = lzp_encode_block(input + blockStart, input + blockStart + blockSize, buffer + blockStart, buffer + blockStart + blockSize, hashSize, minLen);
                     if (EOS(compressionResult[blockId]).getError() != Success) compressionResult[blockId] = blockSize;
 
-                    *(int *)(output + 1 + 8 * blockId + 0) = blockSize;
-                    *(int *)(output + 1 + 8 * blockId + 4) = compressionResult[blockId];
+                    saveInt(output + 1 + 8 * blockId + 0, blockSize);
+                    saveInt(output + 1 + 8 * blockId + 4, compressionResult[blockId]);
                 }
 
                 #pragma omp single
@@ -8063,13 +8091,13 @@ EOS lzp_decompress(const uint8 * input, uint8 * output, int n, int hashSize, int
         #pragma omp parallel for schedule(dynamic)
         for (int blockId = 0; blockId < nBlocks; ++blockId)
         {
-            int inputPtr = 0;  for (int p = 0; p < blockId; ++p) inputPtr  += *(int *)(input + 1 + 8 * p + 4);
-            int outputPtr = 0; for (int p = 0; p < blockId; ++p) outputPtr += *(int *)(input + 1 + 8 * p + 0);
+            int inputPtr = 0;  for (int p = 0; p < blockId; ++p) inputPtr  += readInt(input + 1 + 8 * p + 4);
+            int outputPtr = 0; for (int p = 0; p < blockId; ++p) outputPtr += readInt(input + 1 + 8 * p + 0);
 
             inputPtr += 1 + 8 * nBlocks;
 
-            int inputSize  = *(int *)(input + 1 + 8 * blockId + 4);
-            int outputSize = *(int *)(input + 1 + 8 * blockId + 0);
+            int inputSize  = readInt(input + 1 + 8 * blockId + 4);
+            int outputSize = readInt(input + 1 + 8 * blockId + 0);
 
             if (inputSize != outputSize)
                 decompressionResult[blockId] = lzp_decode_block(input + inputPtr, input + inputPtr + inputSize, output + outputPtr, hashSize, minLen);
@@ -8086,13 +8114,13 @@ EOS lzp_decompress(const uint8 * input, uint8 * output, int n, int hashSize, int
     {
         for (int blockId = 0; blockId < nBlocks; ++blockId)
         {
-            int inputPtr = 0;  for (int p = 0; p < blockId; ++p) inputPtr  += *(int *)(input + 1 + 8 * p + 4);
-            int outputPtr = 0; for (int p = 0; p < blockId; ++p) outputPtr += *(int *)(input + 1 + 8 * p + 0);
+            int inputPtr = 0;  for (int p = 0; p < blockId; ++p) inputPtr  += readInt(input + 1 + 8 * p + 4);
+            int outputPtr = 0; for (int p = 0; p < blockId; ++p) outputPtr += readInt(input + 1 + 8 * p + 0);
 
             inputPtr += 1 + 8 * nBlocks;
 
-            int inputSize  = *(int *)(input + 1 + 8 * blockId + 4);
-            int outputSize = *(int *)(input + 1 + 8 * blockId + 0);
+            int inputSize  = readInt(input + 1 + 8 * blockId + 4);
+            int outputSize = readInt(input + 1 + 8 * blockId + 0);
 
             if (inputSize != outputSize)
                 decompressionResult[blockId] = lzp_decode_block(input + inputPtr, input + inputPtr + inputSize, output + outputPtr, hashSize, minLen).value();

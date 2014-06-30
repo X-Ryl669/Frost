@@ -22,13 +22,13 @@ namespace BSC
 
 
         memmove(output + HeaderSize, input, n);
-        *(int *)(output +  0) = n + HeaderSize;
-        *(int *)(output +  4) = n;
-        *(int *)(output +  8) = 0;
-        *(int *)(output + 12) = 0;
-        *(int *)(output + 16) = adler32_data;
-        *(int *)(output + 20) = adler32_data;
-        *(int *)(output + 24) = adler32(output, 24);
+        saveUint((output +  0), n + HeaderSize);
+        saveUint((output +  4), n);
+        saveUint((output +  8), 0);
+        saveUint((output + 12), 0);
+        saveUint((output + 16), adler32_data);
+        saveUint((output + 20), adler32_data);
+        saveUint((output + 24), adler32(output, 24));
         return n + HeaderSize;
     }
 
@@ -121,13 +121,13 @@ namespace BSC
                 data[HeaderSize + result + 4 * num_indexes] = num_indexes;
                 result += 1 + 4 * num_indexes;
             }
-            *(int *)(data +  0) = result + HeaderSize;
-            *(int *)(data +  4) = n;
-            *(int *)(data +  8) = mode;
-            *(int *)(data + 12) = index.value();
-            *(int *)(data + 16) = adler32_data;
-            *(int *)(data + 20) = adler32(data + HeaderSize, result);
-            *(int *)(data + 24) = adler32(data, 24);
+            saveUint((data +  0), result + HeaderSize);
+            saveUint((data +  4), n);
+            saveUint((data +  8), mode);
+            saveUint((data + 12), index.value());
+            saveUint((data + 16), adler32_data);
+            saveUint((data + 20), adler32(data + HeaderSize, result));
+            saveUint((data + 24), adler32(data, 24));
             return result + HeaderSize;
         }
 
@@ -223,13 +223,13 @@ namespace BSC
                 output[HeaderSize + result + 4 * num_indexes] = num_indexes;
                 result += 1 + 4 * num_indexes;
             }
-            *(int *)(output +  0) = result + HeaderSize;
-            *(int *)(output +  4) = n;
-            *(int *)(output +  8) = mode;
-            *(int *)(output + 12) = index.value();
-            *(int *)(output + 16) = adler32(input, n);
-            *(int *)(output + 20) = adler32(output + HeaderSize, result);
-            *(int *)(output + 24) = adler32(output, 24);
+            saveUint((output +  0), result + HeaderSize);
+            saveUint((output +  4), n);
+            saveUint((output +  8), mode);
+            saveUint((output + 12), index.value());
+            saveUint((output + 16), adler32(input, n));
+            saveUint((output + 20), adler32(output + HeaderSize, result));
+            saveUint((output + 24), adler32(output, 24));
             return result + HeaderSize;
         }
 
@@ -243,15 +243,15 @@ namespace BSC
             return UnexpectedEOB;
         }
 
-        if (*(unsigned int *)(blockHeader + 24) != adler32(blockHeader, 24))
+        if (readUint(blockHeader + 24) != adler32(blockHeader, 24))
         {
             return DataCorrupt;
         }
 
-        int blockSize    = *(int *)(blockHeader +  0);
-        int dataSize     = *(int *)(blockHeader +  4);
-        int mode         = *(int *)(blockHeader +  8);
-        int index        = *(int *)(blockHeader + 12);
+        int blockSize    = readInt(blockHeader +  0);
+        int dataSize     = readInt(blockHeader +  4);
+        int mode         = readInt(blockHeader +  8);
+        int index        = readInt(blockHeader + 12);
 
         int lzpHashSize         = (mode >> 16) & 0xff;
         int lzpMinLen           = (mode >>  8) & 0xff;
@@ -326,15 +326,15 @@ namespace BSC
             return DataCorrupt;
         }
 
-        int mode = *(int *)(data + 8);
+        int mode = readInt(data + 8);
         if (mode == 0)
         {
             memmove(data, data + HeaderSize, dataSize);
             return Success;
         }
 
-        int             index           = *(int *)(data + 12);
-        unsigned int    adler32_data    = *(int *)(data + 16);
+        int             index           = readInt(data + 12);
+        unsigned int    adler32_data    = readUint(data + 16);
 
         num_indexes = data[blockSize - 1];
         if (num_indexes > 0)
@@ -422,15 +422,15 @@ namespace BSC
             return DataCorrupt;
         }
 
-        int mode = *(int *)(input + 8);
+        int mode = readInt(input + 8);
         if (mode == 0)
         {
             memcpy(output, input + HeaderSize, dataSize);
             return Success;
         }
 
-        int             index           = *(int *)(input + 12);
-        unsigned int    adler32_data    = *(int *)(input + 16);
+        int             index           = readInt(input + 12);
+        unsigned int    adler32_data    = readUint(input + 16);
 
         num_indexes = input[blockSize - 1];
         if (num_indexes > 0)
