@@ -108,6 +108,26 @@ namespace Crypto
     
     /** Xor a memory block.
         This one is used to perform the operation out = a ^ b, with both out, a, and b being 
+        heap allocated like this:
+        @code
+            uint8 * out = ..., * a = ..., * b = ...;
+            Xor(out, a, b, size);
+        @endcode */
+    static inline void Xor(uint8 * out, const uint8 * a, const uint8 * b, size_t size)
+    {
+        // Check alignment to try to be as fast as possible
+#define IsAligned(X) (((nativeint)X) & (sizeof(nativeint) - 1)) == 0
+        if (IsAligned(out) && IsAligned(a) && IsAligned(b) && ((size & (sizeof(nativeint) - 1)) == 0))
+        {
+            for(size_t i = 0; i < size; i+= sizeof(nativeint))
+                *(nativeint*)&out[i] = *(nativeint*)&a[i] ^ *(nativeint*)&b[i];
+            return;
+        }
+#undef IsAligned
+        for(size_t i = 0; i < size; i++) out[i] = a[i] ^ b[i];
+    }
+    /** Xor a memory block.
+        This one is used to perform the operation out = a ^ b, with both out, a, and b being 
         stack allocated like this:
         @code
             uint8 out[2], a[2], b[2];
@@ -116,18 +136,7 @@ namespace Crypto
     template <const size_t size>
     static inline void Xor(uint8  (&out)[size], const uint8 (&a)[size], const uint8 (&b)[size])
     {
-        for(size_t i = 0; i < size; i++) out[i] = a[i] ^ b[i];
-    }
-    /** Xor a memory block.
-        This one is used to perform the operation out = a ^ b, with both out, a, and b being 
-        heap allocated like this:
-        @code
-            uint8 * out = ..., * a = ..., * b = ...;
-            Xor(out, a, b, size);
-        @endcode */
-    static inline void Xor(uint8 * out, const uint8 * a, const uint8 * b, size_t size)
-    {
-        for(size_t i = 0; i < size; i++) out[i] = a[i] ^ b[i];
+        Xor(out, a, b, size);
     }
     
 }

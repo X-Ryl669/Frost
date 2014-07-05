@@ -73,6 +73,7 @@
 #define DontWantINT16
 #define DontWantINT32
 #define DontWantINT64
+#define DontWantNativeInt
 #endif
 
 #ifdef _WIN32
@@ -188,6 +189,9 @@
     #ifndef DontWantINT64
         typedef signed __int64 int64;
     #endif
+    #ifndef DontWantNativeInt
+        typedef intptr_t nativeint;
+    #endif
     #define PF_LLD  "%I64d"
     #define PF_LLU  "%I64u"
 
@@ -222,6 +226,9 @@
     #endif
     #ifndef DontWantINT64
         typedef int64_t int64;
+    #endif
+    #ifndef DontWantNativeInt
+        typedef intptr_t nativeint;
     #endif
 
     #define PF_LLD  "%lld"
@@ -283,6 +290,9 @@
 
 	#ifndef DontWantINT64
         typedef long long int64;
+    #endif
+        #ifndef DontWantNativeInt
+        typedef intptr_t nativeint;
     #endif
 
     #define PF_LLD  "%lld"

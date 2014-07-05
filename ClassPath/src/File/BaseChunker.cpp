@@ -4,6 +4,8 @@
 #include "../../include/File/BaseChunker.hpp"
 // We also need an implementation
 #include "../../include/File/TTTDChunker.hpp"
+// We need OpenSSL code for faster hasher
+#include "../../include/Crypto/OpenSSLWrap.hpp"
 
 namespace File
 {
@@ -37,7 +39,7 @@ namespace File
     
     void MultiChunk::getChecksum(uint8 (&checksum)[Hashing::SHA256::DigestSize]) const
     {
-        Hashing::SHA256 sha1;
+        Crypto::OSSL_SHA256 sha1;
         sha1.Start();
         sha1.Hash(chunkArray.getConstBuffer(), chunkArray.getSize());
         sha1.Finalize(checksum);

@@ -136,8 +136,22 @@ namespace Frost
         void incrementNonce(KeyT & keyOut)
         {
             counter++;
-            for (uint32 i = 0; i < ArrSz(salt); i++)
-                keyOut[i] = hashChunkNonce[i] ^ ((uint8*)&counter)[i % sizeof(counter)];
+            // Check if all parameters are aligned, and if so, process 4 by 4
+            if (((uint64)(&keyOut[0]) & 0x3) == 0)
+            {
+                for (uint32 i = 0; i < ArrSz(salt); i+= sizeof(counter))
+                    *(uint32*)&keyOut[i] = *(uint32*)&hashChunkNonce[i] ^ counter;
+                return;
+            }
+            // Avoid unaligned memory access per loop turn
+            uint8 cnt[4] = { (uint8)(counter >> 24), (uint8)((counter >> 16) & 0xFF), (uint8)((counter >> 8) & 0xFF), (uint8)(counter & 0xFF) };
+            for (uint32 i = 0; i < ArrSz(salt); i+= sizeof(counter))
+            {
+                keyOut[i+0] = hashChunkNonce[i+0] ^ cnt[0];
+                keyOut[i+1] = hashChunkNonce[i+1] ^ cnt[1];
+                keyOut[i+2] = hashChunkNonce[i+2] ^ cnt[2];
+                keyOut[i+3] = hashChunkNonce[i+3] ^ cnt[3];
+            }
         }
         /** Create a new nonce and reset the counter.
             This creates the 'nonce' in the algorithm described above */

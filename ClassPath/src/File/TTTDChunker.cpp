@@ -4,6 +4,8 @@
 #include "../../include/Hashing/Adler32.hpp"
 // We need Assert too
 #include "../../include/Utils/Assert.hpp"
+// We need OpenSSL code for faster hasher
+#include "../../include/Crypto/OpenSSLWrap.hpp"
 
 namespace File
 {
@@ -42,7 +44,7 @@ namespace File
         Hashing::Adler32 rolling;
         rolling.Start();
         
-        Hashing::SHA1 bigChecksum;
+        Crypto::OSSL_SHA1 bigChecksum;
         bigChecksum.Start();
         
         // The algorithm reads first the minimum amount of data out of the input stream
