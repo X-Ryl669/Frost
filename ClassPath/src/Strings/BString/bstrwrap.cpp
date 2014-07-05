@@ -1434,7 +1434,7 @@ namespace Bstrlib
 	const String String::dropUpTo(const String & find, const bool includeFind) const
 	{
 	    const unsigned int pos = Find(find);
-	    if (pos == -1) return *this;
+	    if (pos == (unsigned int)-1) return *this;
 	    return midString(includeFind ? pos : pos + find.getLength(), slen);
 	}
 
@@ -1612,7 +1612,7 @@ namespace Bstrlib
             
             bool addBrackets(const char * ptr, int len)
             {
-                if ((bracketsCount + 1) >= ArrSz(stackPair))
+                if ((size_t)(bracketsCount + 1) >= ArrSz(stackPair))
                 {
                     // Need to re-allocate the brackets pair
                     BracketPair * newPair = (BracketPair *)malloc((bracketsCount + 1) * sizeof(BracketPair));
@@ -1629,7 +1629,7 @@ namespace Bstrlib
             
             bool addBranch(int index, const char * pos)
             {
-                if ((branchesCount + 1) >= ArrSz(stackBranch))
+                if ((size_t)(branchesCount + 1) >= ArrSz(stackBranch))
                 {
                     // Need to re-allocate the brackets pair
                     Branch * newBranch = (Branch *)malloc((branchesCount + 1) * sizeof(Branch));

@@ -320,8 +320,11 @@ namespace Frost
             return true;
         }
         
-        bool closeMultiChunk(const String & backupTo, File::MultiChunk & multiChunk, uint64 multiChunkID, uint64 * totalOutSize)
+        bool closeMultiChunk(const String & backupTo, File::MultiChunk & multiChunk, uint64 multiChunkID, uint64 * totalOutSize, ProgressCallback & callback)
         {
+            bool worthTelling = multiChunk.getSize() > 2*1024*1024;
+            if (worthTelling && !callback.progressed(ProgressCallback::Backup, TRANS("Closing multichunk"), 0, 0, 0, 0, ProgressCallback::KeepLine))
+                return false;
             // We need this for the nonce
             KeyFactory::KeyT chunkHash;
             multiChunk.getChecksum(chunkHash);
@@ -329,6 +332,8 @@ namespace Frost
             const String & multiChunkHash = Helpers::fromBinary(chunkHash, ArrSz(chunkHash), false);
             // Then filter the multichunk, compress it and encrypt it
             ::Stream::OutputMemStream compressedStream;
+            if (worthTelling && !callback.progressed(ProgressCallback::Backup, TRANS("Compressing multichunk"), 0, 0, 0, 0, ProgressCallback::KeepLine))
+                return false;
             
             switch (compressor)
             {
@@ -354,6 +359,9 @@ namespace Frost
             }
             
             {   // Encode the data now
+                if (worthTelling && !callback.progressed(ProgressCallback::Backup, TRANS("Encrypting multichunk"), 0, 0, 0, 0, ProgressCallback::KeepLine))
+                    return false;
+
                 ::Stream::MemoryBlockStream compressedData(compressedStream.getBuffer(), compressedStream.fullSize());
                 if (totalOutSize) *totalOutSize += compressedStream.fullSize();
                 ::Stream::OutputFileStream chunkFile(backupTo + multiChunkHash + ".#");
@@ -361,6 +369,9 @@ namespace Frost
                     return false;
             }
             
+            if (worthTelling && !callback.progressed(ProgressCallback::Backup, TRANS("Multichunk closed"), 0, 0, 0, 0, ProgressCallback::KeepLine))
+                return false;
+
             const char * compressorName[] = { "zLib", "BSC" };
             // Create the chunk in the database now
             DatabaseModel::MultiChunk dbMChunk;
@@ -374,7 +385,7 @@ namespace Frost
             return true;
         }      
         
-        File::Chunk * extractChunk(String & error, const String & basePath, const String & MultiChunkPath, const uint64 MultiChunkID, const size_t chunkOffset, const String & chunkChecksum, const String & filterMode, File::MultiChunk * cache)
+        File::Chunk * extractChunk(String & error, const String & basePath, const String & MultiChunkPath, const uint64 MultiChunkID, const size_t chunkOffset, const String & chunkChecksum, const String & filterMode, File::MultiChunk * cache, ProgressCallback & callback)
         {
             error = "";
             File::MultiChunk localMultichunk, & mchunk = cache ? *cache : localMultichunk;
@@ -383,10 +394,15 @@ namespace Frost
             {
                  // Decode this multichunk to find out the chunk to store in file
                 ::Stream::InputFileStream chunkFile(basePath + MultiChunkPath);
+                bool worthTelling = chunkFile.fullSize() > (uint64)2*1024*1024;
+
                 ::Stream::OutputMemStream compressedData;
                 
                 KeyFactory::KeyT chunkHash;
                 uint32 chunkHashSize = (uint32)ArrSz(chunkHash);
+                if (worthTelling && !callback.progressed(ProgressCallback::Restore, TRANS("Checking multichunk integrity"), 0, 0, 0, 0, ProgressCallback::KeepLine))
+                    return 0;
+
                 if (!Helpers::toBinary(MultiChunkPath.upToLast("."), chunkHash, chunkHashSize, false)
                     || chunkHashSize != (uint32)ArrSz(chunkHash))
                 {
@@ -395,6 +411,8 @@ namespace Frost
                 }
                 
                 // Decrypt it now
+                if (worthTelling && !callback.progressed(ProgressCallback::Restore, TRANS("Decrypting multichunk"), 0, 0, 0, 0, ProgressCallback::KeepLine))
+                    return 0;
                 if (filterMode.fromLast(":") == "AES_CTR")
                 {   // We only support counter mode for now
                     if (!Helpers::AESCounterDecrypt(chunkHash, chunkFile, compressedData))
@@ -405,6 +423,9 @@ namespace Frost
                 }
                 
                 // Decompress it
+                if (worthTelling && !callback.progressed(ProgressCallback::Restore, TRANS("Decompressing multichunk"), 0, 0, 0, 0, ProgressCallback::KeepLine))
+                    return 0;
+
                 String compUsed = filterMode.fromTo(":", ":");
                 if (compUsed == "zLib")
                 {   // And zLib 
@@ -444,7 +465,10 @@ namespace Frost
 
                 // Assert the decompressed data is still correct
                 KeyFactory::KeyT chunkTest;
+                if (worthTelling && !callback.progressed(ProgressCallback::Restore, TRANS("Checking data integrity"), 0, 0, 0, 0, ProgressCallback::KeepLine))
+                    return 0;
                 mchunk.getChecksum(chunkTest);
+
                 if (memcmp(chunkTest, chunkHash, ArrSz(chunkHash)))
                 {
                     error = TRANS("Corruption detected in multichunk: ") + MultiChunkPath;
@@ -463,9 +487,9 @@ namespace Frost
                 error = TRANS("Bad checksum for chunk with checksum: ") + chunkChecksum;
                 return 0;
             }
-        
+
             File::Chunk * chunk = mchunk.findChunk(chunkCS, (size_t)chunkOffset);
-            return chunk;        
+            return chunk;
         }
         
         unsigned int allocateChunkList()
@@ -648,7 +672,7 @@ namespace Frost
         Strings::StringArray entries;
         
         unsigned int dirID = createActualEntryListInDir(dirPath, entries, revID);
-        if (dirID == 0) return 0;
+        if (dirID == 0 || entries.getSize() == 0) return 0;
         
         // Then find all files and directory and sort them
         
@@ -732,10 +756,23 @@ namespace Frost
         uint32 lastCount;
         uint64 lastSize;
         uint32 lastTime;
-        int lastSpeed; 
-        
-        virtual bool progressed(const Action action, const String & currentFilename, const uint64 sizeDone, const uint64 totalSize, const uint32 index, const uint32 count)
+        int lastSpeed;
+
+        // Helpers
+    private:
+        bool flushLine(bool flush) { if (flush) fprintf(stdout, "\n"); else fflush(stdout); return true; }
+
+    public:
+        virtual bool progressed(const Action action, const String & currentFilename, const uint64 sizeDone, const uint64 totalSize, const uint32 index, const uint32 count, const FlushMode mode)
         {
+            if (mode == EraseLine) { fprintf(stdout, "\r"); return flushLine(false); }
+            if (mode == KeepLine || mode == FlushLine) fprintf(stdout, "\r");
+            // Special signal to display the current filename only
+            if (!sizeDone && !totalSize && !index && !count)
+            {
+                fprintf(stdout, "%s                                                 ", (const char*)currentFilename);
+                return flushLine(mode == FlushLine);
+            }
             if (lastIndex != index || lastCount != count)
             {
                 lastProgress = 0;
@@ -747,10 +784,9 @@ namespace Frost
             // Special signal to display the output non-flushed
             if (sizeDone == 0)
             {
-                fprintf(stdout, "\r%s: %s [%u/%u]                                     ", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, index, count);
-                if (!totalSize) fprintf(stdout, "\n");
-                else fflush(stdout);
-                return true;
+                fprintf(stdout, "%s: %s [%u/%u]                                     ", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, index, count);
+                //if (!totalSize) fprintf(stdout, "\n");
+                return flushLine(mode == FlushLine);
             }
             
             uint32 currentTime = Time::getTimeWithBase(1000);
@@ -766,16 +802,15 @@ namespace Frost
                     lastSpeed = (lastSpeed * (windowSize - 1)) / windowSize + (speed - lastSpeed) / windowSize;
                     int remaining = lastSpeed ? (totalSize - sizeDone) * 1000 / lastSpeed : 0;
                     
-                    fprintf(stdout, "\r%s: %s %2d%%:%s/s (rem: %s) [%u/%u]            ", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, progress, (const char*)makeLegibleSize(lastSpeed), (const char*)makeLegibleTime(remaining), index, count);
-                    fflush(stdout);
+                    fprintf(stdout, "%s: %s %2d%%:%s/s (rem: %s) [%u/%u]            ", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, progress, (const char*)makeLegibleSize(lastSpeed), (const char*)makeLegibleTime(remaining), index, count);
                 }
                 else
-                    fprintf(stdout, "\r%s: %s [%u/%u]                                     \n", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, index, count);
+                    fprintf(stdout, "%s: %s [%u/%u]                                     ", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, index, count);
                 lastProgress = progress;
             }
             lastSize = sizeDone;
             lastTime = currentTime;
-            return true;
+            return flushLine(mode == FlushLine);
         }
         
         virtual bool warn(const Action action, const String & currentFilename, const String & message, const uint32 sourceLine = 0)
@@ -797,7 +832,7 @@ namespace Frost
         {
             count++;
             if ((count % 100) == 0)
-                callback.progressed(ProgressCallback::Backup, TRANS("...scanning... ") + fileName, 0, 1, 0, count);
+                callback.progressed(ProgressCallback::Backup, TRANS("...scanning... ") + fileName, 0, 1, 0, count, ProgressCallback::KeepLine);
             return true;
         }
         AllFiles(ProgressCallback & callback) : count(0), callback(callback) {}
@@ -934,11 +969,11 @@ namespace Frost
             seen++;
             
             // Ok, backup this file, if required (we lie about the size here)
-            if (!callback.progressed(ProgressCallback::Backup, TRANS("Analysing: ") + info.name, 0, 1, seen, total))
+            if (!callback.progressed(ProgressCallback::Backup, TRANS("Analysing: ") + info.name, 0, 1, seen, total, ProgressCallback::KeepLine))
                 return false;
             if (excludes.isExcluded(strippedFilePath))
             {   // This file is excluded
-                if (!callback.progressed(ProgressCallback::Backup, TRANS("Excluded: ") + info.name, 0, 0, seen, total))
+                if (!callback.progressed(ProgressCallback::Backup, TRANS("Excluded: ") + info.name, 0, 0, seen, total, ProgressCallback::FlushLine))
                     return false;
                 return true;
             }
@@ -995,7 +1030,7 @@ namespace Frost
                 file.State = 0;
                 file.ID = Database::Index::WantNewIndex;
                 dirCount++;
-                return callback.progressed(ProgressCallback::Backup, info.name, 0, 0, seen, total);                
+                return callback.progressed(ProgressCallback::Backup, info.name, 0, 0, seen, total, ProgressCallback::KeepLine);
             }
             
             // We'll need the parent directory ID to link with
@@ -1044,7 +1079,7 @@ namespace Frost
                     totalInSize += fullSize;
                     while (chunker.createChunk(stream, temporaryChunk))
                     {
-                        if (!callback.progressed(ProgressCallback::Backup, info.name, streamOffset, fullSize, seen, total))
+                        if (!callback.progressed(ProgressCallback::Backup, info.name, streamOffset, fullSize, seen, total, ProgressCallback::KeepLine))
                             return false;
 
                         // Ok, got a chunk, let's first figure out if we need to store it in the database
@@ -1068,7 +1103,7 @@ namespace Frost
                             if (!multiChunk.canFit(temporaryChunk.size))
                             {
                                 // Close this multichunk, and apply filters
-                                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize))
+                                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize, callback))
                                     return false;
                                 // Allocate a new chunk list
                                 multiChunkListID = 0;
@@ -1133,7 +1168,7 @@ namespace Frost
                         return false;
                 }
             }
-            return callback.progressed(ProgressCallback::Backup, info.name, 0, 0, seen, total);
+            return callback.progressed(ProgressCallback::Backup, info.name, 0, 0, seen, total, ProgressCallback::FlushLine);
         }
         
         /** Finish the current multichunk, as it's the end of the backup process */
@@ -1143,7 +1178,7 @@ namespace Frost
             if (multiChunk.getSize())
             {
                 Assert(multiChunkListID);
-                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize))
+                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize, callback))
                     return false;
             }
             
@@ -1165,10 +1200,7 @@ namespace Frost
             
             // If we found something to analyze, then the backup worked
             if (totalInSize) Frost::backupWorked = true;
-            
-            
-            
-            return true;
+            return callback.progressed(ProgressCallback::Backup, TRANS("Done"), 0, 0, 0, 0, ProgressCallback::FlushLine);
         }
         
         BackupFile(ProgressCallback & callback, const String & backupTo, const unsigned int revID, const String & rootFolder)
@@ -1185,6 +1217,7 @@ namespace Frost
         ProgressCallback & callback;
         const String & folderTrimmed;
         const String backupFolder;
+        File::MultiChunk mchunk;
         
         OverwritePolicy overwritePolicy;
     
@@ -1204,7 +1237,7 @@ namespace Frost
                 return WarnAndReturn("Bad metadata for this file, it's ignored for restoring");
             }
 
-            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + file.Path, 0, outFile.size, current, total))
+            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + file.Path, 0, outFile.size, current, total, ProgressCallback::KeepLine))
                 ERR(TRANS("Interrupted in output"));
              
              
@@ -1270,8 +1303,6 @@ namespace Frost
                 
                 ::Stream::OutputFileStream stream(outFile.getFullPath());
                 
-                // @todo: Provide some better caching of decompressed data
-                File::MultiChunk mchunk;
                 
                 while (iter)
                 {
@@ -1281,25 +1312,30 @@ namespace Frost
                         errorMessage = TRANS("Unknown filter ID");
                         return WarnAndReturn("Unknown filter ID");
                     }
-                    
+
                     // Extract a chunk out of this multichunk
-                    File::Chunk * chunk = Helpers::extractChunk(errorMessage, backupFolder, iter["MCPath"], (uint64)(int64)iter["MCID"], (size_t)(int64)iter["MCOffset"], iter["Checksum"], iter["FilterArgument"], &mchunk);
+                    File::Chunk * chunk = Helpers::extractChunk(errorMessage, backupFolder, iter["MCPath"], (uint64)(int64)iter["MCID"], (size_t)(int64)iter["MCOffset"], iter["Checksum"], iter["FilterArgument"], &mchunk, callback);
                     if (!chunk || errorMessage) return -1;
-                    
+
                     // Ok, if we got a chunk, let's save it
                     if (!chunk)
                         ERR(TRANS("Missing chunk for this file: ") + (String)iter["ChunkID"]);
                     if (stream.write(chunk->data, chunk->size) != (uint64)chunk->size)
                         ERR(TRANS("Can't write the file (disk full ?)"));
-                        
-                    if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + file.Path, stream.currentPosition(), outFile.size, current, total))
+
+                    if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + file.Path, stream.currentPosition(), outFile.size, current, total, stream.currentPosition() != outFile.size ? ProgressCallback::KeepLine : ProgressCallback::FlushLine))
                         ERR(TRANS("Interrupted in output"));
-                    
+
                     // Select next row
                     ++iter;
                 }
             }
-            
+            else
+	    {
+                if (!callback.progressed(ProgressCallback::Restore, outFile.getFullPath(), 0, 0, current, total, ProgressCallback::FlushLine))
+                    ERR(TRANS("Interrupted in output"));
+            }
+
             // Then restore the metadata here
             if (!outFile.setMetaData(file.Metadata))
             {
@@ -1323,7 +1359,7 @@ namespace Frost
         // The complete logic is here
         
         // Step one, we'll make a stack of data to find out what to backup
-        if (!callback.progressed(ProgressCallback::Backup, TRANS("...scanning..."), 0, 1, 0, 1))
+        if (!callback.progressed(ProgressCallback::Backup, TRANS("...scanning..."), 0, 1, 0, 1, ProgressCallback::KeepLine))
             return TRANS("Error with output");
         File::FileItemArray items; File::Scanner::FileFilters filters;
         BackupFile processor(callback, backupTo, revisionID, folderToBackup);
@@ -1409,7 +1445,7 @@ namespace Frost
     String purgeBackup(const String & chunkFolder, ProgressCallback & callback, const PurgeStrategy strategy, const unsigned int upToRevision)
     {
         // First, we need to figure out the chunks that are in the given revision but in no other revision (orphans)
-        if (!callback.progressed(ProgressCallback::Purge, TRANS("...scanning..."), 0, 1, 0, 1))
+        if (!callback.progressed(ProgressCallback::Purge, TRANS("...scanning..."), 0, 1, 0, 1, ProgressCallback::KeepLine))
             return TRANS("Error with output");
             
             
@@ -1509,7 +1545,7 @@ namespace Frost
             if (!likelyOrphansChunks)
                 return TRANS("No orphan chunks to purge");
             int allChunks = Select("*").From("Chunk").getCount();
-            if (!callback.progressed(ProgressCallback::Purge, TRANS("... found likely orphans chunks ..."), 0, 0, likelyOrphansChunks, allChunks))
+            if (!callback.progressed(ProgressCallback::Purge, TRANS("... found likely orphans chunks ..."), 0, 0, likelyOrphansChunks, allChunks, ProgressCallback::FlushLine))
                 return TRANS("Error with output");        
             
             // Find the multichunks that only have those chunks
@@ -1529,7 +1565,7 @@ namespace Frost
             
             Database::Pool<DatabaseModel::MultiChunk> orphanMultichunks = orphansMC;
             
-            if (!callback.progressed(ProgressCallback::Purge, TRANS("... found orphans multichunks ..."), 0, 0, 0, orphanMultichunks.count))
+            if (!callback.progressed(ProgressCallback::Purge, TRANS("... found orphans multichunks ..."), 0, 0, 0, orphanMultichunks.count, ProgressCallback::FlushLine))
                 return TRANS("Error with output");
                 
 
@@ -1539,7 +1575,7 @@ namespace Frost
             uint64 purgedSize = 0;
             for (unsigned int i = 0; i < orphanMultichunks.count; i++)
             {
-                if (!callback.progressed(ProgressCallback::Purge, orphanMultichunks[i].Path, 0, 0, i, orphanMultichunks.count))
+                if (!callback.progressed(ProgressCallback::Purge, orphanMultichunks[i].Path, 0, 0, i, orphanMultichunks.count, ProgressCallback::FlushLine))
                     return TRANS("Error with output");
                 File::Info multichunk(chunkRoot + orphanMultichunks[i].Path);
                 purgedSize += multichunk.size;
@@ -1555,7 +1591,7 @@ namespace Frost
             // Show some log
             const Select reallyOrphans = Select("ID").From("Chunk").Where("ID").In(Select("ChunkID").From("ChunkList").Where("ID").In(orphansMC.Refine("ChunkListID")));
             int reallyOrphansCount = reallyOrphans.getCount();
-            if (!callback.progressed(ProgressCallback::Purge, TRANS("... deleting really orphans chunks ..."), 0, 0, reallyOrphansCount, allChunks))
+            if (!callback.progressed(ProgressCallback::Purge, TRANS("... deleting really orphans chunks ..."), 0, 0, reallyOrphansCount, allChunks, ProgressCallback::FlushLine))
                 return TRANS("Error with output");
             
             // Then delete them from the database
@@ -1595,7 +1631,7 @@ namespace Frost
                 int finalOrphanChunks = orphanChunks.getCount();
                 if (!finalOrphanChunks)
                     return TRANS("No more orphan chunks to purge");
-                if (!callback.progressed(ProgressCallback::Purge, TRANS("... found remaining orphans chunks ..."), 0, 0, finalOrphanChunks, allChunks))
+                if (!callback.progressed(ProgressCallback::Purge, TRANS("... found remaining orphans chunks ..."), 0, 0, finalOrphanChunks, allChunks, ProgressCallback::FlushLine))
                     return TRANS("Error with output");
                     
                 // Figure out who's linking them
@@ -1639,7 +1675,7 @@ namespace Frost
                 int cleanedCount = 0;
                 while (iter.isValid())
                 {
-                    if (!callback.progressed(ProgressCallback::Purge, TRANS("Processing multichunk"), 0, 0, cleanedCount+1, amountRatio.getSize()))
+                    if (!callback.progressed(ProgressCallback::Purge, TRANS("Processing multichunk"), 0, 0, cleanedCount+1, amountRatio.getSize(), ProgressCallback::FlushLine))
                         return TRANS("Error with output");
                
                     // Create a multichunk for it
@@ -1660,7 +1696,7 @@ namespace Frost
                         currentChunk.ID = multichunk[i].ChunkID;
                         
                         // Read the chunk out of the multichunk
-                        File::Chunk * localChunk = Helpers::extractChunk(error, chunkRoot, mChunk.Path, (uint64)(int64)mChunk.ID, (size_t)(uint64)multichunk[i].Offset, currentChunk.Checksum, mChunk.FilterArgument, &cache);
+                        File::Chunk * localChunk = Helpers::extractChunk(error, chunkRoot, mChunk.Path, (uint64)(int64)mChunk.ID, (size_t)(uint64)multichunk[i].Offset, currentChunk.Checksum, mChunk.FilterArgument, &cache, callback);
                         if (error || !localChunk)
                             return error;
                         
@@ -1668,7 +1704,7 @@ namespace Frost
                         if (!newOne.canFit(localChunk->size))
                         {
                             // Close this multichunk
-                            Helpers::closeMultiChunk(chunkRoot, newOne, newChunkListID, &consumedOutSize);
+                            Helpers::closeMultiChunk(chunkRoot, newOne, newChunkListID, &consumedOutSize, callback);
                             newChunkListID = 0;
                         }
                         // Append to current multichunk
@@ -1688,7 +1724,7 @@ namespace Frost
                     }
                     
                     // Finally delete the useless multichunk anymore
-                    if (!callback.progressed(ProgressCallback::Purge, mChunk.Path, 0, 0, cleanedCount, amountRatio.getSize()))
+                    if (!callback.progressed(ProgressCallback::Purge, mChunk.Path, 0, 0, cleanedCount, amountRatio.getSize(), ProgressCallback::FlushLine))
                         return TRANS("Error with output");
                     File::Info multichunkFile(chunkRoot + mChunk.Path);
                     purgedSize += multichunkFile.size;
@@ -1711,7 +1747,7 @@ namespace Frost
                 if (newOne.getSize())
                 {
                     Assert(newChunkListID);
-                    if (!Helpers::closeMultiChunk(chunkRoot, newOne, newChunkListID, &consumedOutSize))
+                    if (!Helpers::closeMultiChunk(chunkRoot, newOne, newChunkListID, &consumedOutSize, callback))
                         return TRANS("Can not close and save the last multichunk, data is now lost");
                 }
                 
@@ -1719,7 +1755,7 @@ namespace Frost
                 purgedSize -= consumedOutSize;
             }
             
-            if (!callback.progressed(ProgressCallback::Purge, TRANS("... purge finished and saved ..."), 0, 0, purgedSize, purgedSize))
+            if (!callback.progressed(ProgressCallback::Purge, TRANS("... purge finished and saved ..."), 0, 0, purgedSize, purgedSize, ProgressCallback::FlushLine))
                 return TRANS("Error with output");
 
             transaction.shouldCommit();
@@ -1733,7 +1769,7 @@ namespace Frost
     String restoreBackup(const String & folderToRestore, const String & restoreFrom, const unsigned int revisionID, ProgressCallback & callback)
     {
         // The complete logic is here
-        if (!callback.progressed(ProgressCallback::Restore, TRANS("...analysing backup..."), 0, 1, 0, 1))
+        if (!callback.progressed(ProgressCallback::Restore, TRANS("...analysing backup..."), 0, 1, 0, 1, ProgressCallback::KeepLine))
             return TRANS("Error in output");
             
         OverwritePolicy overwritePolicy = No;
@@ -1771,7 +1807,7 @@ namespace Frost
             File::Info dir(folderTrimmed + lastPath);
 
             // Show the list of directories to restore
-            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + lastPath, 0, 1, ++current, total))
+            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + lastPath, 0, 1, ++current, total, ProgressCallback::KeepLine))
                 return TRANS("Interrupted in output");
 
             // Is the directory deleted in the database and not in the system ?
@@ -1805,7 +1841,7 @@ namespace Frost
             if (!dir.makeDir())
                 return TRANS("Failed to create directory: ") + dir.getFullPath();
             
-            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + lastPath, 0, 0, current, total))
+            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + lastPath, 0, 0, current, total, ProgressCallback::FlushLine))
                 return TRANS("Interrupted in output");
                 
             // Find all the files that are linked to this directory
@@ -2099,6 +2135,15 @@ int checkTests(Strings::StringArray & options)
             if (result) ERR("Creating the database failed: %s\n", (const char*)result);
 
             // Then backup the folder
+            if (arg == "bsc")
+            {
+                Frost::Helpers::compressor = Frost::Helpers::BSC;
+                File::MultiChunk::setMaximumSize(25*1024*1024);
+            }
+            if (arg == "big")
+            {
+                File::MultiChunk::setMaximumSize(25*1024*1024);
+            }
             result = Frost::backupFolder("test/", "./testBackup/", revisionID, console);
             if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
             
@@ -2155,6 +2200,15 @@ int checkTests(Strings::StringArray & options)
             if (result) ERR("Reading back the master key failed: %s\n", (const char*)result);
 
             // Then backup the folder
+            if (arg == "bsc")
+            {
+                Frost::Helpers::compressor = Frost::Helpers::BSC;
+                File::MultiChunk::setMaximumSize(25*1024*1024);
+            }
+            if (arg == "big")
+            {
+                File::MultiChunk::setMaximumSize(25*1024*1024);
+            }
             result = Frost::backupFolder("test/", "./testBackup/", revisionID, console);
             if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
             
@@ -2350,7 +2404,7 @@ int checkTests(Strings::StringArray & options)
                 {
                      ::Stream::DecompressInputStream decompressor(compressedInStream, new Compression::BSCLib);
                      if (!::Stream::copyStream(decompressor, decompressedStream))
-                         ERR("Can not decompress the compressed data\n");
+                         ERR("Can not decompressed the compressed data\n");
                 }
                 fprintf(stderr, "Compressed buffer decompressed\n");
                 // Save the decompressed file for later inspection
@@ -2375,7 +2429,7 @@ int checkTests(Strings::StringArray & options)
         }
         else if (testName == "compf")
         {
-            ::Stream::InputFileStream srcData("origin.raw");
+          ::Stream::InputFileStream srcData("origin.raw");
 
             ::Stream::OutputMemStream compressedStream;
             // Compress the data
@@ -2399,7 +2453,7 @@ int checkTests(Strings::StringArray & options)
             {
                 ::Stream::DecompressInputStream decompressor(compressedInStream, new Compression::BSCLib);
                 if (!::Stream::copyStream(decompressor, decompressedStream))
-                    ERR("Can not decompress the compressed data\n");
+                    ERR("Can not decompressed the compressed data\n");
             }
             fprintf(stderr, "Compressed buffer decompressed\n");
             // Save the decompressed file for later inspection
@@ -2598,9 +2652,10 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         // Display some statistics
         Frost::DatabaseModel::Revision rev;
         rev.ID = revisionID;
+        console.progressed(Frost::ProgressCallback::Backup, "", 0, 0, 0, 0, Frost::ProgressCallback::FlushLine);
         console.progressed(Frost::ProgressCallback::Backup, Frost::String::Print(Frost::__trans__("Finished: %s, (source size: %lld, backup size: %lld, %u files, %u directories)"),
-                                            (const char*)backup, (uint64)rev.InitialSize, (uint64)rev.BackupSize, (uint32)rev.FileCount, (uint32)rev.DirCount), 1, 1, (uint32)rev.FileCount, (uint32)rev.FileCount);
-        
+                                            (const char*)backup, (uint64)rev.InitialSize, (uint64)rev.BackupSize, (uint32)rev.FileCount, (uint32)rev.DirCount), 1, 1, (uint32)rev.FileCount, (uint32)rev.FileCount,
+                                            Frost::ProgressCallback::FlushLine);
         // Need to be called anyway
         Frost::finalizeDatabase();
         if (warningLog.getSize()) fputs((const char*)(warningLog.Join("\n")+"\n"), stderr);

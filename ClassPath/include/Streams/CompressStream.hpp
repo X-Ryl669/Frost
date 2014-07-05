@@ -135,8 +135,8 @@ namespace Stream
         /** Try to write the given amount of data to the specified buffer
             @return the number of byte truly written (this method doesn't throw) */
         virtual uint64 write(const void * const buffer, const uint64 size) throw() 
-        { 
-            if (compressor->compressStream(*stream, MemoryBlockStream((const uint8*)buffer, size)))
+        {   // Don't flush the stream
+            if (compressor->compressStream(*stream, MemoryBlockStream((const uint8*)buffer, size), 0, false))
             {
                 amount += size;
                 return size;
@@ -181,7 +181,7 @@ namespace Stream
         {
             // Before actually destructing the compressor, we have to write nothing out of the compressor.
             // Some compression engine might require doing cleanup stuff and this is the signal for it.
-            compressor->compressStream(*stream, MemoryBlockStream(0, 0)); // We don't care about the result.
+            compressor->compressStream(*stream, MemoryBlockStream(0, 0), 0, true); // We don't care about the result, we force flushing
         }
     };
     

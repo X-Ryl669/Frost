@@ -61,7 +61,7 @@ namespace Query
         }
     
         /** Construction */
-        UnsafeRowIterator(const SQLFormat::Results * res) : res(res), rowIndex(0) {}
+        UnsafeRowIterator(const SQLFormat::Results * res) : res(res), rowIndex(0) { Var result; if (!SQLFormat::getResults(res, result, 0, "")) rowIndex = (unsigned int)-1; }
         /** Move semantics */
         UnsafeRowIterator(const UnsafeRowIterator & other) : res(other.res), rowIndex(other.rowIndex) { const_cast<UnsafeRowIterator&>(other).res = 0; }
         /** Destructor */

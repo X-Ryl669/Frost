@@ -309,7 +309,7 @@ namespace Compression
         uint64 inSize = amountToProcess ? min((uint64)amountToProcess, inStream.fullSize()) : inStream.fullSize();
         if (inSize == 0)
         {
-            if (!dataSize) return true;
+            if (!dataSize && !memBuffer->available()) return true;
             // Need to process the remaining block, if any
             if (!processBlock(outStream)) return false;
             // End of stream, let's rewind and write the header

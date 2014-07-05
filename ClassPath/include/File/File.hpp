@@ -390,7 +390,7 @@ namespace File
         mutable WIN32_FIND_DATAW    data;
 #elif defined(_POSIX)
         mutable DIR *               finder;
-        mutable struct dirent       data;
+//        mutable struct dirent       data;
 #elif defined(NEXIO)
 		void *               finder;
 #endif

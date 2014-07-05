@@ -272,12 +272,10 @@ namespace Strings
         for (int i = 0; i < string.getLength(); i++)
         {
             const uint32 c = string.getData()[i];
-            int charLength = 0;
 
             // From http://www1.tip.nl/~t876506/utf8tbl.html#algo
             if (c < 0x80)
             {   // Single byte char
-                charLength = 1;
                 ret += (uint8)c;
             } // Multi byte char
             else if (c < 0x800)

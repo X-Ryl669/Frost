@@ -173,18 +173,20 @@ namespace Frost
     struct ProgressCallback
     {
         enum Action { Backup = 0, Restore, Purge };
+        enum FlushMode  { FlushLine = 0, KeepLine, EraseLine };
         String getActionName(const Action action) { const char * actions[] = {"Backup", "Restore", "Purge"}; return actions[action]; }
     
         /** This method is called while an operation is running.
             The protocol for the sizeDone, totalSize, index and count is as follow:
               1) Each time a new entry is processed, index must be changed (likely increased). The sizeDone value is set to 0, and the totalSize is set to non-zero value.
-                 The callback should not validate the line here if it output the on the console/database
+                 The callback should not validate the line here if it output on the console/database
               2) While the entry is processed, the currentFilename will not change, the index will not change, but the sizeDone and totalSize will likely change.
                  The callback should still not validate the line here
               3) When the entry is done processing, sizeDone and totalSize will be equal.
-                 The callback can validate the line here. 
+                 The callback can validate the line here.
+              If all sizeDone, totalSize, index, and count are zero, then the line is not validated, action is ignored, only the currentFilename is revelant for output.
             @return false to interrupt the process */
-        virtual bool progressed(const Action action, const String & currentFilename, const uint64 sizeDone, const uint64 totalSize, const uint32 index, const uint32 count) = 0;
+        virtual bool progressed(const Action action, const String & currentFilename, const uint64 sizeDone, const uint64 totalSize, const uint32 index, const uint32 count, const FlushMode mode) = 0;
         /** This method is called when the processing must warn the user.
             @return false to interrupt the process */
         virtual bool warn(const Action action, const String & currentFilename, const String & message, const uint32 sourceLine = 0) { return true; }
@@ -229,7 +231,7 @@ namespace Frost
         /** Close a currently filled multichunk and save in database and filesystem */
         bool closeMultiChunk(const String & basePath, File::MultiChunk & multiChunk, uint64 multichunkListID, uint64 * totalOutSize = 0);
         /** Extract a chunk out of a multichunk */
-        File::Chunk * extractChunk(String & error, const String & basePath, const String & MultiChunkPath, const uint64 MultiChunkID, const size_t chunkOffset, const String & chunkChecksum, const String & filterMode, File::MultiChunk * cache = 0);
+        File::Chunk * extractChunk(String & error, const String & basePath, const String & MultiChunkPath, const uint64 MultiChunkID, const size_t chunkOffset, const String & chunkChecksum, const String & filterMode, File::MultiChunk * cache, ProgressCallback & callback);
         /** Allocate a chunk list ID */
         unsigned int allocateChunkList();
     }

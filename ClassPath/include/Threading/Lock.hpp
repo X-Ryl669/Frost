@@ -47,11 +47,12 @@ namespace Threading
     */
     class Event
     {
-    private:
 #if (DEBUG==1)
+    public:
         /** This event name (used in debug mode) */
         const char*     name;
 #endif
+    private:
         /** The event object */
         OEVENT          event;
         /** Should the event automatically reset ? */
@@ -177,8 +178,10 @@ namespace Threading
         bool    locked;
 #endif
 #if (DEBUG==1)
+    public:
         /** The object name (for debugging purpose) */
         const char*   name;
+    private:
 #endif
 
 #ifdef _WIN32

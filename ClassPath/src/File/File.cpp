@@ -318,7 +318,7 @@ namespace File
             if (filesize == 0) break;
 
             offset += nbytes;
-            if (filesize < mapsize) mapsize = filesize;
+            if ((size_t)filesize < mapsize) mapsize = (size_t)filesize;
 
             // Map next segment over existing mapping
             map = mmap(map, mapsize, PROT_READ, (MAP_SHARED | MAP_FIXED), srcFd, offset);
@@ -738,7 +738,7 @@ namespace File
         // Save device node specially
         if (S_ISCHR(status.st_mode) || S_ISBLK(status.st_mode))
         {
-            return String::Print("PT%c%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX/%X", S_ISCHR(status.st_mode) ? 'H' : 'L', (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime, status.st_rdev);
+            return String::Print("PT%c%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX/%llX", S_ISCHR(status.st_mode) ? 'H' : 'L', (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime, (uint64)status.st_rdev);
         }
 
         // TODO: Check for hardlinks and save them once (not done for now, can be done at a higher level by checking the first 2 part of the tuple)
@@ -833,7 +833,7 @@ namespace File
         else if (isDevNode)
         {
             // Need to create the device node (if it does not exists yet)
-            status.st_rdev = (uint32)otherData.splitUpTo("/").parseInt(16);
+            status.st_rdev = (uint64)otherData.splitUpTo("/").parseInt(16);
             if (doesExist())
             {
                 if (!isDevice()) return false;
@@ -851,7 +851,7 @@ namespace File
         }
         else if (doesExist())
         {
-            if (size != status.st_size) return false; // Not the same size, don't modify it
+            if (size != (off_t)status.st_size) return false; // Not the same size, don't modify it
         }
         else if (isFolder)
         {
@@ -1890,7 +1890,7 @@ namespace File
         if (asyncSize && over.aio_buf)
         {
             // If not done already fetch the read size
-            if (asyncSize == -1)
+            if (asyncSize == (size_t)-1)
             {
                 int error = aio_error(&over);
                 if (error == EINPROGRESS) return Asynchronous; //.aio_ != AIO_ALLDONE)
@@ -1991,7 +1991,7 @@ namespace File
         if (asyncSize && over.aio_buf)
         {
             // If not done already fetch the read size
-            if (asyncSize == -1)
+            if (asyncSize == (size_t)-1)
             {
                 int error = aio_error(&over);
                 if (error == EINPROGRESS) return Asynchronous; //.aio_ != AIO_ALLDONE)
@@ -2320,7 +2320,7 @@ namespace File
             if (triggerCount)
             {
                 // Seems so, so let's invalidate them only done stream
-                for (uint32 i = 0; i < triggerCount; i++)
+                for (uint32 i = 0; i < (int)triggerCount; i++)
                 {
                     uint32 index = (uint32)indexPool[i];
                     if (((AsyncCompleted*)pool[index]->monitored)->completed == false)
@@ -2380,7 +2380,7 @@ namespace File
         return 0;
 #else
         Threading::ScopedLock scope(indexLock);
-        return (uint32)index < triggerCount ? pool[indexPool[index]] : 0;
+        return (uint32)index < (uint32)triggerCount ? pool[indexPool[index]] : 0;
 #endif
     }
 

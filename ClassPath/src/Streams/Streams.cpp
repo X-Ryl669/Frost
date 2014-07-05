@@ -256,7 +256,7 @@ namespace Stream
     bool AESInputStream::goForward(const uint64 skipAmount)
     {
         // Need to read the skip amount multiple time until we're done.
-        if (skipAmount <= (keySize - tempPos))
+        if (skipAmount <= (uint64)(keySize - tempPos))
         {
             tempPos += (uint16)min(skipAmount, (uint64)-1);
             return true;

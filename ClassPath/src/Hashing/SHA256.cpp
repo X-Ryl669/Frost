@@ -67,36 +67,9 @@ void Hashing::SHA256::Start()
     /* instrinsic rotate */
     #include <stdlib.h>
     #pragma intrinsic(_lrotr,_lrotl)
-    #define ROR(x,n) _lrotr(x,n)
-    #define ROL(x,n) _lrotl(x,n)
     #define RORc(x,n) _lrotr(x,n)
-    #define ROLc(x,n) _lrotl(x,n)
 
 #elif defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__)) && !defined(INTEL_CC) && !defined(LTC_NO_ASM)
-
-    static inline unsigned ROL(unsigned word, int i)
-    {
-      asm ("roll %%cl,%0"
-        :"=r" (word)
-        :"0" (word),"c" (i));
-      return word;
-    }
-
-    static inline unsigned ROR(unsigned word, int i)
-    {
-      asm ("rorl %%cl,%0"
-        :"=r" (word)
-        :"0" (word),"c" (i));
-      return word;
-    }
-
-    static inline unsigned ROLc(unsigned word, const int i)
-    {
-      asm ("roll %2,%0"
-        :"=r" (word)
-        :"0" (word),"I" (i));
-      return word;
-    }
 
     static inline unsigned RORc(unsigned word, const int i)
     {

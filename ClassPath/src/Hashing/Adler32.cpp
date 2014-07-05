@@ -23,7 +23,7 @@ namespace Hashing
         if (!buffer || !size) return;
         
         // Faster implementation
-        const int nMax = 5552;
+        const uint32 nMax = 5552;
         while (size >= nMax)
         {
             for (int i = 0; i < nMax / 16; i++)

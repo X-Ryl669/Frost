@@ -113,7 +113,7 @@ namespace File
         /** Create the next chunk from the given input stream. 
             @param input    The input stream to read. This must be a seekable stream.
             @param chunker  The chunker to use on the stream
-            @return A pointer on a managed chunk (your must not delete this pointer) or 0 on error.
+            @return A pointer on a managed chunk (you must not delete this pointer) or 0 on error.
                     If it returns 0, either this multichunk is full (and the input stream is rewound), use getFreeSpace() to figure it out,
                     either the input stream is exhausted. */
         Chunk * createNextChunk(::Stream::InputStream & input, const BaseChunker & chunker);

@@ -577,7 +577,7 @@ void Thread::Sleep(const uint32 lMilliseconds, const bool hard)
     else
     {
 #ifdef _POSIX
-        struct timespec req = { lMilliseconds / 1000, (lMilliseconds % 1000) * 1000000 };
+        struct timespec req = { (time_t)(lMilliseconds / 1000), (long)((lMilliseconds % 1000) * 1000000) };
         while (nanosleep(&req, &req) < 0 && hard);
 #else
         portTickType xDelay = lMilliseconds / portTICK_RATE_MS;
@@ -679,7 +679,7 @@ bool Thread::setCurrentThreadOnProcessorMask(const uint64 mask)
     cpu_set_t Mask;
     CPU_ZERO (&Mask);
 
-    for (int i = 0; i < sizeof(mask); ++i)
+    for (size_t i = 0; i < sizeof(mask); ++i)
         if ((mask & (1 << i))) CPU_SET (i, &Mask);
 
     // If this doesn't compile, you need to update your glibc library
@@ -689,6 +689,7 @@ bool Thread::setCurrentThreadOnProcessorMask(const uint64 mask)
     // but this argument was restored in glibc 2.3.4. "
     sched_setaffinity (0, sizeof(Mask), &Mask);
     sched_yield();
+    return true;
 #else 
     return false;
 #endif

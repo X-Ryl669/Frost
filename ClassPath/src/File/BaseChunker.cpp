@@ -72,7 +72,7 @@ namespace File
         // stream position to restore later on if we fail
         uint64 streamPos = input.currentPosition();
         // We first overallocate a chunk, and we'll adjust later on
-        Chunk temp = {0};
+        Chunk temp = {};
         if (!chunker.createChunk(input, temp))
             // End of stream or stream not rewinding capable, so let's get out.
             return 0;
