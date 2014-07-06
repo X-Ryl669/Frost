@@ -374,6 +374,8 @@ the hash for the data. Storing this file on the remote server gives any attacker
 <pre># Mount the remote server's filesystem on /mnt/remote before this
 $ mount [...]</pre>
 <pre>$ Frost --backup /path/to/backup --remote /mnt/remote --compression bsc</pre>
+<p>To restore faster when used BSC compression (takes more memory):</p>
+<pre>$ Frost --restore /path/to/restore/to --remote /mnt/remote --cache 100M</pre>
 <p>To purge cleanly as much as possible:</p>
 <pre>$ Frost --purge revision --remote /mnt/remote --strategy slow --compression bsc</pre>
 <p>To restore only a specific revision:</p>
