@@ -231,7 +231,7 @@ namespace Frost
             BSC  = 1,
             // No other compressor supported
         } compressor;
-        
+
         // Excluded file list if found
         String excludedFilePath;
         
@@ -384,20 +384,70 @@ namespace Frost
             multiChunk.Reset();
             return true;
         }      
+
+        struct ChunkCache
+        {
+            Utils::ScopePtr<File::MultiChunk> chunk;
+            time_t                            lastAccessTime;
+            ChunkCache(File::MultiChunk * chunk) : chunk(chunk), lastAccessTime(time(NULL)) {}
+        };
+        struct MultiChunkCache
+        {
+            typedef Container::HashTable<ChunkCache, uint64> MultiChunkHash;
+            MultiChunkHash       hash;
+            const size_t         maxCacheSize;
+            size_t               totalCacheSize;
+
+            File::MultiChunk * getChunk(const uint64 id) { ChunkCache * cache = hash.getValue(id); if (cache) { cache->lastAccessTime = time(NULL); return cache->chunk; } return 0; }
+            bool storeChunk(File::MultiChunk * chunk, const uint64 id)
+            {
+                if (!chunk) return false;
+                // Check the cumulative size
+                if (totalCacheSize + chunk->getSize() > maxCacheSize)
+                {
+                    // Need to prune the oldest multichunk from the cache
+                    MultiChunkHash::IterT iter = hash.getFirstIterator();
+                    time_t oldest = time(NULL); uint64 oldestHash = 0; size_t oldSize = 0;
+                    while(iter.isValid())
+                    {
+                        if ((*iter)->lastAccessTime < oldest) { oldest = (*iter)->lastAccessTime; oldestHash = *iter.getKey(); oldSize = (*iter)->chunk->getSize(); }
+                        ++iter;
+                    }
+
+                    totalCacheSize -= oldSize;
+                    hash.removeValue(oldestHash);
+                }
+                totalCacheSize += chunk->getSize();
+                ChunkCache * cache = new ChunkCache(chunk);
+                return hash.storeValue(id, cache);
+            }
+
+            MultiChunkCache(const size_t maxCacheSize) : maxCacheSize(maxCacheSize), totalCacheSize(0) {}
+        };
+
         
-        File::Chunk * extractChunk(String & error, const String & basePath, const String & MultiChunkPath, const uint64 MultiChunkID, const size_t chunkOffset, const String & chunkChecksum, const String & filterMode, File::MultiChunk * cache, ProgressCallback & callback)
+        
+        File::Chunk * extractChunk(String & error, const String & basePath, const String & MultiChunkPath, const uint64 MultiChunkID, const size_t chunkOffset, const String & chunkChecksum, const String & filterMode, MultiChunkCache & cache, ProgressCallback & callback)
         {
             error = "";
-            File::MultiChunk localMultichunk, & mchunk = cache ? *cache : localMultichunk;
+//            File::MultiChunk localMultichunk, & mchunk = cache ? *cache : localMultichunk;
+            File::MultiChunk * cached = cache.getChunk(MultiChunkID);
             
-            if (mchunk.getOpaque() != MultiChunkID)
+            if (!cached)
             {
-                 // Decode this multichunk to find out the chunk to store in file
+                cached = new File::MultiChunk;
+                if (!cached)
+                {
+                    error = TRANS("Not enough memory to allocate multichunk: ") + MultiChunkPath;
+                    return 0;
+                }
+                File::MultiChunk & mchunk = *cached;
+                // Decode this multichunk to find out the chunk to store in file
                 ::Stream::InputFileStream chunkFile(basePath + MultiChunkPath);
                 bool worthTelling = chunkFile.fullSize() > (uint64)2*1024*1024;
 
                 ::Stream::OutputMemStream compressedData;
-                
+
                 KeyFactory::KeyT chunkHash;
                 uint32 chunkHashSize = (uint32)ArrSz(chunkHash);
                 if (worthTelling && !callback.progressed(ProgressCallback::Restore, TRANS("Checking multichunk integrity"), 0, 0, 0, 0, ProgressCallback::KeepLine))
@@ -409,7 +459,7 @@ namespace Frost
                     error = TRANS("Error while decoding the hash of the multichunk: ") + MultiChunkPath;
                     return 0;
                 }
-                
+
                 // Decrypt it now
                 if (worthTelling && !callback.progressed(ProgressCallback::Restore, TRANS("Decrypting multichunk"), 0, 0, 0, 0, ProgressCallback::KeepLine))
                     return 0;
@@ -421,14 +471,14 @@ namespace Frost
                         return 0;
                     }
                 }
-                
+
                 // Decompress it
                 if (worthTelling && !callback.progressed(ProgressCallback::Restore, TRANS("Decompressing multichunk"), 0, 0, 0, 0, ProgressCallback::KeepLine))
                     return 0;
 
                 String compUsed = filterMode.fromTo(":", ":");
                 if (compUsed == "zLib")
-                {   // And zLib 
+                {   // And zLib
                     ::Stream::MemoryBlockStream compressedStream(compressedData.getBuffer(), compressedData.fullSize());
                     {
                         Compression::ZLib * zlib = new Compression::ZLib;
@@ -446,7 +496,7 @@ namespace Frost
                         }
                     }
                 } else if (compUsed == "BSC")
-                {   // And BSCLib 
+                {   // And BSCLib
                     ::Stream::MemoryBlockStream compressedStream(compressedData.getBuffer(), compressedData.fullSize());
                     {
                         ::Stream::DecompressInputStream decompressor(compressedStream, new Compression::BSCLib);
@@ -474,11 +524,16 @@ namespace Frost
                     error = TRANS("Corruption detected in multichunk: ") + MultiChunkPath;
                     return 0;
                 }
-                
+
                 // It worked, so let's save it to avoid reloading it
-                mchunk.setOpaque(MultiChunkID);
+//                mchunk.setOpaque(MultiChunkID);
+                if (!cache.storeChunk(cached, MultiChunkID))
+                {
+                    error = TRANS("Can not store multichunk in cache: ") + MultiChunkPath;
+                    return 0;
+                }
             }
-            
+
             // Ok, extract the chunk
             uint8 chunkCS[Hashing::SHA1::DigestSize];
             uint32 chunkCSSize = (uint32)ArrSz(chunkCS);
@@ -488,17 +543,15 @@ namespace Frost
                 return 0;
             }
 
-            File::Chunk * chunk = mchunk.findChunk(chunkCS, (size_t)chunkOffset);
+            File::Chunk * chunk = cached->findChunk(chunkCS, (size_t)chunkOffset);
             return chunk;
         }
-        
+
         unsigned int allocateChunkList()
         {
             BuildPool(DatabaseModel::ChunkList, chunkListPool, ID, _C::Max());
             return chunkListPool.count ? chunkListPool[0].ID + 1 : 1;
         }
-      
-        
     }
     // Initialize the database connection, and bootstrap it if required.
     String initializeDatabase(const String & backupPath, unsigned int & revisionID, MemoryBlock & cipheredMasterKey)
@@ -1217,12 +1270,11 @@ namespace Frost
         ProgressCallback & callback;
         const String & folderTrimmed;
         const String backupFolder;
-        File::MultiChunk mchunk;
-        
+
         OverwritePolicy overwritePolicy;
-    
+        Helpers::MultiChunkCache cache;
+
     public:
-        
         /** Restore a single file from the database
             @return 0 on success, -1 on error, 1 on warning */
         int restoreFile(const DatabaseModel::Entry & file, String & errorMessage, const uint32 current, const uint32 total)
@@ -1314,7 +1366,7 @@ namespace Frost
                     }
 
                     // Extract a chunk out of this multichunk
-                    File::Chunk * chunk = Helpers::extractChunk(errorMessage, backupFolder, iter["MCPath"], (uint64)(int64)iter["MCID"], (size_t)(int64)iter["MCOffset"], iter["Checksum"], iter["FilterArgument"], &mchunk, callback);
+                    File::Chunk * chunk = Helpers::extractChunk(errorMessage, backupFolder, iter["MCPath"], (uint64)(int64)iter["MCID"], (size_t)(int64)iter["MCOffset"], iter["Checksum"], iter["FilterArgument"], cache, callback);
                     if (!chunk || errorMessage) return -1;
 
                     // Ok, if we got a chunk, let's save it
@@ -1346,13 +1398,13 @@ namespace Frost
     #undef ERR
             return 0;
         }
-        
-        RestoreFile(ProgressCallback & callback, const String & folderTrimmed, const String & backupFolder, OverwritePolicy policy)
+
+        RestoreFile(ProgressCallback & callback, const String & folderTrimmed, const String & backupFolder, OverwritePolicy policy, const size_t maxCacheSize)
             : callback(callback), folderTrimmed(folderTrimmed), backupFolder(backupFolder.normalizedPath(Platform::Separator, true)),
-              overwritePolicy(policy)
+              overwritePolicy(policy), cache(maxCacheSize)
         {}
     };
-    
+
     // Backup the given folder 
     String backupFolder(const String & folderToBackup, const String & backupTo, const unsigned int revisionID, ProgressCallback & callback)
     {
@@ -1670,7 +1722,8 @@ namespace Frost
                 // Then from the lowest one, let's start making new multichunk
                 MultiChunkTreeT::SortedIterT iter = amountRatio.getFirstSortedIterator();
                 uint64 consumedOutSize = 0;
-                File::MultiChunk cache, newOne;
+                File::MultiChunk newOne;
+                Helpers::MultiChunkCache cache(File::MultiChunk::MaximumSize);
                 unsigned int newChunkListID = 0;
                 int cleanedCount = 0;
                 while (iter.isValid())
@@ -1696,7 +1749,7 @@ namespace Frost
                         currentChunk.ID = multichunk[i].ChunkID;
                         
                         // Read the chunk out of the multichunk
-                        File::Chunk * localChunk = Helpers::extractChunk(error, chunkRoot, mChunk.Path, (uint64)(int64)mChunk.ID, (size_t)(uint64)multichunk[i].Offset, currentChunk.Checksum, mChunk.FilterArgument, &cache, callback);
+                        File::Chunk * localChunk = Helpers::extractChunk(error, chunkRoot, mChunk.Path, (uint64)(int64)mChunk.ID, (size_t)(uint64)multichunk[i].Offset, currentChunk.Checksum, mChunk.FilterArgument, cache, callback);
                         if (error || !localChunk)
                             return error;
                         
@@ -1766,7 +1819,7 @@ namespace Frost
     }
     
     // Restore a backup to the given folder
-    String restoreBackup(const String & folderToRestore, const String & restoreFrom, const unsigned int revisionID, ProgressCallback & callback)
+    String restoreBackup(const String & folderToRestore, const String & restoreFrom, const unsigned int revisionID, ProgressCallback & callback, const size_t maxCacheSize)
     {
         // The complete logic is here
         if (!callback.progressed(ProgressCallback::Restore, TRANS("...analysing backup..."), 0, 1, 0, 1, ProgressCallback::KeepLine))
@@ -1794,7 +1847,7 @@ namespace Frost
         
         uint32 total = (uint32)fileList.getSize(), current = 0;
         String lastPath = "*";
-        RestoreFile restore(callback, folderTrimmed, restoreFrom, overwritePolicy);
+        RestoreFile restore(callback, folderTrimmed, restoreFrom, overwritePolicy, maxCacheSize);
         unsigned int skip = 1;
         for (unsigned int i = 0; i < dirPool.count; i+= skip)
         {
@@ -1909,13 +1962,13 @@ int showHelpMessage(const Frost::String & error = "")
            "\t--keyvault file\t\tPath to a file containing the private key used to decrypt/encrypt the backup data. Default to '" DEFAULT_KEYVAULT "'. If the key does not exist, it'll be created\n"
            "\t--keyid id\t\tThe key identifier if storing multiple keys in the key vault.\n"
            "  Optional parameters for backup and restore:\n"
-           "\t--cache [sizeMB]\tThe cache size holding the decoded multichunks in MB (default is 64) - restore only\n"
+           "\t--cache [size]\tThe cache size (possible suffix: K,M,G) holding the decoded multichunks (default is 64M) - restore only\n"
            "\t--overwrite [policy]\tThe policy for overwriting/deleting files on the restore folder if they exists (either 'yes', 'no', 'update')\n"
-           "\t--multichunk [sizeKB]\tWhile backing up, files are cut in variable sized chunk, and these chunks are concat in multichunk files (with size in KB) saved on the target (default is 250)\n"
+           "\t--multichunk [size]\tWhile backing up, files are cut in variable sized chunk, and these chunks are concat in multichunk files saved on the target (default is 250K, possible suffix: K,M,G)\n"
            "\t                     \tIf you have a large amount of data to backup, a bigger number will create less files in the backup directory, the downside being that purging will take more time\n"
            "\t                     \tIf you backup often, and purge at regular interval, the default should allow fast restoring and purging\n"
            "\t--compression [bsc]\tYou can change the compression library to use (default is zlib). Using 'bsc' is faster than LZMA and gives better compression ratio.\n"
-           "\t                     \tHowever, 'bsc' also changes the multichunk size to 25600.\n"
+           "\t                     \tHowever, 'bsc' also changes the multichunk size to 25MB.\n"
            "\t--strategy [mode]    \tThe purging strategy, 'fast' for removing lost chunk from database, but does not reassemble multichunks\n"
            "\t                     \t'slow' for rebuilding multichunks after fast pruning. This will save the maximum backup amount, at the price of much longer processing\n"
            "\t--exclude list.exc \tYou can specify a file containing the exclusion list for backup. This file is read line-by-line (one rule per line)\n"
@@ -2509,15 +2562,25 @@ int checkOption(Strings::StringArray & options, const Strings::FastString & opti
     {
         if (param.getSize() != 1) return showHelpMessage("Invalid number of argument");
         Strings::FastString * optionValue = new Strings::FastString(param[0].Trimmed());
-        if (numeric && optionValue->invFindAnyChar("0123456789") != -1)
+        if (numeric && optionValue->invFindAnyChar("0123456789KMG") != -1)
         {
             delete optionValue;
-            return showHelpMessage(TRANS("Expecting numerical value for: ") + option);
+            return showHelpMessage(TRANS("Expecting numerical value (accepted also K, M or G suffix) for: ") + option);
         }
         optionsMap.storeValue(option, optionValue, true);
         return 1;
     }
     return -1;
+}
+
+int64 parseNumericSuffixed(const Strings::FastString & option)
+{
+    int64 parsed = option.parseInt(10);
+    uint8 suffix = option.midString(-1, 1)[0];
+    if (suffix == 'K') parsed *= 1024;
+    if (suffix == 'M') parsed *= 1024 * 1024;
+    if (suffix == 'G') parsed *= 1024 * 1024 * 1024;
+    return parsed;
 }
 
 int handleAction(Strings::StringArray & options, const Strings::FastString & action)
@@ -2673,7 +2736,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         
         // Restore the backup for the given revision
         if (params[1] && (int)params[1]) revisionID = params[1];
-        result = Frost::restoreBackup(params[0], remote, revisionID, console);
+        result = Frost::restoreBackup(params[0], remote, revisionID, console, (size_t)parseNumericSuffixed(*optionsMap["cache"]));
         if (result) ERR("Can't restore the backup: %s\n", (const char*)result);
 
         // Need to be called anyway
@@ -2712,7 +2775,7 @@ int main(int argc, char ** argv)
         return showHelpMessage();
 
     Frost::Helpers::compressor = Frost::Helpers::ZLib;
-    
+
     // This also works for tests, so test it before entering any tests
     if (checkOption(options, "compression") == EXIT_SUCCESS) return EXIT_SUCCESS;
     // Check for bsc selection
@@ -2720,13 +2783,13 @@ int main(int argc, char ** argv)
     {   // Remember the compressor selected
         Frost::Helpers::compressor = Frost::Helpers::BSC;
         File::MultiChunk::setMaximumSize(25*1024*1024);
-        optionsMap.storeValue("multichunk", new Strings::FastString("25600"), true);
+        optionsMap.storeValue("multichunk", new Strings::FastString("25600K"), true);
     }
-    
+
     // Test mode first
     int tested = checkTests(options);
     if (tested != BailOut) return tested == EXIT_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
-    
+
     Strings::StringArray params;
     if (getOptionParameters(options, "help", params))
     {
@@ -2747,19 +2810,19 @@ int main(int argc, char ** argv)
         Frost::Helpers::excludedFilePath = *optionsMap["exclude"];
 
     if (optionsMap["multichunk"])
-        File::MultiChunk::setMaximumSize(((uint32)*optionsMap["multichunk"]) * 1024);
+        File::MultiChunk::setMaximumSize((uint32)parseNumericSuffixed(*optionsMap["multichunk"]));
         
     
     if (optionsMap["overwrite"]
         && *optionsMap["overwrite"] != "yes"
         && *optionsMap["overwrite"] != "no"
         && *optionsMap["overwrite"] != "update")
-        return showHelpMessage("Bad argument for overwrite");
+        return showHelpMessage("Bad argument for overwrite (none of: yes, no, update)");
          
     if (optionsMap["strategy"]
         && *optionsMap["strategy"] != "slow"
         && *optionsMap["strategy"] != "fast")
-        return showHelpMessage("Bad argument for strategy");
+        return showHelpMessage("Bad argument for strategy (none of: slow, fast)");
 
     int remoteOpt = checkOption(options, "remote");
     if (remoteOpt == EXIT_SUCCESS) return EXIT_SUCCESS;
@@ -2771,6 +2834,8 @@ int main(int argc, char ** argv)
     optionsMap.storeValue("keyvault", new Strings::FastString(DEFAULT_KEYVAULT));
     if (checkOption(options, "keyvault") == EXIT_SUCCESS) return EXIT_SUCCESS;
 
+    if (!optionsMap["cache"])
+        optionsMap.storeValue("cache", new Strings::FastString("64M"));
 
 
     // Test for actions now

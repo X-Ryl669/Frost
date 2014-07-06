@@ -110,7 +110,7 @@ namespace File
         uint32 chunkAndFilter = (filterListID & 0xFFFF) | ((chunkPos.getSize() & 0xFFFF) << 16);
         if (chunkPos.getSize() >= 0xFFFF)
         {   // Escape code if the number of chunks exceed the available space
-            chunkAndFilter = 0xFFFF | (filterListID & 0xFFFF);
+            chunkAndFilter = 0xFFFF0000 | (filterListID & 0xFFFF);
             if (!output.write(chunkAndFilter)) return false;
             chunkAndFilter = (uint32)chunkPos.getSize();
         }

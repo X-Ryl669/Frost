@@ -76,6 +76,7 @@ namespace Container
             return true;
         }
         static const KeyType & accessKey(Type nodeKey) { return *nodeKey; }
+        static bool isValid(Type nodeKey) { return nodeKey != 0; }
     };
 
     template <class KeyType> 
@@ -90,7 +91,8 @@ namespace Container
             return true;
         }
         static bool removeKey(Type nodeKey, KeyArrayT & keyArray) { return true; }
-        static const KeyType accessKey(Type nodeKey) { return nodeKey; }
+        static const KeyType & accessKey(Type & nodeKey) { return nodeKey; }
+        static bool isValid(Type nodeKey) { return true; }
     };
 
 #endif
@@ -146,7 +148,8 @@ namespace Container
                 return true;
             }
             static bool removeKey(Type nodeKey, KeyArrayT & keyArray) { return true; }
-            static const KeyType accessKey(Type nodeKey) { return nodeKey; }
+            static const KeyType & accessKey(Type & nodeKey) { return nodeKey; }
+            static bool isValid(Type nodeKey) { return true; }
         };
         template <> struct PODSelect<false> 
         { 
@@ -167,6 +170,7 @@ namespace Container
                 return true;
             }
             static const KeyType & accessKey(Type nodeKey) { return *nodeKey; }
+            static bool isValid(Type nodeKey) { return nodeKey != 0; }
         };
         typedef PODSelect<withPODKey>  PODKey;
         typedef PODKey::Type           PODKeyT;
@@ -374,8 +378,8 @@ namespace Container
             // Find the entry
             for (; e; e = e->next)
             {
-                if (!e->key) return 0;
-                if (HashPolicy::hashKey(*e->key) == hash && HashPolicy::compareKeys(PODKey::accessKey(e->key), key))
+                if (!PODKey::isValid(e->key)) return 0;
+                if (HashPolicy::hashKey(PODKey::accessKey(e->key)) == hash && HashPolicy::compareKeys(PODKey::accessKey(e->key), key))
                 {
                     // Delete the key in the key array 
                     if (!PODKey::removeKey(e->key, keyArray)) return 0;
@@ -410,8 +414,8 @@ namespace Container
             // Find the entry
             for (; e; e = e->next)
             {
-                if (!e->key) return false;
-                if (HashPolicy::hashKey(*e->key) == hash && HashPolicy::compareKeys(PODKey::accessKey(e->key), key))
+                if (!PODKey::isValid(e->key)) return false;
+                if (HashPolicy::hashKey(PODKey::accessKey(e->key)) == hash && HashPolicy::compareKeys(PODKey::accessKey(e->key), key))
                 {
                     // Delete the key in the key array 
                     if (!PODKey::removeKey(e->key, keyArray)) return false;

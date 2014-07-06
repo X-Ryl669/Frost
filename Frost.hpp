@@ -518,6 +518,6 @@ namespace Frost
         @param revisionID       The current backup revision identifier
         @param callback         The progress callback that's called at regular interval
         @return A string describing the error, or an empty string on success */
-    String restoreBackup(const String & folderToRestore, const String & restoreFrom, const unsigned int revisionID, ProgressCallback & callback);
+    String restoreBackup(const String & folderToRestore, const String & restoreFrom, const unsigned int revisionID, ProgressCallback & callback, const size_t maxCacheSize = 64*1024*1024);
 }
 
