@@ -476,6 +476,11 @@ namespace Frost
                 if (worthTelling && !callback.progressed(ProgressCallback::Restore, TRANS("Decompressing multichunk"), 0, 0, 0, 0, ProgressCallback::KeepLine))
                     return 0;
 
+                // Ensure multichunk size is large enough
+                size_t multiChunkSize = (size_t)filterMode.upToFirst(":").parseInt(10);
+                if (multiChunkSize > File::MultiChunk::MaximumSize) File::MultiChunk::setMaximumSize(multiChunkSize);
+
+                // Then decompress
                 String compUsed = filterMode.fromTo(":", ":");
                 if (compUsed == "zLib")
                 {   // And zLib
@@ -526,7 +531,6 @@ namespace Frost
                 }
 
                 // It worked, so let's save it to avoid reloading it
-//                mchunk.setOpaque(MultiChunkID);
                 if (!cache.storeChunk(cached, MultiChunkID))
                 {
                     error = TRANS("Can not store multichunk in cache: ") + MultiChunkPath;
