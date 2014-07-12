@@ -162,6 +162,8 @@ namespace Frost
         void createNewKey(KeyT & keyOut)
         {
             Random::fillBlock(salt, ArrSz(salt));
+            // Hash the random block to prevent state guessing attacks so no data in output comes from the random output directly.
+            BigHashT hash; hash.Start(); hash.Hash(salt, ArrSz(salt)); hash.Finalize(salt);
             deriveNewKey(keyOut);
         }
         
