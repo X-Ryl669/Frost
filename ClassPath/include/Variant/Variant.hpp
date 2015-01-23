@@ -24,6 +24,20 @@
 */
 namespace Type
 {
+    namespace Private
+    {
+        
+        template <class T>
+        const long long operator == (const T &, const T &);
+        
+        template <class T>
+        struct HasEqualOperator
+        {
+            static T makeT();
+            enum { Result = (sizeof(makeT() == makeT()) != sizeof(long long)) };
+        };
+    };
+
     /** The variant type interface declaration.
 
         This class can store unknown type in a type safe way.
@@ -44,7 +58,7 @@ namespace Type
         // You can read it back in two way
         int i = 0;
         a.extractTo(i); // This will work as a is an int
-        const int b = a.like(b); // This will work too a can be seen as an int
+        const int b = a.like(&b); // This will work too a can be seen as an int
 
         // You can test variant type easily
         bool isDouble = a.isExactly((double*)0); // false, of course
@@ -54,9 +68,9 @@ namespace Type
         // This will return false, and c will still be zero, a is an int, and can't be extracted to c
         a.extractTo(c);
         // But, using like, you'll call heavy conversion if the type doesn't match
-        c = a.like(c); // c = 3.0 after conversion
-        // You shouldn't write Var t = "text" as it's treated as a pointer, not a string
-        Var t = (String)"3.45";
+        c = a.like(c); // c == 3.0 after conversion
+        // You can write Var t = "text" because we have an exception for const char * pointer (that's the only exception for types)
+        Var t = "3.45";
         // This will (heavy) convert y to an int
         int y = t.like(y);      // y = 3
         double z = t.like(z);   // z = 3.45
@@ -72,7 +86,7 @@ namespace Type
 
     public:
 	    /** Is the variant empty ? */
-	    struct Empty {};
+	    struct Empty { };
 
 	    /** Not constant exception */
 	    struct NotConstException {};
@@ -110,7 +124,36 @@ namespace Type
 		    DataSource *							(*getDataSource)(const InternalUnion&);
 		    void									(*setDataSource)(DataSource *, InternalUnion&);
             bool                                    (*PODDiscriminant)();
+            bool                                    (*NumberDiscriminant)();
+            bool                                    (*Compare)(const InternalUnion &, const InternalUnion &);
 	    };
+        
+
+
+        template <class T>
+        static bool CompareStrict(const InternalUnion & a, const InternalUnion & b) { return *reinterpret_cast<const T*>(a.Buffer) == *reinterpret_cast<const T*>(b.Buffer); }
+        template <class T>
+        static bool CompareNonStrict(const InternalUnion & a, const InternalUnion & b) { return memcmp(a.Buffer, b.Buffer, sizeof(T)) == 0; }
+        template <class T>
+        static bool CompareStrictPtr(const InternalUnion & a, const InternalUnion & b) { return *reinterpret_cast<const T*>(a.Pointer) == *reinterpret_cast<const T*>(b.Pointer); }
+        template <class T>
+        static bool CompareNonStrictPtr(const InternalUnion & a, const InternalUnion & b) { return a.Pointer == b.Pointer; }
+        
+
+        template < typename T, bool U >
+        struct EqualOperatorWrap
+        {
+            static inline bool Compare(const InternalUnion & a, const InternalUnion & b) { return CompareNonStrict<T>(a,b); }
+            static inline bool ComparePtr(const InternalUnion & a, const InternalUnion & b) { return CompareNonStrictPtr<T>(a,b); }
+        };
+        
+        template < typename T>
+        struct EqualOperatorWrap<T, true>
+        {
+            static inline bool Compare(const InternalUnion & a, const InternalUnion & b) { return CompareStrict<T>(a,b); }
+            static inline bool ComparePtr(const InternalUnion & a, const InternalUnion & b) { return CompareStrictPtr<T>(a,b); }
+        };
+        
 
     public:
     #ifndef _MSC_VER
@@ -133,6 +176,8 @@ namespace Type
 
 		    static DataSource * getDataSource(const InternalUnion& x)		{ UniversalTypeIdentifier::PGetDataSourceFunc pFunc = UniversalTypeIdentifier::getTypeFactory()->getDataSourceOutFunc(getTypeID()); if (pFunc != NULL) return (*pFunc)(getConstPointer(x)); else return NULL;	}
 		    static void setDataSource(DataSource * pxDS, InternalUnion& x)	{ UniversalTypeIdentifier::PSetDataSourceFunc pFunc = UniversalTypeIdentifier::getTypeFactory()->getDataSourceInFunc(getTypeID()); if (pFunc != NULL) (*pFunc)(pxDS, getPointer(x)); }
+            
+            static bool Compare(const InternalUnion & a, const InternalUnion & b) { return EqualOperatorWrap<T, Private::HasEqualOperator<T>::Result >::Compare(a, b); }
 	    };
 
 	    /** Specialization for pointer based storage */
@@ -154,7 +199,9 @@ namespace Type
 
 		    static DataSource * getDataSource(const InternalUnion& x)		{ UniversalTypeIdentifier::PGetDataSourceFunc pFunc = UniversalTypeIdentifier::getTypeFactory()->getDataSourceOutFunc(getTypeID()); if (pFunc != NULL) return (*pFunc)(getConstPointer(x)); else return NULL;	}
 		    static void setDataSource(DataSource * pxDS, InternalUnion& x)	{ UniversalTypeIdentifier::PSetDataSourceFunc pFunc = UniversalTypeIdentifier::getTypeFactory()->getDataSourceInFunc(getTypeID()); if (pFunc != NULL) (*pFunc)(pxDS, getPointer(x)); }
-	    };  
+
+            static bool Compare(const InternalUnion & a, const InternalUnion & b) { return EqualOperatorWrap<T, Private::HasEqualOperator<T>::Result >::ComparePtr(a, b); }
+	    };
 
 	    /** Now, select which of the function best match for the given type */
 	    template<typename T> 
@@ -175,6 +222,8 @@ namespace Type
 		      , &VirtualTableImpl<T, Optimize >::getDataSource
 		      , &VirtualTableImpl<T, Optimize >::setDataSource
               , (IsPOD<T>::result || UniversalTypeIdentifier::IsEnum<T>::Result) ? &VarT<Policy>::_isPOD : &VarT<Policy>::_isNotPOD
+              , (IsNumber<T>::result || UniversalTypeIdentifier::IsEnum<T>::Result) ? &VarT<Policy>::_isPOD : &VarT<Policy>::_isNotPOD
+              , &VirtualTableImpl<T, Optimize >::Compare
 
 		    };
 		    return & virtualTable;
@@ -200,6 +249,7 @@ namespace Type
 
 			    static DataSource * getDataSource(const InternalUnion& x)		{ UniversalTypeIdentifier::PGetDataSourceFunc pFunc = UniversalTypeIdentifier::getTypeFactory()->getDataSourceOutFunc(getTypeID()); if (pFunc != NULL) return (*pFunc)(getConstPointer(x)); else return NULL;	}
 			    static void setDataSource(DataSource * pxDS, InternalUnion& x)	{ UniversalTypeIdentifier::PSetDataSourceFunc pFunc = UniversalTypeIdentifier::getTypeFactory()->getDataSourceInFunc(getTypeID()); if (pFunc != NULL) (*pFunc)(pxDS, getPointer(x)); }
+                static bool Compare(const InternalUnion & a, const InternalUnion & b) { return EqualOperatorWrap<T, Private::HasEqualOperator<T>::Result >::Compare(a, b); }
 		    };
 
 		    template <> struct Inner< Bool2Type<false> >
@@ -216,6 +266,7 @@ namespace Type
 
 			    static DataSource * getDataSource(const InternalUnion& x)		{ UniversalTypeIdentifier::PGetDataSourceFunc pFunc = UniversalTypeIdentifier::getTypeFactory()->getDataSourceOutFunc(getTypeID()); if (pFunc != NULL) return (*pFunc)(getConstPointer(x)); else return NULL;	}
 			    static void setDataSource(DataSource * pxDS, InternalUnion& x)	{ UniversalTypeIdentifier::PSetDataSourceFunc pFunc = UniversalTypeIdentifier::getTypeFactory()->getDataSourceInFunc(getTypeID()); if (pFunc != NULL) (*pFunc)(pxDS, getPointer(x)); }
+                static bool Compare(const InternalUnion & a, const InternalUnion & b) { return EqualOperatorWrap<T, Private::HasEqualOperator<T>::Result >::ComparePtr(a, b); }
 		    };
 	    };
 
@@ -237,6 +288,8 @@ namespace Type
 		      , &VirtualTableBigImpl<T>::Inner< Bool2Type<Optimize> >::getDataSource
 		      , &VirtualTableBigImpl<T>::Inner< Bool2Type<Optimize> >::setDataSource
               , (IsPOD<T>::result || UniversalTypeIdentifier::IsEnum<T>::Result) ? &VarT<Policy>::_isPOD : &VarT<Policy>::_isNotPOD
+              , (IsNumber<T>::result || UniversalTypeIdentifier::IsEnum<T>::Result) ? &VarT<Policy>::_isPOD : &VarT<Policy>::_isNotPOD
+              , &VirtualTableBigImpl<T>::Inner< Bool2Type<Optimize> >::Compare
 		    };
 		    return & virtualTable;
 	    }	
@@ -307,6 +360,10 @@ namespace Type
 	    }
     */
 	    inline VarT& operator=(const VarT& x)	{ return Set(x);	}
+        
+        /** Comparison operator expect that both the stored type and the value to be the same.
+            For loose comparison, use the similar member function instead */
+        inline bool operator ==(const VarT& x) const { return table == x.table && table->Compare(inner, x.inner); }
 
     public:
 	    /** Allow conversion to a datasource */
@@ -322,7 +379,14 @@ namespace Type
 		    inline bool isExactly(T*) const { return getUTI()->isEqual(UniversalTypeIdentifier::getTypeID((T*)0));	}
 	    /** Check against a run-time verifiable type */
 	    inline bool isExactly(UniversalTypeIdentifier::TypeID  type) const { return getUTI()->isEqual(type); }
-
+        
+        /** Check and extract if it's the expected type */
+        template<typename T>
+        inline T * extractIf(T* t) { return isExactly(t) ? toPointer(t) : 0; }
+        /** Check and extract if it's the expected type */
+        template<typename T>
+        inline const T * extractIf(const T* t) const { return isExactly(const_cast<T*>(t)) ? toPointer(t) : 0; }
+        
 	    /** Try to implicitly convert the type 
 	        @return false if the conversion doesn't apply (wanted type is different from internal type)
 	    */	
@@ -374,6 +438,8 @@ namespace Type
 	    inline bool isEmpty() const { return table == getTable((Empty*)0); }
         /** Check if this variant is a plain old data type (POD) */
         inline bool isPOD() const { return table->PODDiscriminant(); }
+        /** Check if this variant is a number (int, double, float, long long, unsigned, etc) */
+        inline bool isNumber() const { return table->NumberDiscriminant(); }
         /** Get the stored type name. 
             @warning Don't use that to compare Variant types, use isExactly() instead. */
         inline const char * getTypeName() const { return UniversalTypeIdentifier::getTypeFactory()->getTypeName(table->getTypeID()); }
@@ -390,11 +456,20 @@ namespace Type
 	    {
 		    return this;
 	    }
+        
+        /** Check if the given parameter is similar to the current instance stored.
+            This function is not necessarly transitive, that is x.similar(y) != y.similar(x) can be true.
+            The function converts x to the type of y and compares it with y's internal == operator */
+        template<typename T>
+        const bool similar(const T & y) const
+        {
+            return (y == like(&y));
+        }
 
-    // This operator has been removed because it is hazardous to use 
+    // This operator has been removed because it is hazardous to use until we have explicit type conversion operator in C++ standard
     #if 0
 	    template <typename T>
-		    operator T() { return like(*(T*)0);	}
+		    explicit operator T() { return like(*(T*)0);	}
     #endif
 
 	    /** Container */
@@ -419,6 +494,48 @@ namespace Type
     extern VarT<ObjectCopyPolicy> EmptyVar;
     /** Use this if you want to pass default variant parameters to functions */
     extern VarT<ObjectPtrPolicy> EmptyRef;
+    
+    /** This is used when modifying a variant has to be done through function calls.
+        The underlying storage can be anything you want, provided you accept to and from Variant conversion. */
+    template <typename Policy>
+    struct GetterSetterT
+    {
+        /** Derive from this object to store your additional information */
+        struct Opaque
+        {
+            const void * self;
+            Opaque(const void * self = 0) : self(self) {}
+            virtual Opaque * Clone() const { return new Opaque(self); }
+            virtual ~Opaque() {  }
+        };
+        /** The getter function pointer */
+        typedef VarT<Policy> (*GetterT)(const Opaque & self);
+        /** The setter function pointer */
+        typedef void (*SetterT)(Opaque & self, const VarT<Policy> &);
+        
+        /** The pointer on the getter function */
+        GetterT     getter;
+        /** The pointer on the setter function to use */
+        SetterT     setter;
+        /** The object this runs on */
+        Opaque *    self;
+        
+        /** Default constructor */
+        GetterSetterT() : getter(0), setter(0), self(0) {}
+        /** Generic purpose constructor */
+        GetterSetterT(const void * self, GetterT getter, SetterT setter) : self(new Opaque(self)), getter(getter), setter(setter) {}
+        /** Copy constructor */
+        GetterSetterT(const GetterSetterT & other) : getter(other.getter), setter(other.setter), self(other.self->Clone()) {}
+        /** A constructor with an opaque member */
+        GetterSetterT(Opaque * self, GetterT getter, SetterT setter) : self(self), getter(getter), setter(setter) {}
+        
+        ~GetterSetterT() { delete0(self); }
+    };
+    /** Use this if you want to store getters setters to an private value */
+    typedef GetterSetterT<ObjectCopyPolicy> GetterSetter;
+    /** Use this if you want to store getters setters to an private value */
+    typedef GetterSetterT<ObjectPtrPolicy> GetterSetterRef;
+    
     
 
     /** Error handler callback.
@@ -462,7 +579,7 @@ namespace Type
     public:
         /** A reference on this object if any (can be empty for a static function pointer) */
         void * thisObj;
-        /** The argument list */
+        /** The argument list (not owned) */
         const Var * args;
         const size_t count;
         /** The error callback, if provided */

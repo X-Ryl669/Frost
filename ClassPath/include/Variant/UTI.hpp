@@ -250,6 +250,24 @@ namespace UniversalTypeIdentifier
 //        RegisterClassForVariant(YourClassHere, SomeUniqueID1, SomeUniqueID2, SomeUniqueID3, SomeUniqueID4);
 //        RegisterClassFunctions(YourClassHere, GetCode, SetCode);
         TypeID getTypeIDImpl(T*, Bool2Type< false > * );
+    
+    // If you get linker error related to getTypeIDImpl, it can be hard to spot where the given type is referenced in your code
+    // In that case, you can use this macro, on the FIRST line of the file to force the compiler to break on a specific implementation type T
+    // So, for example, if you get Undefined reference error for type A in file X.o
+    // Put this at the very top of the X.cpp file:
+    // #include "path/to/UTI.hpp"
+    // PreventTypeIDImpl(A)
+    // Then compile. This will result in compiler noise, from which you extract the location where the symbol is being used (in the previous example,
+    // it gives:
+    // path/to/X.cpp:580:80: note: in instantiation of function template specialization 'Type::VarT<Type::ObjectCopyPolicy>::extractIf<A>' requested here
+    //                        Reference * _ref = initialiser->getResult(environment).extractIf((A*)0);
+#define PreventTypeIDImpl(T) \
+    namespace UniversalTypeIdentifier { void getTypeID(T *); }
+#define PreventTypeIDImplForwardDecl(N,type,T) \
+    namespace N { type T; } \
+    namespace UniversalTypeIdentifier { void getTypeID(N::T *); }
+    
+    
     template <typename T>
     static TypeID getTypeID(T* t) { return getTypeIDImpl(t, (Bool2Type< IsConst<T>::Result > *)0); }
 

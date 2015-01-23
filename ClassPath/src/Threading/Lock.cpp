@@ -245,7 +245,7 @@ bool Threading::stillBefore(struct timeval * tOut)
 
 bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
 { 
-#ifndef _POSIX
+  #ifndef _POSIX
     bool isOkay = false;
     // compute time delay
     portTickType  tickDelay = rcxTO == Infinite ? portMAX_DELAY : (rcxTO == InstantCheck ? 0 : rcxTO / portTICK_RATE_MS);
@@ -260,7 +260,7 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
     }
     // The queue is not automatically freed
     return xQueuePeek(xQueue, &ulVar, tickDelay) == pdTRUE;
-#else
+  #else
     bool isOkay = false;
     if (rcxTO == Infinite) 
     {
@@ -385,18 +385,18 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
         pthread_cleanup_pop(mutexLockSuccess == 0);
         return isOkay;
     }
-#endif
+  #endif
 }
 
 bool Threading::Event::_Reset() volatile           
 { 
-#ifndef _POSIX
+  #ifndef _POSIX
     unsigned portLONG ulVar = 0;
     // Instant wait of the state but only one value in the queue
     portBASE_TYPE  result = xQueueReceive(xQueue, &ulVar, 0);
     // Don't care of the state of the queue
     return true;
-#else
+  #else
     bool isOkay = false;
     // Install clean up handlers
     pthread_cleanup_push((PThreadVoid)pthread_mutex_unlock, (void *) &event);
@@ -410,17 +410,17 @@ bool Threading::Event::_Reset() volatile
     // Unlock the mutex here
     pthread_cleanup_pop(retValue == 0);
     return isOkay;
-#endif
+  #endif
 }
 
 bool Threading::Event::_Set(void * arg) volatile                 
 {   
-#ifndef _POSIX
+  #ifndef _POSIX
     unsigned portLONG ulVar = 1;
     portBASE_TYPE result = arg ? xQueueSendFromISR(xQueue, ( void * ) &ulVar, (signed portBASE_TYPE *)arg) : xQueueSend( xQueue, ( void * ) &ulVar, 0);
     // alreday set but not received . the flag is set . No need a new message
     return result == errQUEUE_FULL || result == pdTRUE;
-#else
+  #else
     bool isOkay = false;
     // Install clean up handlers
     pthread_cleanup_push((PThreadVoid)pthread_mutex_unlock, (void *) &event);
@@ -434,7 +434,7 @@ bool Threading::Event::_Set(void * arg) volatile
     // Unlock the mutex here
     pthread_cleanup_pop(retValue == 0);
     return isOkay;
-#endif
+  #endif
 }
 
 
@@ -478,10 +478,10 @@ bool Threading::MutexLock::_Lock(const TimeOut & rcxTO) volatile
 }
 void Threading::MutexLock::_Unlock(void * arg) volatile
 {
-#ifndef _POSIX
+  #ifndef _POSIX
     if (arg) pthread_mutex_unlock_isr((HMUTEX*)&mutex, arg);
     else 
-#endif
+  #endif
     pthread_mutex_unlock((HMUTEX*)&mutex);
 }
 
@@ -527,21 +527,23 @@ bool Threading::FastLock::_Lock(const TimeOut & rcxTO) volatile
 
 void Threading::FastLock::_Unlock(void * arg) volatile
 {
-#ifndef _POSIX
+  #ifndef _POSIX
     if (arg) pthread_mutex_unlock_isr((HMUTEX*)&mutex, arg);
     else 
-#endif
+  #endif
     pthread_mutex_unlock((HMUTEX*)&mutex);
 }
 
-#if defined(_POSIX) && !defined(HAS_ATOMIC_BUILTIN)
+  #if defined(_POSIX) && !defined(HAS_ATOMIC_BUILTIN)
 HMUTEX Threading::SharedData<uint32>::sxMutex = PTHREAD_MUTEX_INITIALIZER;
-#endif 
-#if defined(NO_ATOMIC_BUILTIN64)
-#if defined(_POSIX)
+  #endif 
+
+  #if defined(NO_ATOMIC_BUILTIN64) && (HAS_STD_ATOMIC != 1)
+    #if defined(_POSIX)
 HMUTEX Threading::sxMutex = PTHREAD_MUTEX_INITIALIZER;
-#endif
-#endif
+    #endif
+  #endif
+
 #else // _WIN32
 CRITICAL_SECTION Threading::sxMutex;
 struct AutoRegisterAtomicCS

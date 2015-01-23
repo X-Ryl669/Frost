@@ -312,7 +312,8 @@
         inline T max(T a, T b) { return a > b ? a : b; }
     template <typename T>
         inline T clamp(T a, T low, T high) { return a < low ? low : (a > high ? high : a); }
-
+    template< typename T, size_t N >
+        inline bool isInArray(const T & a, T (&arr)[N]) { for(size_t i = 0; i < N; i++) if (arr[i] == a) return true; return false; }
     #define minDefined
 #endif
 
@@ -405,12 +406,20 @@ namespace Private
 #define TypeDetection_Impl
 template <typename T> struct IsPOD { enum { result = 0 }; };
 template <typename T> struct IsPOD<T*> { enum { result = 1}; };
+template <typename T> struct IsNumber { enum { result = 0 }; };
 #define MakePOD(X) template <> struct IsPOD<X > { enum { result = 1 }; }; \
-                   template <> struct IsPOD<const X > { enum { result = 1 }; }
+                   template <> struct IsPOD<const X > { enum { result = 1 }; }; \
+                   template <> struct IsNumber<X > { enum { result = 1 }; }; \
+                   template <> struct IsNumber<const X > { enum { result = 1 }; }
+
 #define MakeIntPOD(X) template <> struct IsPOD<signed X > { enum { result = 1 }; }; \
                       template <> struct IsPOD<unsigned X > { enum { result = 1 }; }; \
                       template <> struct IsPOD<const signed X > { enum { result = 1 }; }; \
-                      template <> struct IsPOD<const unsigned X > { enum { result = 1 }; }
+                      template <> struct IsPOD<const unsigned X > { enum { result = 1 }; }; \
+                      template <> struct IsNumber<signed X > { enum { result = 1 }; }; \
+                      template <> struct IsNumber<unsigned X > { enum { result = 1 }; }; \
+                      template <> struct IsNumber<const signed X > { enum { result = 1 }; }; \
+                      template <> struct IsNumber<const unsigned X > { enum { result = 1 }; }
 
 MakePOD(bool);
 MakeIntPOD(int);
@@ -618,6 +627,7 @@ MakePOD(float);
     #define EVALUATOR(x,y)  PASTER(x,y)
     #define NAME(fun, TERM) EVALUATOR(fun, TERM)
 
+    /** Specific debug information built in the binary to ensure that you don't link with a binary built with different options */
     namespace BuildInfo
     {
         // If compilation/linking stops here, it's because you are include the Classpath with different flags than when it was built.
@@ -627,10 +637,10 @@ MakePOD(float);
         extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _DebugFlagName);
         inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _DebugFlagName); }
         extern const char * getBuildFlagsName();
-
+        /** This get the Git's HEAD SHA1 added with -dirty if dirty or "" if not supported */
+        extern const char * getBuildRepoVer();
         extern int NAME(NAME(NAME(NAME(_checkSameBuildFlags_, _DebugFlagName), _Platform), _LargeFileOffset), _Atomic);
         inline int checkBuildFlags() { return NAME(NAME(NAME(NAME(_checkSameBuildFlags_, _DebugFlagName), _Platform), _LargeFileOffset), _Atomic); }
-
         // If the linker stops here, it's because you are trying to link to the library that was built with some different flags than what you included.
         // The linker error shows the build flags the main program is expecting
         // To figure out the build flags the library was built with, use this command:

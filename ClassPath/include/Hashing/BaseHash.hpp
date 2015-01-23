@@ -200,6 +200,8 @@ namespace Hashing
         bool        hashedInput;
 
     public:
+        /** The output hasher size */
+        enum { DigestSize = BaseHasher::DigestSize };
         /** Start the hashing */
         virtual void    Start() { hashedInput = false; hasher.Start(); }
         /** Hash the given buffer */
@@ -228,7 +230,7 @@ namespace Hashing
         /** Get the default hash size in byte */
         virtual uint32  hashSize() const throw() { return hasher.hashSize(); }
 
-        HMAC(const uint8 * key, const uint32 keyLength) : hashedInput(false)
+        HMAC(const uint8 * key = 0, const uint32 keyLength = 0) : hashedInput(false)
         {
             if (key && keyLength)
             {
@@ -250,6 +252,84 @@ namespace Hashing
             memset(inputPad, 0x36, sizeof(inputPad));
         }
     };
+
+    /** Password based key derivation function, following RSA's PBKDF2 recommandation.
+        This is used to get a hash out of a smaller (likely a password) input, 
+        in a way that's quite hard to brute-force all the possible passwords.
+        
+        Unlike the KDF1 case above, this one is way slower by design, to avoid
+        a fast brute force search for all the "low entropy" passwords.
+        
+        You might want to use finalizeWithExtraInfo to given extra 
+        informations to harden the hash.
+        
+        Beware that if you don't provide extra info, a default (fixed) salt
+        will be used so the security will be low as one could make a dictionary 
+        of common password padded with this default salt to force it.  
+          
+        @param outputSizeInBit  The expected output hash size in bits
+        @param inputSizeInBit   This is usually the secret size in bits (password maximum size)
+        @param BaseHasher       The internal hasher method to use (defaults to SHA1)
+        @warning The hash method limits input to the given size
+                 in bit, so if you pass more data to hash, it's ignored. */
+    template <const int outputSizeInBit, const int inputSizeInBit, class BaseHasher = HMAC<SHA1>, const int iterations = 1000 >
+    struct PBKDF2 : public KDF1<outputSizeInBit, inputSizeInBit, BaseHasher>
+    {
+    private:
+        enum { OutputSize = outputSizeInBit / 8 };
+        uint8       defaultSalt[8];
+        uint8       PRFBuffer[BaseHasher::DigestSize];
+ 
+        // Compute a single derivation function
+        void PRF(uint8 * outBuffer, const uint8 * saltOrPrevDerivation, const uint32 saltLen)
+        {
+            BaseHasher hmac(this->hashInput, this->inputLen);
+            hmac.Start(); hmac.Hash(saltOrPrevDerivation, saltLen);
+            hmac.Finalize(outBuffer);
+        }
+        
+    public:
+        /** Set the extra info (if any) */
+        virtual void finalizeWithExtraInfo(uint8 * outBuffer, const uint8 * extra, const uint32 extraLen)
+        {
+            if (!outBuffer) return;
+            uint32 done = 0;
+            uint8 tmpBuffer[BaseHasher::DigestSize];
+
+            uint32 saltLen = (extra && extraLen) ? extraLen + 4 : ArrSz(defaultSalt) + 4;
+            uint8 * salt = new uint8[saltLen];
+            if (!salt)
+            {
+                memset(outBuffer, 0, OutputSize);
+                return; // Far more error to expect when stack or heap is exhausted
+            }
+            memcpy(salt, extra ? extra : defaultSalt, saltLen - 4);
+            // Ok, start iterating
+            while (done < OutputSize)
+            {
+                // Compute Salt || BigEndian(iter)
+                uint32 currentIter = this->Swap32((done / BaseHasher::DigestSize) + 1);
+                memcpy(&salt[saltLen - 4], &currentIter, sizeof(currentIter));
+                // First iteration is different
+                memset(PRFBuffer, 0, ArrSz(PRFBuffer));
+                PRF(tmpBuffer, salt, saltLen);
+                
+                for (int i = 1; i < iterations; i++)
+                {
+                    for (size_t j = 0; j < BaseHasher::DigestSize; j++) PRFBuffer[j] ^= tmpBuffer[j];
+                    PRF(tmpBuffer, tmpBuffer, ArrSz(tmpBuffer));
+                }
+                // Output of F is U1 ^ U2 ^ ... ^ Uiterations
+                for (size_t j = 0; j < BaseHasher::DigestSize; j++) PRFBuffer[j] ^= tmpBuffer[j];
+                
+                memcpy(&outBuffer[done], PRFBuffer, min((size_t)(OutputSize - done), ArrSz(PRFBuffer)));
+                done += BaseHasher::DigestSize;
+            }
+            delete[] salt;
+        }
+        PBKDF2() { uint8 defaultSaltImpl[] = { 0xC1, 0xA5, 0x50, 'p', 'a', 'T', 'h', 0x8E }; memcpy(defaultSalt, defaultSaltImpl, ArrSz(defaultSaltImpl)); }
+    };
+
 
     /** Get the hash from the given algorithm.
         This is a shortcut to calling all methods successively.

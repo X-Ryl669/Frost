@@ -184,7 +184,7 @@
     #define EVALUATOR(x,y)  PASTER(x,y)
     #define NAME(fun, TERM) EVALUATOR(fun, TERM)
 
-    #define FlagNames Stringize(_SSLFlagName) Stringize(_AESFlagName) Stringize(_TypeFlagName) Stringize(_FFMPEGFlagName) Stringize(_TLSFlagName) Stringize(_BaseFlagName) Stringize(_FloatFlagName) Stringize(_ChronoFlagName) Stringize(_AtomicFlagName) Stringize(_MD5FlagName) Stringize(_ExLockFlagName) Stringize(_SOAPFlagName) Stringize(_CompressFlagName) Stringize(_OwnPicFlagName) Stringize(_RegExFlagName) Stringize(_PingFlagName) Stringize(_BSCFlagName) Stringize(_DebugFlagName)
+    #define FlagNames Stringize(_SSLFlagName) Stringize(_AESFlagName) Stringize(_TypeFlagName) Stringize(_FFMPEGFlagName) Stringize(_TLSFlagName) Stringize(_BaseFlagName) Stringize(_FloatFlagName) Stringize(_ChronoFlagName) Stringize(_AtomicFlagName) Stringize(_MD5FlagName) Stringize(_ExLockFlagName) Stringize(_SOAPFlagName) Stringize(_CompressFlagName) Stringize(_OwnPicFlagName) Stringize(_RegExFlagName) Stringize(_PingFlagName) Stringize(_DebugFlagName)
     #define _ClassPathBuildFlags (_DebugFlag + _PlatformVal + _LargeFileOffsetVal + _AtomicVal)
 
     namespace BuildInfo
@@ -193,6 +193,12 @@
         const char * getBuildFlagsName() { return FlagNames; }
         int NAME(NAME(NAME(NAME(_checkSameBuildFlags_, _DebugFlagName), _Platform), _LargeFileOffset), _Atomic) = _ClassPathBuildFlags;
         #pragma message("Using ClassPath with flags " FlagNames)
+#if defined(GitRef)
+        const char * getBuildRepoVer() { return Stringize(GitRef); }
+        #pragma message("Based on GIT rev: " Stringize(GitRef))
+#else
+        const char * getBuildRepoVer() { return ""; }
+#endif
     }
 
     #undef NAME

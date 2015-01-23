@@ -157,17 +157,7 @@ namespace Threading
             virtual void construct() { set((*constructFunc)(key, get())); }
             Strings::FastString getName() const
             {
-                Strings::FastString templateType = Strings::FastString(
-#ifdef _MSC_VER
-                __FUNCTION__);
-#else
-                __PRETTY_FUNCTION__);
-#endif
-                // Try GCC type first, since it's the most specific : "LocalVariableImpl<T>::getName() [ with T = yourTypeHere ]"
-                Strings::FastString finalType = templateType.fromFirst("=").upToFirst("]").Trimmed();
-                // Else, try to use the templated argument itself: "LocalVariableImpl<yourTypeHere>::getName()"
-                if (!finalType) finalType = templateType.fromFirst("<").upToFirst(">").Trimmed();
-
+                Strings::FastString finalType = Strings::getTypeName((T*)0);
                 return Strings::FastString::Print("Thread Local Variable of type %s and key " PF_LLD , (const char*)finalType, (int64)key);
             }
             const Key getKey() const { return key; }
@@ -320,12 +310,12 @@ namespace Threading
         /** Install the dump stack handler for main thread */
         static void installMainThreadHandler();
         
-        /** @cond Private 
+        /** @cond Private
             Stack only stuff */
     private:
         /** Current stack */
         Strings::FastString     stack;
-        /** The semaphore to wait on 
+        /** The semaphore to wait on
             (cannot wait with a lock or an event as they are not signal safe) */
         sig_sem                 semaphore;
         /** Static key to store "this" in thread specific data */
@@ -334,7 +324,7 @@ namespace Threading
         /** Make sure the signal handler can access private stuff */
         friend void ::GetSigStack(int, siginfo_t *, void *);
         /** @endcond */
-#endif      
+#endif
         /** The platform independent Sleep method.
             @param milliseconds  The amount of time to sleep, 0 for yielding the current thread
             @param hard          On POSIX system, this actually ensure the given time has been spent. Set to false to accept being interrupted by a signal. */
@@ -356,11 +346,13 @@ namespace Threading
         static void * getCurrentThreadID();
         /** Get the thread ID */
         void * getThreadID() const;
-        /** Set the thread leaving callback, that will be called upon thread termination.
+        /** Check if the current running thread is ours */
+        bool isOurThread() const volatile;
+        /** Set the thread leaving callback, that will be called upon thread termination by the thread calling destroyThread (it can not be the leaving thread)
             @param cb A pointer to a non-owned callback that'll be called when the thread is leaving. Set to 0 to remove the callback.
             @warning The thread does not own the callback pointer that should still exist when the thread is leaving. */
         inline void setLeavingCallback(Leaving * cb) { leaving = cb; }
-        
+
 #if (WantThreadLocalStorage == 1)
         /** Append a TLS variable */
         template <class T>
@@ -377,10 +369,10 @@ namespace Threading
 #define HasThreadLocalStorage 1
 #endif
         /** Change the current thread priority.
-            @param priority  A value in range [ MinPriority ; MaxPriority ]. 
+            @param priority  A value in range [ MinPriority ; MaxPriority ].
             @return true if the priority was changed */
         static bool setCurrentThreadPriority(const int priority);
-        /** Set the affinity mask for the current thread. 
+        /** Set the affinity mask for the current thread.
             @return true if the mask was changed */
         static bool setCurrentThreadOnProcessorMask(const uint64 mask);
         /** Get the number of core on this system */
@@ -394,7 +386,7 @@ namespace Threading
             @param name     A pointer on a static area containing the name.
             @warning The thread doesn't own the memory given, and it must survive until the thread is destructed. */
         Thread(const char * name = NULL);
-        
+
         /** Construct a thread.
             This version own the thread name if provided.
             @param name     A pointer on a static area containing the name.
@@ -451,7 +443,7 @@ namespace Threading
 
     /** A simple scheduling thread.
         This is used to trigger predefined actions when the given delay is elapsed 
-        @warning An asynchronous thread is very hard to get right (deadlock / livelock), so please avoid using this. 
+        @warning An asynchronous thread is very hard to get right (deadlock / livelock), so please avoid using this unless you are used to this.
         @warning The callback is called in the asynchronous thread context. You can't cancel a scheduling inside the callback's code.
         @code
             // Using the class is straightforward
@@ -572,6 +564,103 @@ namespace Threading
     public:
         /** Default construction */
         AsyncExecution(Callback & callback) : Thread("AsyncExec"), WithStartMarker("AsyncExM"), delay(0), callback(callback) {}
+    };
+    
+    /** A Job thread.
+        This is used to trigger the same code asynchronously and/or synchronously.
+        Typically, you'll construct this object giving it the instance of the class to run, 
+        and a pointer to a method of this class.
+        Unless you run the method synchronously, you should keep a pointer on the instance of 
+        this object, until the method completed
+        
+        @param Obj  The class to use for instance
+     
+        Example code:
+        @code
+            struct MyObj {
+                // One shot version
+                void longProcess();
+                // Step by step version (this is optional, return false when done)
+                bool longProcessStep(int step);
+            };
+     
+            MyObj a;
+            
+            JobThread<MyObj> job(a, &MyObj::longProcess); // Or longProcessStep for the step by step version
+     
+            job.runJob(true); // Run synchronously
+            Assert(job.isFinished()); // Should always be the case when running synchronously
+            
+            job.runJob(); // Run asynchrounously
+            while (!job.isFinished() && !cancelPressed) displayProgressBar();
+            
+            if (cancelPressed) job.cancel(); // Beware, this will likely leak, since it's a brutal cancelling
+            
+            // If you need to run with progress feedback, then your process should have a int (*) (int) signature, that gives progress.
+            // Then, job.cancel() will clean nicely, and you can get feedback with:
+            printf("Job process so far: %g %%\n", job.progress() * 100.0 / 134); // 134 is the number of steps expected in MyObj's progress in this example
+        @endcode */
+    template <class Obj>
+    class JobThread : public Thread
+    {
+        // Members
+    private:
+        /** The pointer to a one shot method */
+        typedef void (Obj::*OneShot)();
+        /** Pointer to a step by step method */
+        typedef bool (Obj::*Step)(uint32);
+        
+        /** The object's instance */
+        Obj   & instance;
+        /** The pointer to method wrapper */
+        const OneShot oneShot;
+        const Step    step;
+        /** The job finished event */
+        mutable Event done, cancelEvent;
+        /** The job progress */
+        uint32  progressIndex;
+        
+        // Implementation
+        virtual uint32 runThread()
+        {
+            while (isRunning() && !cancelEvent.Wait((TimeOut)InstantCheck) && runIntern(progressIndex)) { SharedDataReaderWriter sdw(progressIndex); ++sdw; }
+            done.Set();
+            return 0;
+        }
+        // Helper to avoid repeating tedious code
+        bool runIntern(uint32 prog) { if (oneShot) { (instance.*oneShot)(); return false; } return (instance.*step)(prog); }
+        
+        // Interface
+    public:
+        /** Run the job synchronously or not */
+        void runJob(const bool synchronously = false)
+        {
+            if (isFinished()) { done.Reset(); cancelEvent.Reset(); }
+            progressIndex = 0;
+            if (synchronously) { while (runIntern(progressIndex++)) {} done.Set(); }
+            else createThread();
+        }
+        
+        /** Check if the job has finished */
+        bool isFinished() const { return done.Wait((TimeOut)InstantCheck); }
+        
+        /** Check the progress so far */
+        uint32 progress() const { return progressIndex; } // Read 32 bits are atomic on most platform
+        
+        /** Cancel the thread */
+        bool cancelJob(const TimeOut timeoutMs = Infinite)
+        {
+            cancelEvent.Set();
+            if (oneShot && !done.Wait((TimeOut)InstantCheck)) return destroyThread(true);
+            return done.Wait((TimeOut)timeoutMs);
+        }
+        
+        /** Construction with one shot method with this signature: void Obj::method() */
+        JobThread(Obj & instance, OneShot shot, const char * name = NULL) : instance(instance), oneShot(shot), step(0), done(name, Event::ManualReset, Event::InitiallySet), cancelEvent(name, Event::AutoReset), progressIndex(0) {}
+        /** Construction with step by step method with this signature: bool Obj::step(int progress) */
+        JobThread(Obj & instance, Step step, const char * name = NULL) : instance(instance), oneShot(0), step(step), done(name, Event::ManualReset, Event::InitiallySet), cancelEvent(name, Event::AutoReset), progressIndex(0) {}
+        /** Destruction */
+        ~JobThread() { cancelEvent.Set(); destroyThread(); }
     };
 }
 

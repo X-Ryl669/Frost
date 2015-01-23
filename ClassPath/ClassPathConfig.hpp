@@ -5,6 +5,17 @@
 #endif
 
 #ifndef HasClassPathConfig
+/** Typically, the configuration in ClassPath can be done by different ways.
+    Either you modify this file (but you'll need to maintain it when you pull from the official repository),
+    Either you build the ClassPath with -DHasClassPathConfig=1 -DWantXXX=1, (or whatever suits your development environment)
+    Either you provide a buildConfig file that's included by the Makefile to make these flags:
+    Such file is never included in the repository so the format should be like this:
+    @verbatim
+    WantSSLCode WantPingCode WantAES WantMD5Hashing WantThreadLocalStorage WantBaseEncoding WantFloatParsing WantRegularExpressions WantTimedProfiling WantAtomicClass WantExtendedLock WantSOAP WantCompression WantBSCCompression WantLightImageCode
+    @endverbatim 
+    Please notice that the former does not change the link dependencies (like on miniupnpc or openssl even if disabled), while the later
+    change them, the Makefile adapts to the flags.
+    Under Windows, you need to fix the solution by yourself if you want to strip dependencies */
 #define HasClassPathConfig 1
 
 /** If you want SSL code to be added to the networking code, enable this.
@@ -49,7 +60,8 @@
 #define WantThreadLocalStorage 1
 
 /** If you need encoding binary data from memory block into different bases for serializing them
-    to text only format like MIME messages, or XML files, you'll need to enable this 
+    to text only format like MIME messages, or XML files, you'll need to enable this.
+    This provides Base16 (aka Hexadecimal), Base64 and Base85 (used on PDF for example) encode/decode algorithm.
     Default: enabled */
 #define WantBaseEncoding 1
 
@@ -60,7 +72,7 @@
 #define WantFloatParsing 1
 
 /** When using the FastString class, you can use regular expression to match strings against
-    some regular expression rules. This requires you build the slre library that's included in the package.
+    some regular expression rules.
     Default: enabled */
 #define WantRegularExpressions 1
 
@@ -70,6 +82,7 @@
 #define WantTimedProfiling 1
 
 /** If you need Atomic class to handle atomic types with 32 or 64 bits.
+    Your compiler should provide std::atomic primitives, you might need the -std=c++11 flags for building
     Default: enabled */
 #define WantAtomicClass 1  
 
@@ -101,6 +114,13 @@
     If you don't enable FFMPEG either, no decoder and no encoder is built. 
     Default: disabled */
 #define WantLightImageCode 1
+
+/** Disable UPNPC and NAT-PMP client. 
+    Network code provides a UPNP (Universal Plug And Play) client for opening port through your UPNP supported firewall.
+    This adds the link time dependency on miniupnpc library (and natpmp library for the later).
+    If you don't need the feature, it makes releasing the Classpath simpler
+    Default: disabled */
+// #define DontWantUPNPC 1
 
  
 

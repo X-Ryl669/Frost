@@ -489,9 +489,10 @@ namespace Bstrlib
 		return String(buffer);
 	}
 
-    int64 String::parseInt(int base) const
+    int64 String::parseInt(int base, int * endPos) const
     {
         const char * text = (const char*)data;
+        if (!slen) { if (endPos) *endPos = 0; return 0; }
         bool negative = text[0] == '-';
         text += (int)negative;
         const char baseText[] = "0123456789abcdef", BASEText[] = "0123456789ABCDEF";
@@ -519,6 +520,7 @@ namespace Bstrlib
             ret = ret * base + digit;
             text++;
         }
+        if (endPos) *endPos = (int)(text - (const char*)data);
         return negative ? -ret : ret;
     }
 
@@ -661,15 +663,20 @@ namespace Bstrlib
 #ifdef HasFloatParsing
 	String::operator double() const
 	{
-		char * ep = NULL;
-		return data ? strtod((const char*)data, &ep) : 0;
+		return parseDouble();
 	}
 
 	String::operator float() const
 	{
-		char * ep = NULL;
-		return data ? (float)strtod((const char*)data, &ep) : 0;
+		return (float)parseDouble();
 	}
+    double String::parseDouble(int * consumed) const
+    {
+		char * ep = NULL;
+		double ret = data ? strtod((const char*)data, &ep) : 0;
+        if (consumed) *consumed = (int)(ep - (const char*)data);
+        return ret;
+    }
 #endif
 	
 	String::operator signed int() const 
@@ -1280,6 +1287,7 @@ namespace Bstrlib
 	
 	void String::leftTrim(const String& b) 
 	{
+                if (!b.slen) return;
 		int l = invFindAnyChar(b, 0);
 		if (l == BSTR_ERR)	l = slen;
 		Remove(0, l);
@@ -1287,6 +1295,7 @@ namespace Bstrlib
 	
 	void String::rightTrim(const String& b) 
 	{
+                if (!b.slen) return;
 		int l = invReverseFindAnyChar(b, slen - 1);
 		if (l == BSTR_ERR)	l = slen - 1;
 		slen = l + 1;
@@ -1306,12 +1315,12 @@ namespace Bstrlib
 	void String::Repeat(int count) 
 	{
 		count *= slen;
-		if (count == 0)
+		if (count <= 0)
 		{
 			Truncate(0);
 			return;
 		}
-		if (count < 0 || BSTR_ERR == bpattern(this, count))	bstringThrow("Failure in repeat");
+		if (BSTR_ERR == bpattern(this, count))	bstringThrow("Failure in repeat");
 	}
 /*	
 	int String::gets(bNgetc getcPtr, void * parm, char terminator) 
@@ -1498,6 +1507,14 @@ namespace Bstrlib
 	    if (BSTR_ERR == bdelete(this, 0, pos)) bstringThrow("Failure in remove");
 	    return ret;
     }
+    // Split the string when no more in the given set
+    const String String::splitWhenNoMore(const String & set)
+    {
+        int pos = invFindAnyChar(set);
+        String ret = midString(0, pos == -1 ? slen : pos);
+	    if (BSTR_ERR == bdelete(this, 0, ret.slen)) bstringThrow("Failure in remove");
+	    return ret;
+    }
 	
 	// Align the string so it fits in the given length.
 	String String::alignedTo(const int length, int side, char fill) const
@@ -1523,6 +1540,91 @@ namespace Bstrlib
 		if (mlen == -1)		mlen = slen + (slen == 0);
 		else if (mlen < 0)	bstringThrow("Cannot unprotect a constant");
 	}
+    
+    uint32 getUnicode(const unsigned char * & array)
+    {
+        // Get the current char
+        const uint8 c = *array;
+        if ((c & 0x80))
+        {
+            // The data is in the 7 low bits
+            uint32 dataMask = 0x7f;
+            // The count bit mask
+            uint32 bitCountMask = 0x40;
+            // The consumption count
+            int charCount = 0;
+
+            while ((c & bitCountMask) != 0 && bitCountMask)
+            {
+                ++charCount;
+                dataMask >>= 1; bitCountMask >>= 1;
+            }
+
+            // Get the few bits remaining here
+            uint32 n = (c & dataMask);
+
+            // Then extract the remaining bits
+            ++array;
+            while (--charCount >= 0 && *array)
+            {
+                const uint8 extra = *array;
+                // Make sure it's a valid UTF8 encoding
+                if ((extra & 0xc0) != 0x80) break;
+
+                // Store the new bits too
+                n <<= 6; n |= (extra & 0x3f);
+                ++array;
+            }
+            return n;
+        }
+        return c;
+    }
+    int getUnicodeCharCount(const unsigned char * array)
+    {
+        const uint8 c = *array;
+        if ((c & 0x80))
+        {
+            // The count bit mask
+            uint32 bitCountMask = 0x40;
+            // The consumption count
+            int charCount = 0;
+
+            while ((c & bitCountMask) != 0 && bitCountMask)
+            {
+                ++charCount;
+                bitCountMask >>= 1;
+            }
+            return charCount;
+        }
+        return c == 0 ? 0 : 1;
+    }
+    
+    // Get the i-th unicode char.
+    uint32 String::getUnicodeChar(int pos) const
+    {
+        // 1. Iterate to the given position
+        const unsigned char * array = data;
+        while (pos && *array)
+        {
+            (void)getUnicode(array);
+            pos--;
+        }
+        return getUnicode(array);
+    }
+    // This counts the number of Unicode characters in the string.
+    size_t String::getUnicodeLength() const
+    {
+        size_t size = 0;
+        unsigned char * array = data, * end = data + slen;
+        int cnt = getUnicodeCharCount(&array[size]);
+        while (cnt && array < end)
+        {
+            size ++;
+            array += cnt;
+            cnt = getUnicodeCharCount(array);
+        }
+        return size;
+    }
 
 #if (WantRegularExpressions == 1)
 

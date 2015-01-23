@@ -245,7 +245,7 @@ namespace Frost
         bool AESCounterDecrypt(const KeyFactory::KeyT & nonceRandom, const ::Stream::InputStream & input, ::Stream::OutputStream & output);
         
         /** Close a currently filled multichunk and save in database and filesystem */
-        bool closeMultiChunk(const String & basePath, File::MultiChunk & multiChunk, uint64 multichunkListID, uint64 * totalOutSize = 0);
+        bool closeMultiChunk(const String & basePath, File::MultiChunk & multiChunk, uint64 multichunkListID, uint64 * totalOutSize, ProgressCallback & callback, uint64 & previousMultichunkID);
         /** Extract a chunk out of a multichunk */
         File::Chunk * extractChunk(String & error, const String & basePath, const String & MultiChunkPath, const uint64 MultiChunkID, const size_t chunkOffset, const String & chunkChecksum, const String & filterMode, File::MultiChunk * cache, ProgressCallback & callback);
         /** Allocate a chunk list ID */
@@ -484,27 +484,28 @@ namespace Frost
 //                DeclareTable(Directory)
 //                DeclareTable(File)
         };
-  
+
         /** The database complete URL to use */
         extern String databaseURL;
-  
+
         BeginDatabaseConnection
             DeclareDatabaseWithComplexDBNameDynURL(FrostDB, "FrostDB", databaseURL, DEFAULT_INDEX)
         EndDatabaseConnection
     }
-    
+
     // The backup functions
     /** Backup the given folder.
-        @param folderToBackup   This the root of the folder to backup. All files will be saved in the backup relative to this root folder 
+        @param folderToBackup   This the root of the folder to backup. All files will be saved in the backup relative to this root folder
         @param backupTo         The folder to store the multichunk into.
-        @param revisionID       The current backup revision identifier 
+        @param revisionID       The current backup revision identifier
         @param callback         The progress callback that's called at regular interval
+        @param strategy         The backing up strategy ('Slow' means reopening last multichunk to append to it thus creating less files in backup folder, 'Fast' is default)
         @return A string describing the error, or an empty string on success */
-    String backupFolder(const String & folderToBackup, const String & backupTo, const unsigned int revisionID, ProgressCallback & callback);
+    String backupFolder(const String & folderToBackup, const String & backupTo, const unsigned int revisionID, ProgressCallback & callback, const PurgeStrategy strategy = Fast);
     /** List available backups.
-        @param folderToBackup   This the root of the folder to backup. All files will be saved in the backup relative to this root folder 
-        @param backupTo         The folder to store the multichunk into. 
-        @param revisionID       The current backup revision identifier 
+        @param folderToBackup   This the root of the folder to backup. All files will be saved in the backup relative to this root folder
+        @param backupTo         The folder to store the multichunk into.
+        @param revisionID       The current backup revision identifier
         @param withList         If true, the file list is display for this revision
         @return The number of revisions listed */
     unsigned int listBackups(const ::Time::Time & startTime = ::Time::Epoch, const ::Time::Time & endTime = ::Time::MaxTime, const bool withList = false);

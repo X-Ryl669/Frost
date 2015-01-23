@@ -51,6 +51,7 @@
     For a more complete list of output streams:
      Class                        | Description
      -----------------------------|------------------------------------------------------------
+     StdOutStream                 | A stream based on the standard output file descriptor (STDOUT)
      OutputFileStream             | An output stream that writes to a file
      OutputStringStream           | An output stream that's filling a string
      OutputMemStream              | An output stream that's filling a MemoryBlock
@@ -302,6 +303,53 @@ namespace Stream
             @return true when val was completely written into the stream */
         bool write(const Utils::MemoryBlock & val) throw() { return write(val.getConstBuffer(), (const uint64)val.getSize()) == (uint64)val.getSize(); }
     };
+
+    /** An output stream that writes to process output stream (if it exists).
+        This is a wrapper around stdout, so the same limitation applies to stdout.
+        You can not instantiate it (because only one exists), so you have to use
+        the getInstance() method to get a reference on the only instance. */
+    class StdOutStream : public OutputStream
+    {
+        // Members
+    private:
+        /** Keep track of state like the position */
+        mutable uint64 position;
+
+    public:
+        /** This method returns the stream length in byte, if known
+            If the length is equal or higher than 2^32 - 1, the returned value is (uint64)-2
+            For stream where the length is not known, this method will return (uint64)-1. */
+        inline uint64 fullSize() const { return (uint64)-1; }
+        /** This method returns true if the end of stream is reached */
+        inline bool endReached() const { return feof(stdout) != 0; }
+        /** This method returns the position of the next byte that could be read from this stream */
+        virtual uint64 currentPosition() const { return position; }
+        /** Try to seek to the given absolute position (return false if not supported) */
+        virtual bool setPosition(const uint64 newPos) { return false; }
+        /** Try to write the given amount of data to the specified buffer
+            @return the number of byte truly written (this method doesn't throw) */
+        virtual uint64 write(const void * const buffer, const uint64 size) throw()
+        {
+            uint64 ret = (uint64)fwrite(const_cast<void*>(buffer), 1, (size_t)size, stdout);
+            position += (uint64)ret; return ret;
+        }
+        /** Try to write the given amount of data to the specified buffer.
+            Unlike the former version, this version also tells if the stream needs to be flushed */
+        virtual uint64 write(const void * const buffer, const uint64 size, const bool flush) throw()
+        {
+            uint64 ret = (uint64)fwrite(const_cast<void*>(buffer), 1, (size_t)size, stdout);
+            if (flush) fflush(stdout);
+            position += (uint64)ret; return ret;
+        }
+        /** Get the current instance of this stream */
+        static StdOutStream & getInstance() { static StdOutStream stream; return stream; }
+
+        // Construction
+    private:
+        /** The default constructor is private */
+        StdOutStream() : position(0) {}
+    };
+
 
     namespace Private
     {

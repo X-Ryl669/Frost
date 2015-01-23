@@ -344,12 +344,20 @@ namespace Strings
 
 
     // Here is the implementation for findLength of an ASCII based string
-    const unsigned int findLength(tCharPtr _input)
+    const unsigned int findLength(tCharPtr _input, size_t limit)
     {
 #ifdef OwnStringLength
+
         unsigned int hasZeroByte = 0;
         const char * input = const_cast<const char *>(_input);
         if (!input) return 0;
+
+        if (limit)
+        {
+            while (limit && *input) { input++; limit--; }
+            return (unsigned int)(input - _input);
+        }
+
 
         Dual dual;
         dual.inp = input;

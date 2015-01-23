@@ -1058,6 +1058,7 @@ namespace Threading
 
 #if (WantAtomicClass == 1)
 #if HAS_STD_ATOMIC == 1
+
     /** When you expect a value to be accessed or modified atomically, you can either use the SharedDataReader, SharedDataWriter or SharedDataReaderWriter on the value, if it's uint32.
         Else, if you intend to use any other type, you can simply declare an Atomic<Type> variable.
         This will not compile for type that can't be accessed atomically.
@@ -1216,45 +1217,45 @@ namespace Threading
         typedef int32 SignedType;
         inline static uint32 read(volatile uint32 & obj)
         {
-#ifdef _MSC_VER
+  #ifdef _MSC_VER
             return (uint32)_InterlockedExchangeAdd((LONG volatile *)&obj, 0UL);
-#elif (HAS_ATOMIC_BUILTIN == 1)
+  #elif (HAS_ATOMIC_BUILTIN == 1)
             return (uint32)__sync_add_and_fetch (&obj, 0);
-#else
+  #else
             return obj;
-#endif
+  #endif
         }
         inline static uint32 swap(volatile uint32 & obj, uint32 value)
         {
-#ifdef _MSC_VER
+  #ifdef _MSC_VER
             return (uint32)_InterlockedExchange((LONG volatile*)&obj, (LONG)value);
-#elif (HAS_ATOMIC_BUILTIN == 1)
+  #elif (HAS_ATOMIC_BUILTIN == 1)
             uint32 currentVal = obj;
             while (! compareAndSet(obj, value, currentVal)) { currentVal = obj; }
             return currentVal;
-#else
+  #else
             return __atomic_swap(value, (volatile int*)obj);
-#endif
+  #endif
         }
 
         inline static bool compareAndSet(volatile uint32 & obj, const uint32 value, const uint32 comparand)
         {
-#ifdef _MSC_VER
+  #ifdef _MSC_VER
             return _InterlockedCompareExchange((LONG volatile*)&obj, (LONG)value, (LONG)comparand) == (long)comparand;
-#elif (HAS_ATOMIC_BUILTIN == 1)
+  #elif (HAS_ATOMIC_BUILTIN == 1)
             return __sync_bool_compare_and_swap((volatile uint32*) &obj, comparand, value);
-#else
+  #else
             return __atomic_cmpxchg(comparand, value, (volatile int*)&obj);
-#endif
+  #endif
         }
 
         inline static uint32 add(volatile uint32 & obj, const int32 amount)
         {
-#ifdef _MSC_VER
+  #ifdef _MSC_VER
             return (uint32)_InterlockedExchangeAdd((LONG volatile *)&obj, (LONG)amount);
-#elif (HAS_ATOMIC_BUILTIN == 1)
+  #elif (HAS_ATOMIC_BUILTIN == 1)
             return (uint32)__sync_add_and_fetch (&obj, amount);
-#else
+  #else
             uint32 oldVal, expectedVal;
             do
             {
@@ -1262,32 +1263,32 @@ namespace Threading
                 expectedVal = oldVal + amount;
             } while (!compareAndSet(obj, expectedVal, oldVal))
             return expectedVal;
-#endif
+  #endif
         }
 
         inline static uint32 inc(volatile uint32 & obj)
         {
-#ifdef _MSC_VER
+  #ifdef _MSC_VER
             return (uint32)_InterlockedIncrement((LONG volatile *)&obj);
-#elif (HAS_ATOMIC_BUILTIN == 1)
+  #elif (HAS_ATOMIC_BUILTIN == 1)
             return (uint32)__sync_add_and_fetch (&obj, 1);
-#else
+  #else
             return (uint32)__atomic_inc((volatile int *)&obj) + 1;
-#endif
+  #endif
         }
         inline static uint32 dec(volatile uint32 & obj)
         {
-#ifdef _MSC_VER
+  #ifdef _MSC_VER
             return (uint32)_InterlockedDecrement((LONG volatile *)&obj);
-#elif (HAS_ATOMIC_BUILTIN == 1)
+  #elif (HAS_ATOMIC_BUILTIN == 1)
             return (uint32)__sync_add_and_fetch (&obj, -1);
-#else
+  #else
             return (uint32)__atomic_dec((volatile int *)&obj) - 1;
-#endif
+  #endif
         }
     };
 
-#if defined(NO_ATOMIC_BUILTIN64)
+  #if defined(NO_ATOMIC_BUILTIN64)
     #if (_POSIX == 1)
         extern pthread_mutex_t    sxMutex;
         #define _enter pthread_cleanup_push((void(*)(void*))pthread_mutex_unlock, &sxMutex); pthread_mutex_lock(&sxMutex)
@@ -1299,7 +1300,7 @@ namespace Threading
     #else
         #error You can not build Atomic code without atomic primitives!
     #endif
-#endif
+  #endif
     template <>
     struct FuncTable<8>
     {
@@ -1308,50 +1309,50 @@ namespace Threading
 
         inline static uint64 read(volatile uint64 & obj)
         {
-#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
+  #if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return (uint64)PTRInterlockedExchangeAdd64(&obj, 0ULL);
-#elif (HAS_ATOMIC_BUILTIN64 == 1)
+  #elif (HAS_ATOMIC_BUILTIN64 == 1)
             return (uint64)__sync_add_and_fetch (&obj, 0);
-#else
+  #else
             return obj;
-#endif
+  #endif
         }
         inline static uint64 swap(volatile uint64 & obj, uint64 value)
         {
-#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
+  #if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return (uint64)PTRInterlockedExchange64(&obj, value);
-#elif (HAS_ATOMIC_BUILTIN64 == 1)
+  #elif (HAS_ATOMIC_BUILTIN64 == 1)
             uint64 currentVal = obj;
             while (! compareAndSet(obj, value, currentVal)) { currentVal = obj; }
             return currentVal;
-#elif defined(NO_ATOMIC_BUILTIN64)
+  #elif defined(NO_ATOMIC_BUILTIN64)
             uint64 currentVal = 0; _enter; currentVal = obj; obj = value; _leave; return currentVal;
-#else
+  #else
             return __atomic_swap(value, (volatile long long*)obj);
-#endif
+  #endif
         }
 
         static inline bool compareAndSet(volatile uint64 & obj, const uint64 value, const uint64 comparand)
         {
-#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
+  #if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return PTRInterlockedCompareExchange64(&obj, value, comparand) == comparand;
-#elif (HAS_ATOMIC_BUILTIN64 == 1)
+  #elif (HAS_ATOMIC_BUILTIN64 == 1)
             return __sync_bool_compare_and_swap((volatile uint64*) &obj, comparand, value);
-#elif (NO_ATOMIC_BUILTIN64 == 1)
+  #elif (NO_ATOMIC_BUILTIN64 == 1)
             bool ret = false; _enter; if (obj == comparand) { obj = value; ret = true; }  _leave; return ret;
-#else
+  #else
             return __atomic_cmpxchg(comparand, value, (volatile long long*)&obj);
-#endif
+  #endif
         }
         static inline uint64 add(volatile uint64 & obj, const int64 amount)
         {
-#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
+  #if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return (uint64)PTRInterlockedExchangeAdd64(&obj, amount);
-#elif (HAS_ATOMIC_BUILTIN64 == 1)
+  #elif (HAS_ATOMIC_BUILTIN64 == 1)
             return (uint64)__sync_add_and_fetch (&obj, amount);
-#elif (NO_ATOMIC_BUILTIN64 == 1)
+  #elif (NO_ATOMIC_BUILTIN64 == 1)
             uint64 ret; _enter; obj += amount; ret = obj; _leave; return ret;
-#else
+  #else
             uint64 oldVal, expectedVal;
             do
             {
@@ -1359,38 +1360,38 @@ namespace Threading
                 expectedVal = oldVal + amount;
             } while (!compareAndSet(obj, expectedVal, oldVal))
             return expectedVal;
-#endif
+  #endif
         }
         inline static uint64 inc(volatile uint64 & obj)
         {
-#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
+  #if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return (uint64)PTRInterlockedIncrement64(&obj);
-#elif (HAS_ATOMIC_BUILTIN64 == 1)
+  #elif (HAS_ATOMIC_BUILTIN64 == 1)
             return (uint64)__sync_add_and_fetch (&obj, 1);
-#elif (NO_ATOMIC_BUILTIN64 == 1)
+  #elif (NO_ATOMIC_BUILTIN64 == 1)
             uint64 ret; _enter; obj += 1; ret = obj; _leave; return ret;
-#else
+  #else
             return (uint64)__atomic_inc((volatile long long *)&obj) + 1;
-#endif
+  #endif
         }
         inline static uint64 dec(volatile uint64 & obj)
         {
-#if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
+  #if(_MSC_VER && (HAS_ATOMIC_BUILTIN64 == 1))
             return (uint64)PTRInterlockedDecrement64(&obj);
-#elif (HAS_ATOMIC_BUILTIN64 == 1)
+  #elif (HAS_ATOMIC_BUILTIN64 == 1)
             return (uint64)__sync_add_and_fetch (&obj, -1);
-#elif (NO_ATOMIC_BUILTIN64 == 1)
+  #elif (NO_ATOMIC_BUILTIN64 == 1)
             uint64 ret; _enter; obj -= 1; ret = obj; _leave; return ret;
-#else
+  #else
             return (uint64)__atomic_dec((volatile long long *)&obj) - 1;
-#endif
+  #endif
         }
     };
 
-#if (NO_ATOMIC_BUILTIN64 == 1)
+  #if (NO_ATOMIC_BUILTIN64 == 1)
         #undef _enter
         #undef _leave
-#endif
+  #endif
 
     /** When you expect a value to be accessed or modified atomically, you can either use the SharedDataReader, SharedDataWriter or SharedDataReaderWriter on the value, if it's uint32.
         Else, if you intend to use any other type, you can simply declare an Atomic<Type> variable.

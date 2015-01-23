@@ -23,9 +23,9 @@ namespace Strings
     typedef char const * const tCharPtr;
 
     // Forward declare the findLength function 
-    const unsigned int findLength(tCharPtr);
+    const unsigned int findLength(tCharPtr, const size_t limit = 0);
     // Forward declare the findLength function 
-    inline const unsigned int findLength(const uint8 * txt) { return findLength((tCharPtr)txt); }
+    inline const unsigned int findLength(const uint8 * txt, const size_t limit = 0) { return findLength((tCharPtr)txt, limit); }
     // Forward declare the findLengthWide function 
     const unsigned int findLengthWide(const wchar_t *);
 
@@ -83,8 +83,16 @@ namespace Strings
         {
             int llen = length, rlen = length;
             if (!nlen && chars) nlen = (int)strlen(chars);
-            while(llen > 1 && data && memchr(chars, data[length - llen], nlen) != NULL) llen--;
-            while(rlen > 1 && data && memchr(chars, data[rlen - 1], nlen) != NULL) rlen--;
+            while(nlen && llen > 1 && data && memchr(chars, data[length - llen], nlen) != NULL) llen--;
+            while(nlen && rlen > 1 && data && memchr(chars, data[rlen - 1], nlen) != NULL) rlen--;
+            return VerySimpleReadOnlyString(data + (length - llen), rlen - (length  - llen));
+        }
+		/** Trim the string from any char in the given array (and direction) */
+        VerySimpleReadOnlyString Trimmed(const VerySimpleReadOnlyString & t) const
+        {
+            int llen = length, rlen = length;
+            while(t.length && llen > 1 && data && memchr(t.data, data[length - llen], t.length) != NULL) llen--;
+            while(t.length && rlen > 1 && data && memchr(t.data, data[rlen - 1], t.length) != NULL) rlen--;
             return VerySimpleReadOnlyString(data + (length - llen), rlen - (length  - llen));
         }
         
@@ -378,12 +386,13 @@ namespace Strings
         /** Enlarge the array */
         inline void Enlarge() 
         {
-            if (!allocatedSize) allocatedSize = 1;
-            TPtr * newArray = (TPtr*)realloc(array, allocatedSize * 2 * sizeof(array[0]));
+            if (!allocatedSize) allocatedSize = 2;
+            size_t newAllocatedSize = allocatedSize + (allocatedSize >> 1); // Growth factor of 1.5
+            TPtr * newArray = (TPtr*)realloc(array, newAllocatedSize * sizeof(array[0]));
             if (!newArray) { Clear(); return; }
-            memset(&newArray[currentSize], 0, (allocatedSize * 2 - currentSize) * sizeof(newArray[0]));
+            memset(&newArray[currentSize], 0, (newAllocatedSize - currentSize) * sizeof(newArray[0]));
             array = newArray;
-            allocatedSize *= 2;
+            allocatedSize = newAllocatedSize;
         }
         /** Default element */
         static T & getDefaultElement() { static T elem; return elem; }
@@ -473,7 +482,12 @@ namespace Strings
             @param fromPos          The position to start from
             @return the element index of the given element or getSize() if not found. */
         inline size_t indexOf(const T & objectToSearch, const size_t fromPos = 0) const { for (size_t i = fromPos; i < currentSize; i++) if (*array[i] == objectToSearch) return i; return currentSize; }
-        /** Reverse search operator 
+        /** Search operator, tells if it contains the given content or not
+            @param objectToSearch   The object to look for in the array
+            @param fromPos          The position to start from
+            @return true if the element is found in the array, false if not */
+        inline bool Contains(const T & objectToSearch, const size_t fromPos = 0) const { return indexOf(objectToSearch, fromPos) != currentSize; }
+        /** Reverse search operator
             @param objectToSearch The object to look for in the array 
             @param startPos         The position to start from
             @return the element index of the given element or getSize() if not found. */
@@ -481,7 +495,7 @@ namespace Strings
         /** Fast access operator, but doesn't check the index given in */
         inline T & getElementAtUncheckedPosition(size_t index) { return *array[index]; }
         /** Compare operator */
-        inline bool operator == (const StringArrayT & other) { if (other.currentSize != currentSize) return false; for(size_t i = 0; i < currentSize; i++) if (*array[i] != *other.array[i]) return false; return true; }
+        inline bool operator == (const StringArrayT & other) const { if (other.currentSize != currentSize) return false; for(size_t i = 0; i < currentSize; i++) if (*array[i] != *other.array[i]) return false; return true; }
 
         // Our specific interface
     public:
@@ -532,6 +546,15 @@ namespace Strings
             return ret;
         }
         
+        struct Internal
+        {
+            TPtr *      array;
+            size_t      currentSize;
+            size_t      allocatedSize;
+        };
+        /** Move strategy is explicit with this intermediate object */
+        Internal getMovable() { Internal intern = { array, currentSize, allocatedSize }; Reset(); return intern; }
+        static Internal emptyInternal() { Internal intern = { 0, 0, 0 }; return intern; }
     
         // Construction and destruction
     public:
@@ -539,9 +562,11 @@ namespace Strings
         inline StringArrayT() : array(0), currentSize(0), allocatedSize(0)  { }
         /** Copy constructor */
         inline StringArrayT(const StringArrayT & other) : array(0), currentSize(0), allocatedSize(0) { *this = other; }
+        /** Move constructor. Use getMovable() to move the array */
+        inline StringArrayT(const Internal & intern) : array(intern.array), currentSize(intern.currentSize), allocatedSize(intern.allocatedSize) {}
         /** Construct an array by splitting the string by the given separator. 
             The separator is not included in the resulting strings */
-        inline StringArrayT(const T & text, const T & separator = "\n") : array(0), currentSize(0), allocatedSize(0)
+        inline StringArrayT(const T & text, const T & separator = "\n", const T & trimArgs = "") : array(0), currentSize(0), allocatedSize(0)
         {
             // Need to count the number of times the separator is found in the string
             allocatedSize = text.Count(separator);
@@ -555,12 +580,12 @@ namespace Strings
             int pos = - separator.getLength();
             while ((pos = text.Find(separator, pos + separator.getLength())) != -1)
             {
-                array[currentSize++] = new T(text.midString(lastPos, pos - lastPos));
+                array[currentSize++] = new T(text.midString(lastPos, pos - lastPos).Trimmed(trimArgs));
                 lastPos = pos + separator.getLength();
             }
             if (lastPos < text.getLength() &&
                    !(lastPos == (text.getLength() - separator.getLength()) && text.midString(lastPos, separator.getLength()) == separator))
-                array[currentSize++] = new T(text.midString(lastPos, text.getLength()));
+                array[currentSize++] = new T(text.midString(lastPos, text.getLength()).Trimmed(trimArgs));
         }
         /** Build the string array from a given const char * array[] like this:
             @code
@@ -611,6 +636,27 @@ namespace Strings
     typedef CompareStringT<FastString> CompareString;
     /** But there's also a R/O version */
     typedef CompareStringT<VerySimpleReadOnlyString> CompareStringRO;
+    
+    template <typename T>
+    struct TypeToNameT
+    {
+        static FastString getTypeFromName() {
+            Strings::FastString templateType = Strings::FastString(
+#ifdef _MSC_VER
+                __FUNCTION__);
+#else
+                __PRETTY_FUNCTION__);
+#endif
+                // Try GCC type first, since it's the most specific : "LocalVariableImpl<T>::getName() [ with T = yourTypeHere ]"
+                Strings::FastString finalType = templateType.fromFirst("=").upToFirst("]").Trimmed();
+                // Else, try to use the templated argument itself: "LocalVariableImpl<yourTypeHere>::getName()"
+                if (!finalType) finalType = templateType.fromFirst("<").upToFirst(">").Trimmed();
+                return finalType;
+        }
+    };
+    /** Get the templated type name. This does not depends on RTTI, but on the preprocessor, so it should be quite safe to use even on old compilers */
+    template <typename T>
+    FastString getTypeName(const T *) { return TypeToNameT<T>::getTypeFromName(); }
     
     
 }

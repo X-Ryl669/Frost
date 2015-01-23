@@ -369,16 +369,15 @@ bool Thread::createThread(const int stackSize) volatile
     #endif
     return true;
 #else
-    pthread_attr_t attr;    
-    pthread_attr_init(&attr);   
-    if (stackSize) 
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    if (stackSize)
         pthread_attr_setstacksize(&attr, stackSize);
 
 #if defined(_POSIX) && (DEBUG==1)
     // This needs to be done before the thread
     if (!isTIDValid((HTHREAD*)&mainThreadT)) installMainThreadHandler();
 #endif
-        
     if (pthread_create((HTHREAD*)&thread, &attr, Thread::RunThread, (void*)this) != 0)
     {
         pRun->stop();   memset((void*)&thread, 0, sizeof(thread)); return false;
@@ -487,20 +486,19 @@ bool Thread::destroyThread(const bool & rcbDontWait) volatile
             if (leaving) leaving->threadLeaving(const_cast<Thread*>(this));
 #ifdef _WIN32
             // Close the handles if needed
-            if (thread != NULL) 
+            if (thread != NULL)
             {
                 HTHREAD hThread = thread;
                 thread = NULL;
                 threadID = 0;
                 CloseHandle(hThread);
             }
-    
 #elif defined(_POSIX)
             pthread_setspecific(threadThisKey, NULL);
             if (isCreated)
             {
                 void * ret;
-                if (rcbDontWait) 
+                if (rcbDontWait)
                     pthread_cancel(thread);
                 pthread_join(thread, &ret);
                 memset((void*)&thread, 0, sizeof(thread));
@@ -517,16 +515,13 @@ bool Thread::destroyThread(const bool & rcbDontWait) volatile
         }
         // Stop the thread
         pRun->stop();
-        
     }
-        
 
-#ifdef _WIN32
     // Check if we are not suiciding
-    if (GetCurrentThreadId() == threadID) return false;
-
+    if (isOurThread()) return false;
+#ifdef _WIN32
     // Close the handles if needed
-    if (thread != NULL) 
+    if (thread != NULL)
     {
         // Wait until it has finished
         DWORD dwRet = ::WaitForSingleObject(thread, rcbDontWait ? 1000 : INFINITE);
@@ -539,10 +534,6 @@ bool Thread::destroyThread(const bool & rcbDontWait) volatile
         CloseHandle(hThread);
     }
 #elif defined(_POSIX)
-    // Check if we are not suiciding
-    HTHREAD curThread = pthread_self();
-    if (memcmp((void*)&curThread, (void*)&thread, sizeof(thread)) == 0) return false;
-    
     // The only possible errors here mean thread is stopped or invalid
     // so it is safe to continue
     if (isTIDValid((HTHREAD*)&thread))
@@ -551,7 +542,7 @@ bool Thread::destroyThread(const bool & rcbDontWait) volatile
         if (leaving) leaving->threadLeaving(const_cast<Thread*>(this));
         // Undo the signal handling here
         pthread_setspecific(threadThisKey, NULL);
-        if (rcbDontWait) 
+        if (rcbDontWait)
             pthread_cancel(thread);
         else
         {
@@ -595,10 +586,18 @@ void * Thread::getCurrentThreadID()
     return (void*)pthread_self();
 #endif
 }
-
+bool Thread::isOurThread() const volatile
+{
+#ifdef _WIN32
+    return (GetCurrentThreadId() == threadID);
+#elif defined(_POSIX)
+    HTHREAD curThread = pthread_self();
+    return (memcmp((void*)&curThread, (void*)&thread, sizeof(thread)) == 0);
+#endif
+}
 
 #ifdef _POSIX
-Strings::FastString Thread::getStack() 
+Strings::FastString Thread::getStack()
 {
     // Send a get-stack signal
     pthread_kill(thread, SIGUSR1);

@@ -105,14 +105,24 @@ namespace Container
         public:
             /** Define the internal stored type used for template */
             typedef T   TypeT;
+            struct Internal
+            {
+                T    *      array;
+                size_t      currentSize;
+                size_t      allocatedSize;
+            };
+            
         private:
             enum { elementSize = sizeof(T) };
+
 
         public:
             /** Default Constructor */
             inline Array() : array(0), currentSize(0), allocatedSize(0)  { }
             /** Copy constructor */
             inline Array(const Array & other) : array(0), currentSize(0), allocatedSize(0) { *this = other; }
+            /** Move constructor. Use getMovable() to move the array */
+            inline Array(const Internal & intern) : array(intern.array), currentSize(intern.currentSize), allocatedSize(intern.allocatedSize) {}
             /** Destructor */
             ~Array()        { Clear(); }
 
@@ -175,11 +185,17 @@ namespace Container
             */
             inline const T & getElementAtPosition (size_t index) const { return index < currentSize ? array[index] : Policy::DefaultElement(); }
            
-            /** Search operator 
+            /** Search operator in O(N)
                 @param objectToSearch   The object to look for in the array
                 @param startPos         The position to start searching from
                 @return the element index of the given element or getSize() if not found. */
             inline size_t indexOf(const T & objectToSearch, const size_t startPos = 0) const { return Policy::Search(array, currentSize, startPos, objectToSearch); }
+            /** Check whether this contains contains the given object. 
+                Search is O(N)
+                @param objectToSearch   The object to look for in the array
+                @param startPos         The position to start searching from
+                @return true if found. */
+            inline bool Contains(const T & objectToSearch, const size_t startPos = 0) const { return Policy::Search(array, currentSize, startPos, objectToSearch) != currentSize; }
             /** Search operator in O(log(N)) mode
                 @warning This method only works if the container is sorted.
                 @param objectToSearch   The object to look for in the array
@@ -196,8 +212,15 @@ namespace Container
             /** Fast access operator, but doesn't check the index given in */
             inline T & getElementAtUncheckedPosition(size_t index) { return array[index]; }
             /** Compare operator */
-            inline bool operator == (const Array & other) { return other.currentSize == currentSize && Policy::CompareArray(array, other.array, currentSize); }
+            inline bool operator == (const Array & other) const { return other.currentSize == currentSize && Policy::CompareArray(array, other.array, currentSize); }
 
+        
+            /** Move strategy is explicit with this intermediate object */
+            Internal getMovable() { Internal intern = { array, currentSize, allocatedSize }; Reset(); return intern; }
+            /** Copy strategy is explicit with this intermediate object. Beware, don't use this as a Array constructor */
+            Internal getCopyable() const { Internal intern = { array, currentSize, allocatedSize }; return intern; }
+            /** When using move strategy, this is the default value to initialize the object */
+            static Internal emptyInternal() { Internal intern = { 0, 0, 0 }; return intern; }
 
         private:
             /** Add an object to the array when the exact size must be respected */
@@ -214,7 +237,7 @@ namespace Container
                 if (currentSize >= allocatedSize)
                 {
                     // Need to realloc the data
-                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize *= 2;
+                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize>>1);
                     array = Policy::NonDestructiveAlloc(array, currentSize, allocatedSize, Policy::DefaultElement());
                     if (array == 0) { Reset(); return; } 
                 }
@@ -239,7 +262,7 @@ namespace Container
                 if (currentSize >= allocatedSize)
                 {
                     // Need to realloc the data
-                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize *= 2;
+                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize>>1);
                     array = Policy::Insert(array, currentSize, allocatedSize, index, ref);
                     if (array == 0) { Reset(); return; } 
                 } else
@@ -325,7 +348,7 @@ namespace Container
             T *                                                     array;
             /** The current size (in sizeof(T) unit) */
             size_t                                                  currentSize;
-            /** The allocated size (always more than currentSize, max currentSize * 2) */
+            /** The allocated size (always more than currentSize, max currentSize * 1.5) */
             size_t                                                  allocatedSize;
         };
 
@@ -414,6 +437,12 @@ namespace Container
         public:
             /** Define the internal stored type used for template */
             typedef TElem   TypeT;
+            struct Internal
+            {
+                TElem   **  array;
+                size_t      currentSize;
+                size_t      allocatedSize;
+            };
 
             // Type definition and enumeration
         private:
@@ -427,6 +456,8 @@ namespace Container
             inline IndexList() : array(0), currentSize(0), allocatedSize(0)  { }
             /** Copy constructor */
             inline IndexList(const IndexList & other) : array(0), currentSize(0), allocatedSize(0) { *this = other; }
+            /** Move constructor. Use getMovable() to move the array */
+            inline IndexList(const Internal & intern) : array(intern.array), currentSize(intern.currentSize), allocatedSize(intern.allocatedSize) {}
             /** Destructor */
             ~IndexList()        { Clear(); }
 
@@ -492,7 +523,13 @@ namespace Container
                 @param startPos         The position to start searching from
                 @return the element index of the given element or getSize() if not found. */
             inline size_t indexOf(const TPtr & objectToSearch, const size_t startPos = 0) const { return Policy::Search(array, currentSize, startPos, objectToSearch); }
-            /** Reverse search operator 
+            /** Check whether this contains contains the given object. 
+                Search is O(N)
+                @param objectToSearch   The object to look for in the array
+                @param startPos         The position to start searching from
+                @return true if found. */
+            inline bool Contains(const TPtr & objectToSearch, const size_t startPos = 0) const { return Policy::Search(array, currentSize, startPos, objectToSearch) != currentSize; }
+            /** Reverse search operator
                 @param objectToSearch   The object to look for in the array
                 @param startPos         The position to start searching from
                 @return the element index of the given element or getSize() if not found. */
@@ -506,8 +543,12 @@ namespace Container
             /** Fast access operator, but doesn't check the index given in */
             inline const TPtr & getElementAtUncheckedPosition(size_t index) const { return array[index]; }            
             /** Compare operator */
-            inline bool operator == (const IndexList & other) { return other.currentSize == currentSize && Policy::CompareArray(array, other.array, currentSize); }
+            inline bool operator == (const IndexList & other) const { return other.currentSize == currentSize && Policy::CompareArray(array, other.array, currentSize); }
 
+            /** Move strategy is explicit with this intermediate object */
+            Internal getMovable() { Internal intern = { array, currentSize, allocatedSize }; Reset(); return intern; }
+            /** When using move strategy, this is the default value to initialize the object */
+            static Internal emptyInternal() { Internal intern = { 0, 0, 0 }; return intern; }
 
         private:
             /** Add an object to the array when the exact size must be respected */
@@ -524,7 +565,7 @@ namespace Container
                 if (currentSize >= allocatedSize)
                 {
                     // Need to realloc the data
-                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize *= 2;
+                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize >> 1); // Growth factor of 1.5 allow reuse of memory deallocated
                     array = Policy::NonDestructiveAlloc(array, currentSize, allocatedSize, Policy::DefaultElement());
                     if (array == 0) { Reset(); return; } 
                 }
@@ -549,7 +590,7 @@ namespace Container
                 if (currentSize >= allocatedSize)
                 {
                     // Need to realloc the data
-                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize *= 2;
+                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize >> 1); // Growth factor of 1.5 allow reuse of memory deallocated
                     array = Policy::Insert(array, currentSize, allocatedSize, index, ref);
                     if (array == 0) { Reset(); return; } 
                 } else
@@ -575,6 +616,8 @@ namespace Container
                     Policy::CopyArray(&newArray[index], &array[index+1], currentSize - 1, currentSize - index - 1);
                     // Then switch the pointers
                     allocatedSize = --currentSize;
+                    // Remove the data at the given index
+                    Policy::Remove(array[index]);
                     // Delete the previous array
                     Policy::DeleteArray(array, allocatedSize + 1);
 
@@ -589,12 +632,7 @@ namespace Container
                 {
                     // Remove the given data
                     Policy::Remove(array[index]);
-                    // Copy the data after the index
-                    Policy::CopyArray(&array[index], &array[index+1], currentSize - 1, currentSize - index - 1);
-                    // Then switch the pointers
-                    --currentSize;
-                    // Zero the last element
-                    array[currentSize] = Policy::DefaultElement(); 
+                    Forget(index, (Bool2Type<false> *)0);
                 }
             }
 
@@ -657,7 +695,7 @@ namespace Container
             TElem **                                                array;
             /** The current size (in sizeof(TPtr) unit) */
             size_t                                                  currentSize;
-            /** The allocated size (always more than currentSize, max currentSize * 2) */
+            /** The allocated size (always more than currentSize, max currentSize * 1.5) */
             size_t                                                  allocatedSize;
         };
 

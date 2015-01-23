@@ -1419,6 +1419,11 @@ namespace File
     {
         String outputStack;
 #if defined(_WIN32) || defined(_POSIX)
+#if defined(_WIN32)
+        // If there is only forward slash, then treat it as back slash, and restore to forware slash in the end
+        bool shouldMirrorPath = pathToNormalize.Find('/') != -1 && pathToNormalize.Find('\\') == -1;
+        if (shouldMirrorPath) pathToNormalize = pathToNormalize.replaceAllTokens('/', '\\');
+#endif
         while (pathToNormalize)
         {
             // Remove starting "../" segment if the stack is empty
@@ -1439,7 +1444,7 @@ namespace File
                 {
                     // If output stack is absolute, we don't kill it
                     #ifdef _WIN32
-                    if (outputStack.midString(1, outputStack.getLength()) != ":" PathSeparator)
+                    if (outputStack.midString(1, outputStack.getLength()) != ":")
                     #else 
                     if (outputStack != PathSeparator)
                     #endif
@@ -1463,6 +1468,9 @@ namespace File
                 }
             }
         }
+#endif
+#if defined(_WIN32)
+        if (shouldMirrorPath) return outputStack.normalizedPath(Platform::Separator).replaceAllTokens('\\', '/');
 #endif
         return outputStack.normalizedPath(Platform::Separator);
     }
@@ -1607,7 +1615,7 @@ namespace File
                 // Construct the name of the drive "ascii code(A) + i"
                 wchar_t szDrive[4] = {wchar_t( 65 + i ), L':', L'\\', 0};
 
-                uint32 driveType = GetDriveType(szDrive);
+                uint32 driveType = GetDriveTypeW(szDrive);
                 if(driveType == DRIVE_FIXED)
                 {
                     wchar_t szname[MAX_PATH];
@@ -1618,9 +1626,7 @@ namespace File
 
                     if(GetVolumeInformationW(szDrive, szname, MAX_PATH, &lpVolumeSerialNumber, &lpMaximumComponentLength, &lpFileSystemFlags, lpFileSystemNameBuffer, MAX_PATH))
                     {
-                        if (wcslen(szname))
-                            paths.Append(Strings::convert(Strings::ReadOnlyUnicodeString(szname)));
-                        else paths.Append(Strings::convert(Strings::ReadOnlyUnicodeString(szDrive)));
+                        paths.Append(Strings::convert(Strings::ReadOnlyUnicodeString(szDrive)));
                         if (remoteNames) remoteNames->Append(Strings::convert(Strings::ReadOnlyUnicodeString(szDrive)));
                     }
                 }
