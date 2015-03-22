@@ -576,15 +576,14 @@ MakePOD(float);
         #define _PingFlag 0
         #define _PingFlagName _
     #endif
-    
-    #if (WantBSCCompression == 1)
-        #define _BSCFlag       65536
-        #define _BSCFlagName BSC
-    #else
-        #define _BSCFlag 0
-        #define _BSCFlagName _
-    #endif
 
+    #if (WantDynamicEngine == 1)
+        #define _JSFlag       65536
+        #define _JSFlagName JS
+    #else
+        #define _JSFlag 0
+        #define _JSFlagName _
+    #endif
 
     #if (DEBUG==1)
         #define _DebugFlag         1073741824
@@ -617,7 +616,7 @@ MakePOD(float);
 
     #define _ClassPathFlags (_SSLFlag + _AESFlag + _TypeFlag + _FFMPEGFlag + _TLSFlag + _BaseFlag + _FloatFlag + \
                              _ChronoFlag + _AtomicFlag + _MD5Flag + _ExLockFlag + _SOAPFlag + _CompressFlag + \
-                             _OwnPicFlag + _RegExFlag + _PingFlag + _BSCFlag + _DebugFlag)
+                             _OwnPicFlag + _RegExFlag + _PingFlag + _JSFlag + _DebugFlag)
 
 
     #define _String(X) #X
@@ -634,8 +633,8 @@ MakePOD(float);
         // This is going to break your software in a very subtle way, since the binary will not match the sources, so debugging will be painful, if not impossible.
         // The solution is simple, make sure you are using the same flags for the both projects.
         enum { ClassPathFlags = _ClassPathFlags };
-        extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _DebugFlagName);
-        inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _DebugFlagName); }
+        extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _JSFlagName), _DebugFlagName);
+        inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _JSFlagName), _DebugFlagName); }
         extern const char * getBuildFlagsName();
         /** This get the Git's HEAD SHA1 added with -dirty if dirty or "" if not supported */
         extern const char * getBuildRepoVer();
@@ -701,12 +700,9 @@ MakePOD(float);
     #undef _PingFlag
     #undef _PingFlagName
 
-    #undef _BSCFlag
-    #undef _BSCFlagName
+    #undef _JSFlag
+    #undef _JSFlagName
 
-    #undef _DebugFlag
-    #undef _DebugFlagName
-    
     #undef _Platform
     #undef _LargeFileOffset
     #undef _Console

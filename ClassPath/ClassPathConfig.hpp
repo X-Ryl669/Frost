@@ -11,7 +11,7 @@
     Either you provide a buildConfig file that's included by the Makefile to make these flags:
     Such file is never included in the repository so the format should be like this:
     @verbatim
-    WantSSLCode WantPingCode WantAES WantMD5Hashing WantThreadLocalStorage WantBaseEncoding WantFloatParsing WantRegularExpressions WantTimedProfiling WantAtomicClass WantExtendedLock WantSOAP WantCompression WantBSCCompression WantLightImageCode
+    WantSSLCode WantDynamicEngine WantPingCode WantAES WantMD5Hashing WantThreadLocalStorage WantBaseEncoding WantFloatParsing WantRegularExpressions WantTimedProfiling WantAtomicClass WantExtendedLock WantSOAP WantCompression WantBSCCompression WantLightImageCode
     @endverbatim 
     Please notice that the former does not change the link dependencies (like on miniupnpc or openssl even if disabled), while the later
     change them, the Makefile adapts to the flags.
@@ -25,7 +25,7 @@
 #define WantSSLCode 1
 
 /** If you want ICMP ping code to be added to the networking code, enable this.
-    This add a pingDevice method to the IPV4 class but add a dependency on IPHelper.dll on Windows.
+    This adds a pingDevice method to the IPV4 class but add a dependency on IPHelper.dll on Windows.
     Default: enabled */
 #define WantPingCode 1
 
@@ -122,6 +122,10 @@
     Default: disabled */
 // #define DontWantUPNPC 1
 
+/** If you want Dynamic object, JSON parsing, Javascript engine, enable this.
+    This activate compilation of DynamicObject, JSON parser, and Javascript engine.
+    Default: enabled */
+#define WantDynamicEngine 0
  
 
 /** If you want ...

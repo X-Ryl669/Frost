@@ -9,8 +9,10 @@ namespace Type
     VarT<ObjectPtrPolicy> EmptyRef;
     /** The default error handling */
     ErrorCallback defaultHandling;
+#if (WantDynamicEngine == 1)
     /** The default error on throwing */
     DynObj::ThrowOnError defaultThrow;
+#endif
 }
 
 namespace UniversalTypeIdentifier
@@ -97,8 +99,10 @@ RegisterClassFunctions(Database::TableDefinition*, ("<Value></Value>"), throw Co
     RegisterClassForVariantImpl(Type::NamedFunc             , 0x00000000, 0x00000000, 0x00000003, 0x00000000, ("<Value>[native func at %p]</Value>", (void*)pData), sSrc.fromFirst("at ").Scan("%p", &pData) )
     RegisterClassForVariantImpl(Type::NamedFuncRef          , 0x00000000, 0x00000000, 0x00000003, 0x00000001, ("<Value>[native func at %p]</Value>", (void*)pData), sSrc.fromFirst("at ").Scan("%p", &pData) )
     RegisterClassForVariantImpl(Strings::FastString         , 0x00000000, 0x00000000, 0x00000000, 0xc34def32, ("<Value>%s</Value>", (const char *)*(Strings::FastString*)pData), *(Strings::FastString*)pData = sSrc)
+#if (WantDynamicEngine == 1)
     RegisterClassForVariantImpl(Type::DynObj                , 0x00000000, 0x00000000, 0x00000000, 0x0b3ec1d1, ("<Value></Value>"), ; )
     RegisterClassForVariantImpl(Type::RefObj                , 0x00000000, 0x00000000, 0x00000000, 0x0b3ec1d2, ("<Value></Value>"), ; )
+#endif
     RegisterClassForVariantImpl(Type::GetterSetter          , 0x00000000, 0x00000000, 0x00000003, 0x00000002, ("<Value>[native gs at %p,%p]</Value>", ((GetterSetter*)pData)->getter, ((GetterSetter*)pData)->setter), sSrc.fromFirst("at ").Scan("%p", &((GetterSetter*)pData)->getter); sSrc.fromFirst(",").Scan("%p", &((GetterSetter*)pData)->setter) )
     RegisterClassForVariantImpl(Type::GetterSetterRef       , 0x00000000, 0x00000000, 0x00000003, 0x00000003, ("<Value>[native gs at %p,%p]</Value>", ((GetterSetterRef*)pData)->getter, ((GetterSetterRef*)pData)->setter), sSrc.fromFirst("at ").Scan("%p", &((GetterSetterRef*)pData)->getter); sSrc.fromFirst(",").Scan("%p", &((GetterSetterRef*)pData)->setter) )
 

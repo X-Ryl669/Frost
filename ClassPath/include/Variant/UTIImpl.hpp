@@ -9,8 +9,11 @@
 #include "../../include/Container/Container.hpp"
 // We need strings
 #include "../../include/Strings/Strings.hpp"
-// We need dynamic objects too
-#include "../../include/Types/DynamicObject.hpp"
+
+#if (WantDynamicEngine == 1)
+  // We need dynamic objects too
+  #include "../../include/Types/DynamicObject.hpp"
+#endif
 
 //   !!!!!!! WARNING !!!!!!!!
 //   If you modify something here you have to report the modification in UTIImpl.cpp
@@ -88,8 +91,10 @@ namespace UniversalTypeIdentifier
     RegisterClassForVariantDecl(Strings::FastString)
     RegisterClassForVariantDecl(NamedFunc);
     RegisterClassForVariantDecl(NamedFuncRef);
+#if (WantDynamicEngine == 1)
     RegisterClassForVariantDecl(DynObj);
     RegisterClassForVariantDecl(RefObj);
+#endif
     RegisterClassForVariantDecl(VarArray);
     RegisterClassForVariantDecl(RefArray);
     RegisterClassForVariantDecl(GetterSetter);
