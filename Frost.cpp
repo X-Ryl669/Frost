@@ -1186,7 +1186,6 @@ namespace Frost
                             }
                             chunkList.synchronize(); // Insert in the database
                             Assert(streamOffset + temporaryChunk.size == stream.currentPosition());
-                            streamOffset = stream.currentPosition();
                             
                             // And remember in which multichunk it is in too
                             multiChunkList.Type = 1;
@@ -1198,6 +1197,7 @@ namespace Frost
                                 
                             multiChunkList.synchronize();
                         }
+                        streamOffset = stream.currentPosition();
                     }
                     
                     
