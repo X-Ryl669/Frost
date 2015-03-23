@@ -43,6 +43,12 @@ CXXFLAGS += -O2
 CFLAGS += -O2
 endif
 
+ifeq ($(CONFIG),Debug)
+CXXFLAGS += -g -O0
+CFLAGS += -g -O0
+endif
+
+
 CXXFLAGS += -pthread -Wno-multichar -std=c++11
 CFLAGS += -pthread -Wno-multichar
 
@@ -57,10 +63,10 @@ OBJ_BUILD = $(OBJ_CXX_BUILD) $(OBJ_C_BUILD)
 SYSLD := $(shell echo `whereis g++ | cut -d\  -f 2`)
 REALLD ?= $(SYSLD)
 SHAREDLIBS = -lssl -lcrypto -lsqlite3
-# On Linux, old Glib requires -lrt for aio and clock_gettime
+# On Linux, old Glib requires -lrt for aio and clock_gettime, and -ldl for dlclose
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
-   SHAREDLIBS += -lrt
+   SHAREDLIBS += -lrt -ldl
 endif
 LDXX = g++
 Q = @

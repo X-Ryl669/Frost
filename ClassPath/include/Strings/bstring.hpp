@@ -397,25 +397,11 @@ namespace Bstrlib
             While called in loop, it extracts the token one by one, until either the returned value is empty, or pos > getLength() */
         String extractToken(char c, int & pos) const;
     	
-    	// Search and substitute methods.
-    	/** Find the given substring starting at position pos and replace it */
-    	String & findAndReplace(const String& find, const String& repl, int pos = 0);
-    	/** Find the given substring starting at position pos and replace it */
-    	String & findAndReplace(const String& find, const char * repl, int pos = 0);
-    	/** Find the given substring starting at position pos and replace it */
-    	String & findAndReplace(const char * find, const String& repl, int pos = 0);
-    	/** Find the given substring starting at position pos and replace it */
-    	String & findAndReplace(const char * find, const char * repl, int pos = 0);
-    	/** Find the given substring starting at position pos and replace it with caseless search */
-    	String & findAndReplaceCaseless(const String& find, const String& repl, int pos = 0);
-    	/** Find the given substring starting at position pos and replace it with caseless search */
-    	String & findAndReplaceCaseless(const String& find, const char * repl, int pos = 0);
-    	/** Find the given substring starting at position pos and replace it with caseless search */
-    	String & findAndReplaceCaseless(const char * find, const String& repl, int pos = 0);
-    	/** Find the given substring starting at position pos and replace it with caseless search */
-    	String & findAndReplaceCaseless(const char * find, const char * repl, int pos = 0);
 
 #if (WantRegularExpressions == 1)
+    	/** @name Regular expressions.
+                  Everything concerning regular expressions
+            @{*/
         // Regular expressions
         enum RegExError
         {
@@ -485,8 +471,9 @@ namespace Bstrlib
 
 
         /** Return a string with value replaced as regular expression.
-            @param opaque           The opaque object that's created with regExCompile
-            @param replaceWith      The replacing pattern. @sa RE macro to avoid double escape of backlashes.
+            @param regEx            The regular expression to match against. @sa RE macro to avoid double escape
+                                    of the backlash in some regular expression.
+            @param replaceExp       The replacing pattern. @sa RE macro to avoid double escape of backlashes.
             @param caseSensitive    If set, the search is case sensitive
             @param iterations       The number of iterations to run, -1 for until it fails matching, default to one.
             @return The replaced String or empty string on failure. 
@@ -499,10 +486,15 @@ namespace Bstrlib
             @code
                 String("aa1234 xy (3)").regExReplace("(\\d+)\\s*([x-y ]*)", "678\2") == "aa678xy (3)"
             @endcode */
-        String regExReplace(const String & regEx, const String & replaceExp, const bool caseSensitive = true, int iterations = 1) const;        
+        String regExReplace(const String & regEx, const String & replaceExp, const bool caseSensitive = true, int iterations = 1) const;
+        /** @}*/
 #endif
 
-    	// Extraction method.
+    	/** @name Extraction methods.
+                  Extract, split, find, process in a fluent interface.
+                  This makes the code much easier to read, write and maintain, since the intend is clear, instead of 
+                  dealing with indexes, midString and so forth
+            @{*/
     	/** Extract the string starting at left of len char long.
     	    You can use negative left value to start from right, or on the length too.
     	    For example, the following code returns:
@@ -585,8 +577,9 @@ namespace Bstrlib
     	        ret = text.fromTo("g", "f", [true or false]); // ret = ""
     	    @endcode 
     	    
-    	    @param from The first needle to look for
-    	    @param to   The second needle to look for 
+    	    @param from         The first needle to look for
+    	    @param to           The second needle to look for
+            @param includeFind  If true the string includes the from and to needles (if found).
     	    @return If "from" needle is not found, it returns an empty string, else if "to" needle is not found, 
     	            it returns an empty string upon includeFind being false, or the string starting from "from" if true. */
     	const String fromTo(const String & from, const String & to, const bool includeFind = false) const;
@@ -628,7 +621,7 @@ namespace Bstrlib
                 String ret = text.splitWhenNoMore("abcdefghijklmnopqrstuvwxyz_0123456789"); // text = " defgh", ret = "_abs123"
             @endcode */
         const String splitWhenNoMore(const String & set);
-        
+        /** @}*/
         
         		
     	// Standard manipulation methods.
@@ -658,18 +651,7 @@ namespace Bstrlib
     	    @warning Only one parameter can be extracted by this method.
     	    @return the number of parameter extracted (1 or 0 on error) */
     	int Scan(const char * fmt, void * data) const;
-    	/** Printf like format */
-    	String & Format(const char * fmt, ...)
-#ifdef __GNUC__
-        __attribute__ ((format (printf, 2, 3)))
-#endif
-        ;
-    	/** Printf like format */
-    	static String Print(const char * fmt, ...)
-#ifdef __GNUC__
-        __attribute__ ((format (printf, 1, 2)))
-#endif
-        ;
+
     	/** Printf like format for ascii */
     	void Formata(const char * fmt, ...)
 #ifdef __GNUC__
@@ -678,13 +660,7 @@ namespace Bstrlib
         ;
     	/** Fill the string with 'fill' char length times */
     	void Fill(int length, unsigned char fill = ' ');
-    	/** Fill the string with 'fill' char length times */
-    	inline String Filled(int length, unsigned char fill = ' ') const 
-    	{ 
-    	    String a = *this; 
-    	    a.Fill(length, fill); 
-    	    return a; 
-    	}
+
     	/** Repeat the same string count times.
             @param count   Repeat the pattern this number of times. If negative, it's not repeated. */
     	void Repeat(int count);
@@ -699,6 +675,61 @@ namespace Bstrlib
             rightTrim(b);
             leftTrim(b);
     	}
+
+    	/** Change to uppercase */
+    	void toUppercase();
+    	/** Change to lowercase */
+    	void toLowercase();
+
+    	// Write protection methods.
+    	/** Write protect this string */
+    	void writeProtect();
+    	/** Allow writing to this string */
+    	void writeAllow();
+    	/** Is the current string write protected ? */
+    	inline bool isWriteProtected() const { return mlen <= 0; }
+        
+        /** @name Fluent interface.
+                  The methods in this section returns reference on a string object (either mutated or new).
+                  This makes the code much easier to read and write, it's more consise yet it gives the developer intend.
+            @{*/
+    	// Search and substitute methods.
+    	/** Find the given substring starting at position pos and replace it */
+    	String & findAndReplace(const String& find, const String& repl, int pos = 0);
+    	/** Find the given substring starting at position pos and replace it */
+    	String & findAndReplace(const String& find, const char * repl, int pos = 0);
+    	/** Find the given substring starting at position pos and replace it */
+    	String & findAndReplace(const char * find, const String& repl, int pos = 0);
+    	/** Find the given substring starting at position pos and replace it */
+    	String & findAndReplace(const char * find, const char * repl, int pos = 0);
+    	/** Find the given substring starting at position pos and replace it with caseless search */
+    	String & findAndReplaceCaseless(const String& find, const String& repl, int pos = 0);
+    	/** Find the given substring starting at position pos and replace it with caseless search */
+    	String & findAndReplaceCaseless(const String& find, const char * repl, int pos = 0);
+    	/** Find the given substring starting at position pos and replace it with caseless search */
+    	String & findAndReplaceCaseless(const char * find, const String& repl, int pos = 0);
+    	/** Find the given substring starting at position pos and replace it with caseless search */
+    	String & findAndReplaceCaseless(const char * find, const char * repl, int pos = 0);
+        
+        /** Printf like format */
+    	String & Format(const char * fmt, ...)
+#ifdef __GNUC__
+        __attribute__ ((format (printf, 2, 3)))
+#endif
+        ;
+    	/** Printf like format */
+    	static String Print(const char * fmt, ...)
+#ifdef __GNUC__
+        __attribute__ ((format (printf, 1, 2)))
+#endif
+        ;
+        /** Fill the string with 'fill' char length times */
+    	inline String Filled(int length, unsigned char fill = ' ') const 
+    	{ 
+    	    String a = *this; 
+    	    a.Fill(length, fill); 
+    	    return a; 
+    	}
     	/** Trim the both sides of this string with the given chars */
         inline String Trimmed(const String& b = String(" \t\v\f\r\n", sizeof(" \t\v\f\r\n"))) const
         {
@@ -707,13 +738,11 @@ namespace Bstrlib
             a.Trim(b);
             return a;
         }
-    	/** Change to uppercase */
-    	void toUppercase();
-        /** Get a uppercased version */
+        /** Get a uppercased version 
+            @sa toUppercase for the non fluent version */
         inline String asUppercase() const { String ret(*this); ret.toUppercase(); return ret; }
-    	/** Change to lowercase */
-    	void toLowercase();
-        /** Get a lowercased version */
+        /** Get a lowercased version
+            @sa toLowercase for the non fluent version */
         inline String asLowercase() const { String ret(*this); ret.toLowercase(); return ret; }
         /** Normalized path, ready for concatenation */
         String normalizedPath(char sep = '/', const bool includeLastSep = true) const;
@@ -736,16 +765,15 @@ namespace Bstrlib
         String & replaceAllTokens(char from, char to);
         /** Return a string with all occurences of "find" replaced by "by" */
         String replacedAll(const String & find, const String & by) const;
-
-    	// Write protection methods.
-    	/** Write protect this string */
-    	void writeProtect();
-    	/** Allow writing to this string */
-    	void writeAllow();
-    	/** Is the current string write protected ? */
-    	inline bool isWriteProtected() const { return mlen <= 0; }
         
-        // Unicode methods.
+        
+        /** @}*/
+        
+        
+        /** @name Unicode methods.
+                  This string class stores strings as UTF-8. However, most methods expect one char to be one byte.
+                  The methods below handle unicode encoding correctly, and deal with variable length encoding of UTF-8
+            @{*/
         /** Get the i-th unicode char.
             This decodes the UTF-8 sequence for iterating the string.
             @param  pos     The unicode character index in the string, not it's position in memory
@@ -755,7 +783,7 @@ namespace Bstrlib
             This decodes the UTF-8 sequence for iterating the string.
             @warning Do not use for converting the string to UTF-16 or UTF-32, you should use Strings::convert functions. */
         size_t getUnicodeLength() const;
-
+        /** @}*/
     	
     	// Prevent unwanted conversion
     private:

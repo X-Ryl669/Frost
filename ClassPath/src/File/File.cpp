@@ -1216,7 +1216,7 @@ namespace File
         wordexp_t p;
         if (expandVar && wordexp( (const char*)fullPath, &p, 0 ) == 0)
         {
-            if (p.we_wordc) buildNameAndPath(p.we_wordv[0]);
+            if (p.we_wordc) buildNameAndPath(Strings::StringArray(p.we_wordv, p.we_wordc).Join(" "));
             else buildNameAndPath(fullPath);
             wordfree(&p);
         }

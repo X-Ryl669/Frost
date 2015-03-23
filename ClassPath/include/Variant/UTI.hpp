@@ -168,12 +168,22 @@ namespace UniversalTypeIdentifier
 #pragma warning(push)
 #pragma warning(disable : 4244)
 #endif
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion-null"
+#endif
+
             enum { Result = sizeof(checkI(E())) == sizeof(Type1) 
                          && sizeof(checkFISink((typename isFloat<E>::Type*)0)) == sizeof(Type1) 
                          && sizeof(checkE(E())) == sizeof(Type1) };
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
+
         };
 
         // class

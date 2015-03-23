@@ -71,6 +71,8 @@ namespace Container
             static size_t ReverseSearch(const T* array, const size_t arraySize, const T & valueToLookFor);
             /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it */
             static T * NonDestructiveAlloc(const T* array, const size_t currentSize, const size_t newSize, const T & fillWith);
+            /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it */
+            static T * NonDestructiveAlloc(const T* array, const size_t currentSize, const size_t newSize,  T * const fillWith);
             /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it, plus inserting the given object at the given place and DefaultElement for empty places if any */
             static T * Insert(const T* array, const size_t currentSize, const size_t newSize, const size_t index, const T & elementToInsert);
             /** Delete the array */
@@ -140,6 +142,11 @@ namespace Container
                 @param ref The object to be appended if not found in the array.
                 @return The position of the searched item if found, or getSize() - 1 if not and it was appended. */
             inline size_t appendIfNotPresent(const T & ref) { size_t pos = indexOf(ref); if (pos == getSize()) Append(ref); return pos; }
+            /** Grow this array by (at least) the given number of elements.
+                With non exact sized array (likely PlainOldData), this set up the allocation size to, at least, currentSize + count.
+                @param elements    A pointer to the elements to append (they are copied, can be 0)
+                @param count       How many elements to copy from the given array */
+            inline void Grow(const size_t count, T * const elements) throw() { Add(elements, count, (Bool2Type<ExactSize>*)0); }
             /** Insert an element just before the given index 
                 @param index    Zero based index of the element once inserted
                 @param ref      The element*/
@@ -244,6 +251,32 @@ namespace Container
                 // Copy the data
                 Policy::Copy(array[currentSize], ref);
                 currentSize ++;
+            }
+            /** Add an object to the array when the exact size must be respected */
+            inline void Add(T * const elements, const size_t count, Bool2Type<true> *) throw()
+            {
+                array = Policy::NonDestructiveAlloc(array, currentSize, currentSize+count, elements);
+                if (array == 0) { Reset(); return; }
+                currentSize += count;
+                allocatedSize = currentSize;
+            }
+            /** Add an object to the array when the array can be larger than the current size */
+            inline void Add(T * const elements, const size_t count, Bool2Type<false> *) throw()
+            {
+                // Check if the array needs reallocation
+                if (currentSize + count >= allocatedSize)
+                {
+                    // Need to realloc the data
+                    allocatedSize = currentSize + count;
+                    array = Policy::NonDestructiveAlloc(array, currentSize, currentSize + count, elements);
+                    if (array == 0) { Reset(); return; }
+                    currentSize += count;
+                    allocatedSize = currentSize;
+                    return;
+                }
+                // Copy the data
+                if (elements) Policy::CopyArray(&array[currentSize], elements, (allocatedSize - currentSize), count);
+                currentSize += count;
             }
 
             /** Insert an object into the array when the exact size must be respected */
@@ -384,6 +417,7 @@ namespace Container
             /** This method returns a default constructed element */
             static T* DefaultElement();
             static T** NonDestructiveAlloc(T** const array, const size_t currentSize, const size_t newSize, T* const & fillWith);
+            static T** NonDestructiveAlloc(T** const array, const size_t currentSize, const size_t newSize, T** const fillWith);
             static T* * Insert(T** const array, const size_t currentSize, const size_t newSize, const size_t index, T* const & elementToInsert);
             /** Delete the array */
             static void DeleteArray(T* * const array, const size_t currentSize); 
@@ -477,6 +511,12 @@ namespace Container
                 @param deleteIfPresent  If true, and the object is already found in the array, the given pointed object is deleted.
                 @return The position of the searched item if found (you might need to delete the element in that case if you don't want it done here), or getSize() - 1 if not and it was appended. */
             inline size_t appendIfNotPresent(const TPtr & ref, const bool deleteIfPresent = true) { size_t pos = indexOf(ref); if (pos == getSize()) { Append(ref); return pos; } if (deleteIfPresent) delete ref; return pos; }
+            /** Grow this array by (at least) the given number of elements 
+                This set up the allocation size to, at least, currentSize + count.
+                The elements are owned by the array.
+                @param elements    A pointer to the elements to append (they are copied, can be 0)
+                @param count       How many elements to copy from the given array */
+            inline void Grow(const size_t count, TPtr * const elements) throw() { Add(elements, count, (Bool2Type<ExactSize>*)0); }
             /** Insert an element just before the given index 
                 @param index    Zero based index of the element once inserted
                 @param ref      The element to insert
@@ -572,6 +612,32 @@ namespace Container
                 // Copy the data
                 Policy::CopyPtr(array[currentSize], ref);
                 currentSize ++;
+            }
+            /** Add an object to the array when the exact size must be respected */
+            inline void Add(TPtr * const elements, const size_t count, Bool2Type<true> *) throw()
+            {
+                array = Policy::NonDestructiveAlloc(array, currentSize, currentSize+count, elements);
+                if (array == 0) { Reset(); return; }
+                currentSize += count;
+                allocatedSize = currentSize;
+            }
+            /** Add an object to the array when the array can be larger than the current size */
+            inline void Add(TPtr * const elements, const size_t count, Bool2Type<false> *) throw()
+            {
+                // Check if the array needs reallocation
+                if (currentSize + count >= allocatedSize)
+                {
+                    // Need to realloc the data
+                    allocatedSize = currentSize + count;
+                    array = Policy::NonDestructiveAlloc(array, currentSize, currentSize + count, elements);
+                    if (array == 0) { Reset(); return; }
+                    currentSize += count;
+                    allocatedSize = currentSize;
+                    return;
+                }
+                // Copy the data
+                if (elements) Policy::CopyArray(&array[currentSize], elements, (allocatedSize - currentSize), count);
+                currentSize += count;
             }
 
             /** Insert an object into the array when the exact size must be respected */
@@ -1311,8 +1377,19 @@ namespace Container
                 T * ret = (T*)realloc((void*)array, newSize * sizeof(T));
                 if (ret == 0) { free((void*)array); return 0; }
                 size_t i = currentSize;
-                for (; i < newSize; i++) 
+                for (; i < newSize; i++)
                     ret[i] = fillWith;
+
+                return ret;
+            }
+            /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it */
+            inline static T * NonDestructiveAlloc(const T* array, const size_t currentSize, const size_t newSize, T * const fillWith)
+            {
+                T * ret = (T*)realloc((void*)array, newSize * sizeof(T));
+                if (ret == 0) { free((void*)array); return 0; }
+                size_t i = currentSize;
+                if (fillWith) for (; i < newSize; i++) ret[i] = fillWith[i - currentSize];
+                else          for (; i < newSize; i++) ret[i] = DefaultElement();
 
                 return ret;
             }
@@ -1401,6 +1478,14 @@ namespace Container
             /** This method returns a default constructed element */
             inline static Tptr DefaultElement() { return 0; }
             inline static T** NonDestructiveAlloc(T** const array, const size_t currentSize, const size_t newSize, T* const & fillWith) { return DefaultMemoryPolicy<T*>::NonDestructiveAlloc(array, currentSize, newSize, fillWith); }
+            inline static T** NonDestructiveAlloc(T** const array, const size_t currentSize, const size_t newSize, T** const fillWith)
+            {
+                T** ret = (T**)realloc((void*)array, newSize * sizeof(T*));
+                if (ret == 0) { free((void*)array); return 0; }
+                if (fillWith)   memmove(&ret[currentSize], fillWith, (newSize - currentSize) * sizeof(T*));
+                else            memset(&ret[currentSize], 0, (newSize - currentSize) * sizeof(T*));
+                return ret;
+            }
             inline static T* * Insert(T** const array, const size_t currentSize, const size_t newSize, const size_t index, T* const & elementToInsert) { return DefaultMemoryPolicy<T*>::Insert(array, currentSize, newSize, index, elementToInsert); }
             /** Delete the array */
             inline static void DeleteArray(Tptr * const array, const size_t currentSize) 
@@ -1545,6 +1630,24 @@ namespace Container
                 DeleteArray(array, currentSize);
                 return ret;
             }
+            /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it */
+            inline static T * NonDestructiveAlloc(const T* array, const size_t currentSize, const size_t newSize, T * const fillWith)
+            {
+                // Realloc here will not work. So let's do it the old way.
+                T * ret = newSize ? (T*)malloc(newSize * sizeof(T)) : 0;
+                if (ret == 0) { DeleteArray(array, currentSize); return 0; }
+
+                size_t i = 0;
+                for (; i < currentSize; i++)
+                    new (&ret[i]) T(array[i]);
+
+                if (fillWith)   for (; i < newSize; i++) new (&ret[i]) T(fillWith[i - currentSize]);
+                else            for (; i < newSize; i++) new (&ret[i]) T();
+
+                // Ok, let's delete the previous array
+                DeleteArray(array, currentSize);
+                return ret;
+            }
             /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it, 
                 plus inserting the given object at the given place and DefaultElement for empty places if any */
             static T * Insert(const T* array, const size_t currentSize, const size_t newSize, const size_t index, const T & elementToInsert)
@@ -1603,6 +1706,7 @@ namespace Container
             inline static size_t ReverseSearch(const T* array, const size_t arraySize, const T & valueToLookFor)   { size_t i = arraySize; while (i && !(array[i-1] == valueToLookFor)) i--; return i ? i - 1 : arraySize; }
 
             inline static T * NonDestructiveAlloc(const T* array, const size_t currentSize, const size_t newSize, const T & fillWith) { return DefaultMemoryPolicy<T>::NonDestructiveAlloc(array, currentSize, newSize, fillWith); }
+            inline static T * NonDestructiveAlloc(const T* array, const size_t currentSize, const size_t newSize, T * const fillWith) { return DefaultMemoryPolicy<T>::NonDestructiveAlloc(array, currentSize, newSize, fillWith); }
             inline static T * Insert(const T* array, const size_t currentSize, const size_t newSize, const size_t index, const T & elementToInsert) { return DefaultMemoryPolicy<T>::Insert(array, currentSize, newSize, index, elementToInsert); }
             inline static void DeleteArray(const T * array, const size_t currentSize)                            { DefaultMemoryPolicy<T>::DeleteArray(array, currentSize); }
             /** Compare array
@@ -1671,6 +1775,7 @@ namespace Container
             /** This method returns a default constructed element */
             inline static Tptr DefaultElement() { return 0; }
             inline static T** NonDestructiveAlloc(T** const array, const size_t currentSize, const size_t newSize, T* const & fillWith) { return DefaultMemoryPolicy<T*>::NonDestructiveAlloc(array, currentSize, newSize, fillWith); }
+            inline static T** NonDestructiveAlloc(T** const array, const size_t currentSize, const size_t newSize, T** const fillWith) { return DefaultMemoryPolicy<T*>::NonDestructiveAlloc(array, currentSize, newSize, fillWith); }
             inline static T* * Insert(T** const array, const size_t currentSize, const size_t newSize, const size_t index, T* const & elementToInsert) { return DefaultMemoryPolicy<T*>::Insert(array, currentSize, newSize, index, elementToInsert); }
             /** Delete the array */
             inline static void DeleteArray(Tptr * const array, const size_t currentSize) 

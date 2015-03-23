@@ -384,10 +384,10 @@ namespace Strings
         /** Reset the vector to its initial state (doesn't perform destruction of data) */
         inline void Reset() { currentSize = 0; allocatedSize = 0; array = 0; }
         /** Enlarge the array */
-        inline void Enlarge() 
+        inline void Enlarge(size_t amount = 0)
         {
-            if (!allocatedSize) allocatedSize = 2;
-            size_t newAllocatedSize = allocatedSize + (allocatedSize >> 1); // Growth factor of 1.5
+            if (!amount) amount = allocatedSize ? allocatedSize + (allocatedSize >> 1) : 2;
+            size_t newAllocatedSize = allocatedSize + amount;
             TPtr * newArray = (TPtr*)realloc(array, newAllocatedSize * sizeof(array[0]));
             if (!newArray) { Clear(); return; }
             memset(&newArray[currentSize], 0, (newAllocatedSize - currentSize) * sizeof(newArray[0]));
@@ -411,6 +411,18 @@ namespace Strings
             @param ref The string to insert in the array 
             @return getSize() - 1 if appended correctly, else the position of the element if already present in the array */
         inline size_t appendIfNotPresent(const T & ref) { size_t pos = indexOf(ref); if (pos == getSize()) Append(ref); return pos; }
+        /** Grow this array by (at least) the given number of elements.
+            This set up the allocation size to, at least, currentSize + count.
+            The elements are owned.
+            @param elements    A pointer to the elements to append (they are copied, can be 0)
+            @param count       How many elements to copy from the given array */
+        inline void Grow(const size_t count, T * const elements) throw()
+        {
+            Enlarge(count);
+            if (elements) memmove(&array[currentSize], elements, count * sizeof(T*));
+            else for (size_t i = currentSize; i < currentSize + count; i++) new(&array[i]) T();
+            currentSize += count;
+        }
         /** Insert an element just before the given index 
             @param index    Zero based index of the element once inserted
             @param ref      The element */

@@ -13,7 +13,9 @@ namespace Database
     fail to understand your requests.
     
     This system uses Argument Dependent Lookup to inject the required types into your code, so it's a very bad idea to 
-    inject the whole namespace into yours. */
+    inject the whole namespace into yours.
+    
+    @sa SelectT */
 namespace Query
 {
     /** The unsafe row iterator.

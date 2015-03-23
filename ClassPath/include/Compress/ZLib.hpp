@@ -64,6 +64,7 @@ namespace Compression
             @param outStream        The output stream to write to.
             @param inStream         The input stream to read from.
             @param amountToProcess  The number of bytes of the input stream to compress. Set to 0 to process the whole stream.
+            @param lastCall         If true, the stream is flushed. If you are processing streams by part, you should set it to false except for the last part.
             @return true on success, false if not supported or an error occurred on the input stream */
         virtual bool compressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, const uint32 amountToProcess = 0, const bool lastCall = true); 
         /** Continuous decompression process.

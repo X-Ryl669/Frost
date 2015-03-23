@@ -8,6 +8,14 @@ namespace Utils
 {
     /** Usual scope pointer class with operator overloading.
         Unlike the ScopeGuard, this changes the declaration line of the pointer, but can be passed around.
+        
+        We found from our experience that reference counting was not an efficient way to deal with pointers for automatic resource management.
+        RefCounting can create loops, requires an additional counter storage (since the ClassPath compiles on 32bits systems, we don't expect 
+        high bits in the pointer to be available for storing a counter).
+        Most of the time, the reference counting never goes above 1, so this is a sign that a more efficient solution could be used.
+        We present ScopePtr and OwnPtr here. A ScopePtr stored a pointer and delete it when it's deleted (usually when it goes out of scope).
+        OwnPtr is like a ScopePtr except that it tracks if it owns the pointer to the object. It can be sold to become a WeakPtr.
+        @sa OwnPtr
      
         There is nothing special with this, usage is quite 
         transparent (use like a pointer) thanks to operator overloading.
@@ -58,7 +66,9 @@ namespace Utils
 
         // Interface
     public:
-        /** Forget the object owned (don't delete it) */
+        /** Forget the object owned (don't delete it)             
+            The internal pointer is reset to 0.
+            @return The pointer to the object */
         ForcedInline(T * Forget()) { return Forget(0); }
 
         // Construction
@@ -83,9 +93,9 @@ namespace Utils
         Typically, OwnPtr is a reference counted smart pointer for the poor, except that it
         doesn't come with the pain/overload of reference counting. In most use case, references in such smart pointer
         never overcome 2, so it's often easier to just design the code with OwnPtr and transfer ownership explicitely
-        when the refCount would reach 2 with a shared pointer (like a single place in the code).
+        when the refCount would reach 2 with a shared pointer (likely at a single place in the code).
 
-        The interface using a reference (operator = and constructor) won't own the object by default, while the other will.
+        The interface using a reference &, like operator = and constructor won't own the object by default, while the other will.
 
         @warning Copy constructor use move semantics, so this works as intended:
                  OwnPtr<A> a = new A(); */
@@ -152,12 +162,15 @@ namespace Utils
         ForcedInline(T* operator->() const throw())                            { return pointer; }
         ForcedInline(T* const* operator&() const throw())                      { return (T* const*) (&pointer); }
         ForcedInline(T** operator&() throw())                                  { return (T**) (&pointer); }
-        /** Sell the object */
+        /** Sell the object. Once this is done, we don't own it anymore (and you can not sell something you don't own).
+            Unlike Forget, this actually keep the pointer valid in this object. */
         ForcedInline(void sold() throw())                                      { own = false; }
 
         // Interface
     public:
-        /** Forget the object owned (don't delete it) */
+        /** Forget the object owned (don't delete it).
+            The internal pointer is reset to 0.
+            @return The pointer to the object */
         ForcedInline(T * Forget()) { return Forget(0); }
 
         // Construction

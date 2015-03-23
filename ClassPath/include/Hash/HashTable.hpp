@@ -107,6 +107,8 @@ namespace Container
         As for other container, you have a getSize() and isEmpty() method.
         You can iterate over the hash table's entries by calling iterateAllEntries, or using the getFirstIterator.
         
+        For any method, if a key is required, it'll always be the first parameter.
+        
         @param T                The type to store in this table. The actual storage is a pointer to a T object that's owned
         @param KeyType          The key to use for locating values. The table detect for most Plain Old Data (POD) 
                                 keys and perform an optimization in this case. If you're not using POD key, the keys are saved 

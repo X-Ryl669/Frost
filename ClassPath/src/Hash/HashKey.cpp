@@ -8,7 +8,7 @@ namespace Container
     template <>
         uint32 HashKey<Strings::FastString>::hashKey(const Strings::FastString & initialKey)
     {
-        return Hash::SuperFastHash(initialKey, initialKey.getLength());
+        return Hash::superFastHash(initialKey, initialKey.getLength());
     }
 }
 

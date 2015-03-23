@@ -54,7 +54,20 @@ namespace Frost
     }
     String TRANS(const String & value) { return __trans__(value); }
     
-    
+    void derivePassword(KeyFactory::KeyT & pwKey, const String & password)
+    {
+        // We need to derive the low-entropy password to build a Hash out of it, and use that to decrypt the private key
+        // we have generated earlier.
+        KeyFactory::PWKeyDerivFuncT hash;
+        // Cat the password multiple time until it fit the required input size
+        MemoryBlock inputPW(KeyFactory::BigHashT::DigestSize);
+        inputPW.stripTo(0);
+        while (inputPW.getSize() < KeyFactory::BigHashT::DigestSize)
+            inputPW.Append(password, password.getLength() + 1); // Add 0 to differentiate "a" from "aa" or "aaa" etc...
+        hash.Hash(inputPW.getConstBuffer(), inputPW.getSize());
+        hash.Finalize(pwKey);
+    }
+
     String KeyFactory::loadPrivateKey(const String & fileVault, const MemoryBlock & cipherMasterKey, const String & password, const String & ID)
     {
         File::Info vault(fileVault, true);
@@ -91,17 +104,8 @@ namespace Frost
         debugMem(cipherKey->getConstBuffer(), cipherKey->getSize(), "Encrypted content key");
         
         // Then try to decode it with the given password
-        // We need to derive the low-entropy password to build a Hash out of it, and use that to decrypt the private key
-        // we have generated earlier.
-        PWKeyDerivFuncT hash;
         KeyT pwKey;
-        // Cat the password multiple time until it fit the required input size
-        MemoryBlock inputPW(BigHashT::DigestSize);
-        inputPW.stripTo(0);
-        while (inputPW.getSize() < BigHashT::DigestSize)
-            inputPW.Append(password, password.getLength() + 1); // Add 0 to differentiate "a" from "aa" or "aaa" etc...
-        hash.Hash(inputPW.getConstBuffer(), inputPW.getSize());
-        hash.Finalize(pwKey);
+        derivePassword(pwKey, password);
         debugMem(pwKey, ArrSz(pwKey), "Password key");
       
         
@@ -181,20 +185,10 @@ namespace Frost
         if (!asym.Encrypt(masterKey, ArrSz(masterKey), cipherMasterKey.getBuffer(), cipherMasterKey.getSize())) return TRANS("Failed to encrypt the master key");
         debugMem(cipherMasterKey.getConstBuffer(), cipherMasterKey.getSize(), "Ciphered master key");
         
-        
-        // We need to derive the low-entropy password to build a Hash out of it, and use that to encrypt the private key
-        // we have generated earlier.
-        PWKeyDerivFuncT hash;
+        // Derive the password key
         KeyT pwKey;
-        // Cat the password multiple time until it fit the required input size
-        MemoryBlock inputPW(BigHashT::DigestSize);
-        inputPW.stripTo(0);
-        while (inputPW.getSize() < BigHashT::DigestSize)
-            inputPW.Append(password, password.getLength() + 1); // Add 0 to differentiate "a" from "aa" or "aaa" etc...
-        hash.Hash(inputPW.getConstBuffer(), inputPW.getSize());
-        hash.Finalize(pwKey);
+        derivePassword(pwKey, password);
         debugMem(pwKey, ArrSz(pwKey), "Password key");
-        
         
         // Then create the block to encrypt
         MemoryBlock encKey( (uint32)((exportedKey.getSize() + (ArrSz(pwKey) - 1) ) / ArrSz(pwKey)) * ArrSz(pwKey) );

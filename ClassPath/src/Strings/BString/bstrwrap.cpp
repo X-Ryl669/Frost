@@ -1759,14 +1759,13 @@ namespace Bstrlib
 
             int matchOperand(const uint8 * re, const uint8 * s)
             {
-                int result = 0;
                 switch (*re)
                 {
                 // If we reach those, the expression is malformed
                 case '|': return SyntaxError;
                 case '$': return NotFound;
-                // All char would do, let's accept it
-                case '.': result++; break;
+                // Any char would do, let's accept it
+                case '.': break;
                 
                 case '\\':
                     // Metacharacters
@@ -1774,29 +1773,24 @@ namespace Bstrlib
                     {
                     case 'S':
                         TestReturn((charMap[*s] & 4), NotFound);
-                        result++;
                         break;
 
                     case 's':
                         TestReturn(!(charMap[*s] & 4), NotFound);
-                        result++;
                         break;
 
                     case 'd':
                         TestReturn(!(charMap[*s] & 8), NotFound);
-                        result++;
                         break;
 
                     case 'x':
                         // Match byte, \xHH where HH is hexadecimal byte representaion
                         TestReturn(hexToInteger(re + 2) != *s, NotFound);
-                        result++;
                         break;
 
                     default:
                         // Valid metacharacter check is done in internalProcess()
                         TestReturn(re[1] != s[0], NotFound);
-                        result++;
                         break;
                     }
                 break;
@@ -1810,10 +1804,9 @@ namespace Bstrlib
                     {
                         TestReturn(*re != *s, NotFound);
                     }
-                    result++;
                     break;
                 }
-                return result;
+                return 1;
             }
 
             // This is used to match a "[]" based set
@@ -1913,13 +1906,13 @@ namespace Bstrlib
                         }
                         continue;
                     }
+                    n = 0;
                     switch(re[reIndex])
                     {
                         // Is a set ?
                         case '[':
                             n = matchSet(re + reIndex + 1, regExpLen - (reIndex + 2), s + strIndex);
                             TestReturn(n <= 0, NotFound);
-                            strIndex += n;
                             break;
                         // Is a bracket ?
                         case '(':
@@ -1949,11 +1942,12 @@ namespace Bstrlib
                                 caps[bracketIndex - 1].ptr = s + strIndex;
                                 caps[bracketIndex - 1].len = n;
                             }
-                            strIndex += n;
                             break;
+                        // Begin of section
                         case '^':
                             TestReturn(strIndex != 0, NotFound);
                             break;
+                        // End of section
                         case '$':
                             TestReturn(strIndex != s_len, NotFound);
                             break;
@@ -1961,15 +1955,15 @@ namespace Bstrlib
                             TestReturn(strIndex >= s_len, NotFound);
                             n = matchOperand((uint8 * ) (re + reIndex), (uint8 * ) (s + strIndex));
                             TestReturn(n <= 0, n);
-                            strIndex += n;
                             break;
                     }
+                    strIndex += n;
                 }
                 
                 return strIndex;
             }
                                        
-            /* Process branch points */
+            // Process branch points
             int processBranch(const char *s, int s_len, int branchIndex)
             {
                const BracketPair * b = &brackets[branchIndex];
@@ -1981,7 +1975,7 @@ namespace Bstrlib
                    p = i == 0 ? b->ptr : branches[b->branchIndex + i - 1].branchPos + 1;
                    len = b->branchesCount == 0 ? b->len : (i == b->branchesCount ? b->ptr + b->len - p : branches[b->branchIndex + i].branchPos - p);
                    result = internalProcess(p, len, s, s_len, branchIndex);
-               } while (result <= 0 && i++ < b->branchesCount);  /* At least 1 iteration */
+               } while (result <= 0 && i++ < b->branchesCount);  // At least 1 iteration
                
                return result;
             }
@@ -2011,7 +2005,7 @@ namespace Bstrlib
                int i, j;
                Branch tmp;
                
-               // Sort branches
+               // Sort branches first based on bracketIndex
                for (i = 0; i < branchesCount; i++)
                {
                    for (j = i + 1; j < branchesCount; j++)
@@ -2058,7 +2052,7 @@ namespace Bstrlib
                         TestReturn(i >= regExpLen - 1, BadMetaCharacter);
                         if (re[i + 1] == 'x')
                         {
-                            /* Hex digit specification must follow */
+                            // Hex digit specification must follow hexadecimal numbers
                             TestReturn(re[i + 1] == 'x' && i >= regExpLen - 3, BadMetaCharacter);
                             TestReturn(re[i + 1] == 'x' && !((charMap[(uint8)re[i + 2]] & 0xF8) && (charMap[(uint8)re[i + 3]] & 0xF8)), BadMetaCharacter);
                         } else

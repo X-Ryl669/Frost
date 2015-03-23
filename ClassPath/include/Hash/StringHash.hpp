@@ -65,8 +65,8 @@ namespace Hash
 
         return hash;
     }
-
-    inline uint32 SuperFastHash (const char * data, int len) { return SuperFastHash(data, len, len); }
+    /** Hash a byte array (usually a string as UTF8) to a 32 bits value */
+    inline uint32 superFastHash (const char * data, int len) { return SuperFastHash(data, len, len); }
 }
 
 #endif
