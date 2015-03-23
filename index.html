@@ -347,13 +347,23 @@ On successful building, everything is explained by issueing "./frost --help".</p
 
 <p>Frost backups the given directory to another directory that'll contain the encrypted and compressed data (called multichunk).</p>
 <p>If you need to save your data to a remote server, mount the server with FUSE on the destination directory, and the backup will transparently become off-site</p>
-<p>Frost requires/makes two specific files:</p>
+<p>Frost requires/makes these specific files:</p>
 <ol>
 <li><em>The key vault file.</em> This file is protected by a password, yet, it's more secure if not sent on the server, but kept on your local filesystem / USB key.
-This file is used to store the master key that's protecting the complete backup set. Loosing this file means loosing your backup. </li>
+This file is used to store the master key that's protecting the complete backup set. Loosing this file means loosing your backup. <br/>
+<em>It's usually called "keyVault" on the filesystem, and you can set its complete location in the path with the --keyvault option.</em>	
+</li>
 <li><em>The index file.</em> This file is a SQLite3 database, used to match the "chunks" to the initial directory hierarchy. It contains all the backup revisions, and 
-the hash for the data. Storing this file on the remote server gives any attacker the list of the files in the backup, but not the mean to access their content.</li>
+the hash for the data. Storing this file on the remote server gives any attacker the list of the files in the backup, but not the mean to access their content. <br/>
+<em>It must be called "__index.db" on the filesystem. You can set its folder location in the path with the --index option.</em>	
+</li>
+<li><em>The backup set.</em> These files are encrypted and compressed <em>multichunks</em>. They store individual "chunks" from each file being backed up, resulting 
+from the deduplication process. From a usual point of view, it's like an archive, that's split in pseudo fixed size segments. 
+Loosing them means loosing (part of) your backup set.<br/>
+<em>They are named "Base85EncodingOfMultchunkHash.#" on the filesystem. You can set their folder location with the --remote option.</em>
+</li>
 </ol>
+
 
 <h2>How to use it</h2>
 <h3>Minimal use case</h3>
@@ -367,6 +377,8 @@ the hash for the data. Storing this file on the remote server gives any attacker
 <pre>$ Frost --filelist --index /where/backup/are/stored</pre>
 <p>You can restore the last revision of a backup like this:</p>
 <pre>$ Frost --restore /path/to/restore/to --remote /where/backup/are/stored</pre>
+<p>You can view a single file (cat) from a backup like this:</p>
+<pre>$ Frost --cat /path/to/file/to/restore/in/backup --remote /where/backup/are/stored 1>outFile</pre>
 <p>To purge up to a given revision:</p>
 <pre>$ Frost --purge #revision# --remote /where/backup/are/stored # drop from first revision up to (including) #revision#</pre>
 <h3>Advanced guide</h3>
