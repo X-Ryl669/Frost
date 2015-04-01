@@ -8,13 +8,13 @@
 
 #if (DEBUG==1)
     namespace Platform { void breakUnderDebugger(); }
-    
+
     #define Assert(X)     do { if (!(X)) { \
                                  Logger::log(Logger::Error, "%s(%d) : Failed assertion %s", __FILE__, __LINE__, #X); \
                                  Platform::breakUnderDebugger(); \
                                }} while(0)
 
-#else 
+#else
     #define Assert(X)     do { (void)sizeof((X)); } while(0)
 #endif
 

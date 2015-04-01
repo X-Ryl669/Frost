@@ -2,16 +2,16 @@
 #include <memory.h>
 // We need SHA256 declaration
 #include "../../include/Hashing/SHA256.hpp"
- 
 
-template <class T> 
+
+template <class T>
 static inline T rotrFixed(T x, unsigned int y)
 {
   // assert(y < sizeof(T)*8);
   return (x>>y) | (x<<(sizeof(T)*8-y));
 }
 
-const uint32 Hashing::SHA256::K[64] = 
+const uint32 Hashing::SHA256::K[64] =
 {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
     0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -31,7 +31,7 @@ const uint32 Hashing::SHA256::K[64] =
     0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 };
 
-// Start the hashing 
+// Start the hashing
 void Hashing::SHA256::Start()
 {
     hash[0] = 0x6a09e667;
@@ -84,7 +84,7 @@ void Hashing::SHA256::Start()
             ((unsigned long) (x) << (unsigned long) (32 - ((y) & 31)))) & 0xFFFFFFFFUL)
 #endif
 
-// Perform a SHA round 
+// Perform a SHA round
 void Hashing::SHA256::Transform(const uint8 * block)
 {
     uint32 S[8], W[64], t0, t1;
@@ -93,55 +93,55 @@ void Hashing::SHA256::Transform(const uint8 * block)
     // Copy state in temp
     memcpy(S, hash, sizeof(hash));
 
-    // copy the state into 512-bits into W[0..15] 
-    for (i = 0; i < 16; i++) 
+    // copy the state into 512-bits into W[0..15]
+    for (i = 0; i < 16; i++)
         LOAD32H(W[i], block + (4*i));
 
-    // fill W[16..63] 
-    for (i = 16; i < 64; i++) 
+    // fill W[16..63]
+    for (i = 16; i < 64; i++)
         W[i] = Gamma1(W[i - 2]) + W[i - 7] + Gamma0(W[i - 15]) + W[i - 16];
-    
 
-    // Compress 
+
+    // Compress
     #define RND(a,b,c,d,e,f,g,h,i)                        \
         t0 = h + Sigma1(e) + Ch(e, f, g) + K[i] + W[i];   \
         t1 = Sigma0(a) + Maj(a, b, c);                    \
         d += t0;                                          \
         h  = t0 + t1;
 
-    for (i = 0; i < 64; ++i) 
+    for (i = 0; i < 64; ++i)
     {
         RND(S[0],S[1],S[2],S[3],S[4],S[5],S[6],S[7],i);
         t = S[7]; S[7] = S[6]; S[6] = S[5]; S[5] = S[4];
         S[4] = S[3]; S[3] = S[2]; S[2] = S[1]; S[1] = S[0]; S[0] = t;
     }
 
-    // feedback 
-    for (i = 0; i < 8; i++) 
+    // feedback
+    for (i = 0; i < 8; i++)
         hash[i] += S[i];
 }
 
-// Hash the given data 
+// Hash the given data
 void Hashing::SHA256::Hash(const uint8 * buffer, uint32 size)
 {
     if (!buffer || !size) return;
     uint32 n;
-    while (size > 0) 
+    while (size > 0)
     {
-        if (count == 0 && size >= SHA256BlockSize) 
+        if (count == 0 && size >= SHA256BlockSize)
         {
             Transform((unsigned char *)buffer);
             length      += SHA256BlockSize * 8;
             buffer        += SHA256BlockSize;
             size          -= SHA256BlockSize;
-        } else 
+        } else
         {
             n = min(size, (SHA256BlockSize - count));
             memcpy(workBuffer + count, buffer, n);
             count += n;
             buffer   += n;
             size     -= n;
-            if (count == SHA256BlockSize) 
+            if (count == SHA256BlockSize)
             {
                 Transform(workBuffer);
                 length += SHA256BlockSize * 8;
@@ -151,24 +151,24 @@ void Hashing::SHA256::Hash(const uint8 * buffer, uint32 size)
     }
 
 /*
-    // Current index in work buffer 
+    // Current index in work buffer
     uint32 ipos = (uint32)(count & (SHA256BlockSize - 1));
     // And the remaining space before transforming
     uint32 ispace = SHA256BlockSize - ipos;
-    
+
     uint8 * pData = (uint8 *)buffer;
     if ((count += size) < size) ++length;
 
-    while(size >= ispace)     
+    while(size >= ispace)
     {
         memcpy(((uint8*)workBuffer) + ipos, pData, ispace);
-        ipos = 0; 
-        size -= ispace; 
-        pData += ispace; 
-        ispace = SHA256BlockSize; 
+        ipos = 0;
+        size -= ispace;
+        pData += ispace;
+        ispace = SHA256BlockSize;
 
         Transform();
-    }   
+    }
 
     memcpy(((uint8*)workBuffer) + ipos, pData, size);
 */
@@ -176,43 +176,43 @@ void Hashing::SHA256::Hash(const uint8 * buffer, uint32 size)
 
 }
 
-// Finalize the hashing 
+// Finalize the hashing
 void Hashing::SHA256::Finalize(uint8 * outBuffer)
 {
-    if (!outBuffer) return; 
+    if (!outBuffer) return;
 
     int i;
 
-    // increase the length of the message 
+    // increase the length of the message
     length += count * 8;
 
-    // append the '1' bit 
+    // append the '1' bit
     workBuffer[count++] = (uint8)0x80;
 
     /* if the length is currently above 56 bytes we append zeros
     * then compress.  Then we can fall back to padding zeros and length
     * encoding like normal.
     */
-    if (count > 56) 
+    if (count > 56)
     {
         memset(&workBuffer[count], 0, 64 - count);
         Transform(workBuffer);
         count = 0;
     }
 
-    // pad upto 56 bytes of zeroes 
+    // pad upto 56 bytes of zeroes
     if (count < 56)
     {
         memset(&workBuffer[count], 0, 56 - count);
         count = 56;
     }
 
-    // Store length 
+    // Store length
     STORE64H(length, workBuffer+56);
     Transform(workBuffer);
 
     /* copy output */
-    for (i = 0; i < 8; i++) 
+    for (i = 0; i < 8; i++)
         STORE32H(hash[i], outBuffer + (4*i));
 
     Start();

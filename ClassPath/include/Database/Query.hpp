@@ -9,35 +9,35 @@
 namespace Database
 {
 /** When the Constraint code is not flexible enough for your request, you might want to deal with low level SQL code.
-    This implies that your requests are no more compile-time checked for correctness, and that the database driver might 
+    This implies that your requests are no more compile-time checked for correctness, and that the database driver might
     fail to understand your requests.
-    
-    This system uses Argument Dependent Lookup to inject the required types into your code, so it's a very bad idea to 
+
+    This system uses Argument Dependent Lookup to inject the required types into your code, so it's a very bad idea to
     inject the whole namespace into yours.
-    
+
     @sa SelectT */
 namespace Query
 {
     /** The unsafe row iterator.
-        This is used to access the results of a Select query in an unsafe way. 
+        This is used to access the results of a Select query in an unsafe way.
         Beware that this class is using move semantics for fast access to the query results and low memory usage.
-        This means that you can not re-use the object if you copy it (with copy constructor or operator =), the initial 
+        This means that you can not re-use the object if you copy it (with copy constructor or operator =), the initial
         object is changed and the result pool is moved to the destination.
-        
+
         You can access the row from your request using the operator[] like this:
         @code
             Database::UnsafeRowIterator iter = Database::Query::Select("ID", "Age").From("Car");
-            while (iter) 
-            { 
+            while (iter)
+            {
                 printf("%s | %s\n", (const char*)iter["ID"], (const char*)iter["Age”]);
-                ++iter; 
+                ++iter;
             }
         @endcode
         */
     class UnsafeRowIterator
     {
         const SQLFormat::Results * res;
-        unsigned int rowIndex; 
+        unsigned int rowIndex;
     public:
         /** Main access operator */
         String operator [] (const String & fieldName) const { Var result; if (SQLFormat::getResults(res, result, rowIndex, fieldName)) return result.like((String*)0); const_cast<unsigned int &>(rowIndex) = (unsigned int)-1; return ""; }
@@ -61,7 +61,7 @@ namespace Query
             }
             return *this;
         }
-    
+
         /** Construction */
         UnsafeRowIterator(const SQLFormat::Results * res) : res(res), rowIndex(0) { Var result; if (!SQLFormat::getResults(res, result, 0, "")) rowIndex = (unsigned int)-1; }
         /** Move semantics */
@@ -86,15 +86,15 @@ namespace Query
 #define     TestPOD(X) value.isExactly((X*)0) || value.isExactly((const X*)0)
 #define     TestIntPOD(X) TestPOD(signed X) || TestPOD(unsigned X)
 
-            if (TestIntPOD(int) || TestIntPOD(long) || TestIntPOD(long long) || TestIntPOD(short) || TestIntPOD(char) 
+            if (TestIntPOD(int) || TestIntPOD(long) || TestIntPOD(long long) || TestIntPOD(short) || TestIntPOD(char)
                 || TestPOD(bool) || TestPOD(double) || TestPOD(float))
                 */
             if (value.isPOD())
                 return SQLFormat::escapeString(str);
-            else 
+            else
                 return SQLFormat::escapeString(str, '\'');
         }
-        
+
         static void addCondOp(QueryArrayT & query, const String & field, const String & alias)
         {
             if (query.getSize() && query[query.getSize() - 1].op == "")
@@ -102,7 +102,7 @@ namespace Query
             else
                 query.Append(OpArg("", SQLFormat::escapeString(field) + " AS " + SQLFormat::escapeString(alias)));
         }
-        
+
         static void addOp(QueryArrayT & query, const String & op, const String & val)
         {
             query.Append(OpArg(op, SQLFormat::escapeString(val)));
@@ -125,7 +125,7 @@ namespace Query
         {
             query.Append(OpArg(op, SQLFormat::escapeString(val) + delim + SQLFormat::escapeString(val2)));
         }
-                
+
         static void addOp(QueryArrayT & query, const String & op, const Var & value)
         {
             query.Append(OpArg(op, escapeField(value)));
@@ -137,7 +137,7 @@ namespace Query
             query.Append(OpArg(op, escapeField(value) + (val2Str ? (delim + escapeField(val2)) : String(""))));
         }
 
-        
+
         static void getFinalText(String & result, const QueryArrayT & query, const String & actionName, const size_t fromPos, const size_t wherePos, const String & tableName)
         {
             result = actionName;
@@ -166,10 +166,10 @@ namespace Query
         static bool getFinalTextWithCount(String & result, const QueryArrayT & query, const String & actionName, const size_t fromPos, const size_t wherePos, const String & tableName)
         {
             if (actionName != "SELECT ") return false;
-            
+
             String subQuery;
             getFinalText(subQuery, query, actionName, fromPos, wherePos, tableName);
-            
+
             result = "SELECT ";
             bool fromInc = false;
             for (size_t i = 0; i < query.getSize(); i++)
@@ -180,7 +180,7 @@ namespace Query
                     result += ", (SELECT COUNT(*) FROM (" + subQuery + ")) AS xZ_X_Count_T823 FROM " + tableName + " ";
                     fromInc = true;
                 }
-                    
+
                 result += op.op + op.arg;
             }
             if ((fromPos == (size_t)-1 || fromPos == query.getSize()) && tableName && !fromInc)
@@ -188,7 +188,7 @@ namespace Query
             return true;
         }
     }
-    
+
     /** This is used to avoid escaping the fields in comparison operators */
     struct FieldString
     {
@@ -198,14 +198,14 @@ namespace Query
     };
 /** This macro is used to avoid injecting the FieldString object when non escaped strings are required */
 #define _U(Field) ::Database::Query::FieldString(Field)
- 
+
     /** This is used in the templated scheme below to avoid duplicating the code */
     template <class T>
     class SelectBase
     {
         // Type definition and enumeration
     protected:
-        
+
         // Members
     protected:
         /** The current query */
@@ -254,7 +254,7 @@ namespace Query
         /** The greater operator.
             Beware that this only works if you start with a Select statement */
         ForcedInline(T & operator > (const Var & value)) { Private::addOp(query, " > ", value); return (T&)*this; }
-        
+
         /** The equal operator.
             Beware that this only works if you start with a Select statement */
         ForcedInline(T & operator == (const FieldString & value)) { Private::addOp(query, " = ", value.toString()); return (T&)*this; }
@@ -274,7 +274,7 @@ namespace Query
             Beware that this only works if you start with a Select statement */
         ForcedInline(T & operator > (const FieldString & value)) { Private::addOp(query, " > ", value.toString()); return (T&)*this; }
 
-        
+
         /** The bit and operator.
             Beware that this only works if you start with a Select statement */
         ForcedInline(T & operator & (const Var & value)) { Private::addOp(query, " & ", value);  return (T&)*this; }
@@ -293,7 +293,7 @@ namespace Query
         /** The not operator.
             Beware that this only works if you start with a Select statement */
         ForcedInline(T & operator ! ()) { Private::addOp(query, " NOT ", String("")); return (T&)*this; }
-        
+
         // Name based operators
         /** The column operator.
             Beware that this only works if you start with a Select statement.
@@ -369,35 +369,35 @@ namespace Query
 
         /** INNER JOIN clause.
             This is equivalent to selecting from multiple table, and doing a "WHERE tableA.field = tableB.otherField".
-            The syntax however allow to separate real filtering conditions in the WHERE clause from the intersect-ing condition. 
+            The syntax however allow to separate real filtering conditions in the WHERE clause from the intersect-ing condition.
             @sa On */
         ForcedInline(T & InnerJoin(const String & name)) { Private::addOp(query, " INNER JOIN ", name); return (T&)*this; }
-        /** FULL OUTER JOIN clause. 
-            This is equivalent to selecting from multiple table, and doing a "WHERE tableA.field = tableB.otherField" except 
-            that if any field in tableA does not have a matching value in tableB, it's still returned (the missing field in table B 
+        /** FULL OUTER JOIN clause.
+            This is equivalent to selecting from multiple table, and doing a "WHERE tableA.field = tableB.otherField" except
+            that if any field in tableA does not have a matching value in tableB, it's still returned (the missing field in table B
             is replaced by NULL), and the same applies to tableA (null if field is missing).
             @sa On */
         ForcedInline(T & FullOuterJoin(const String & name)) { Private::addOp(query, " FULL OUTER JOIN ", name); return (T&)*this; }
         /** LEFT OUTER JOIN clause.
-            This is equivalent to selecting from multiple table, and doing a "WHERE tableA.field = tableB.otherField" except 
-            that if any field in tableA does not have a matching value in tableB, it's still returned (the missing field in table B 
+            This is equivalent to selecting from multiple table, and doing a "WHERE tableA.field = tableB.otherField" except
+            that if any field in tableA does not have a matching value in tableB, it's still returned (the missing field in table B
             is replaced by NULL).
             @sa On */
         ForcedInline(T & LeftOuterJoin(const String & name)) { Private::addOp(query, " LEFT OUTER JOIN ", name); return (T&)*this; }
-        
-        /** ON clause. 
+
+        /** ON clause.
             This is to be used on joining tables.
-            If you need to use the other operators, like = or != with field names (like in ON tableA.b_id = tableB.id) 
+            If you need to use the other operators, like = or != with field names (like in ON tableA.b_id = tableB.id)
             then you will have to use the _U() macro to avoid escaping the operator value.
             @sa InnerJoin, FullOuterJoin, LeftOuterJoin */
         ForcedInline(T & On(const String & name)) { Private::addOp(query, " ON ", name); return (T&)*this; }
-        
-        
+
+
         /** Open parenthesis clause. */
         ForcedInline(T & sP()) { Private::addOp(query, "(", String("")); return (T&)*this; }
         /** Close parenthesis clause. */
         ForcedInline(T & eP()) { Private::addOp(query, ")", String("")); return (T&)*this; }
-        
+
 
 
         /** IN clause. */
@@ -407,7 +407,7 @@ namespace Query
         /** IN clause for another select statement. */
         template<class U>
         T & In(const SelectBase<U> & statement) { query.Append(Private::OpArg(" IN(", statement.getFinalText() + ") ")); return (T&)*this; }
-        
+
         /** NOT IN clause. */
         ForcedInline(T & NotIn(const Var & value)) { Private::addOp(query, " NOT IN(", value, "", ") "); return (T&)*this; }
         /** NOT IN clause for a fixed range. */
@@ -415,16 +415,16 @@ namespace Query
         /** NOT IN clause for another select statement. */
         template<class U>
         T & NotIn(const SelectBase<U> & statement) { query.Append(Private::OpArg(" NOT IN(", statement.getFinalText() + ") ")); return (T&)*this; }
-   
+
         /** UNION clause for another select statement. */
         template<class U>
         T & Union(const SelectBase<U> & statement) { query.Append(Private::OpArg(" UNION ", statement.getFinalText() + " ")); return (T&)*this; }
         /** UNION ALL clause for another select statement. */
         template<class U>
         T & UnionAll(const SelectBase<U> & statement) { query.Append(Private::OpArg(" UNION ALL ", statement.getFinalText() + " ")); return (T&)*this; }
-             
-        
-    
+
+
+
 #ifndef DOXYGEN
         /** The equal operator.
             Beware that this only works if you start with a Select statement */
@@ -485,13 +485,13 @@ namespace Query
         template <typename U, int pos>
         T & NotIn(const WriteMonitored<U, pos> & value) { Private::addOp(query, " NOT IN(", value.asVariant(), "", ") "); return (T&)*this; }
 #endif
-        
+
         // Construction and destruction
     public:
         /** Basic construction with a single field */
         SelectBase(const String & fieldName = "") : wherePos((size_t)-1), fromPos((size_t)-1), unsafeIteration(false)
         {
-            // Remember the field name 
+            // Remember the field name
             if (fieldName) query.Append(Private::OpArg("", SQLFormat::escapeString(fieldName)));
         }
         /** Two fields */
@@ -510,24 +510,24 @@ namespace Query
         }
         // For more fields, use the Field() method
     };
-    
+
 
     /** The basic Select statement.
-        The interface is using fluent mode (that is, each method returns an reference on the current instance, so 
+        The interface is using fluent mode (that is, each method returns an reference on the current instance, so
         you can chain the code in an elegant manner).
         You typically write code like this:
         @code
             Database::Pool<Person> pool = (Database::Query::Select("ID", "Name").From("Person").Where("Age") > 34).And("City") == "Denver";
             // Or, if you want the very low level interface (beware, no escaping done):
             Database::UnsafeRowIterator iter = Database::Query::SelectRaw("SELECT ID, Name FROM Person WHERE Age > 34 AND City == Denver");
-            
+
             // If you have variables however, then the former is safer, because it'll prepare a statement and escape everything:
             int minAge = 34;
             String city = "Denver'; DROP TABLE Person; --"; // Notice the SQL injection here
             Database::Pool<Person> pool = (Database::Query::Select("ID", "Name").From("Person").Where("Age") > minAge).And("City") == city;
             // Results in: "SELECT 'ID' FROM 'Person' WHERE 'Age' > 34 AND 'City' == 'Denver''; DROP TABLE Person; --';
             // Which is safe here, from the Database point of view
-            
+
             // Beware of mismatch in the table selection and the object type
             Database::Pool<Person> pool = Database::Query::Select("ID").From("Car"); // Run-time error here, since the "Car" table will not fit into "Person" table.
             // You can feel more safe using the templated version
@@ -536,9 +536,9 @@ namespace Query
             Database::UnsafeRowIterator iter = Database::Query::Select("ID", "Age").From("Car");
             while (iter) { printf("%s | %s;", iter["ID"], iter["Age”]); ++iter; }
         @endcode
-        
+
         Few caveats through:
-        @code 
+        @code
             // If you need non-anonymous variable, you can NOT do this:
             Database::Query::Select oldGuy("ID", "Name").From("Person").Where("Age") > 34; // Error here, since you are in a declaration, you can't use the methods
             // You MUST not do this either:
@@ -546,7 +546,7 @@ namespace Query
             // You SHOULD do this:
             Database::Query::Select oldGuy = Database::Query::Select("ID", "Name").From("Person").Where("Age") > 34; // A copy is made if required (most compiler will optimize it away)
         @endcode
-        
+
         For a more detailled interface documentation, please refer to SelectBase
         @warning If you are using the non-specialized Select version, then only the first database connection is used (unless you specify it manually using setDBIndex).
         @sa SelectBase */
@@ -555,7 +555,7 @@ namespace Query
     {
         // The logic operation is here
     public:
-        /** This is used to extract the results directly as C++ objects 
+        /** This is used to extract the results directly as C++ objects
             @warning If the table you pass in is not what the select refers to, then you'll get completely undefined results in your pool. */
         operator Database::Pool<Table>() const
         {
@@ -586,7 +586,7 @@ namespace Query
         /** Get the result count out of a single request.
             This actually count the rows in the remote SQL engine, not locally, so it should be faster. */
         int getCount() const { return UnsafeRowIterator(SQLFormat::sendQuery(Table::__DBIndex__, this->getCountText() + ";"))["_X_countRows"]; }
-        
+
         /** Get the result with an unsafe iterator */
         operator UnsafeRowIterator() const
         {
@@ -613,28 +613,28 @@ namespace Query
         {
             SQLFormat::cleanResults(SQLFormat::sendQuery(Table::__DBIndex__, "DELETE " + Refine().getFinalText().fromFirst(this->getActionName()) + ";"));
         }
-        
-    
+
+
         // Construction
     public:
-    
+
         SelectT(const String & fieldName = "") : SelectBase<SelectT>(fieldName) { this->tableName = Table::getEscapedTableName(); }
         SelectT(const String & f1, const String & f2) : SelectBase<SelectT>(f1, f2) { this->tableName = Table::getEscapedTableName(); }
         SelectT(const String & f1, const String & f2, const String & f3) : SelectBase<SelectT>(f1, f2, f3) { this->tableName = Table::getEscapedTableName(); }
     };
-    
+
     template <>
     class SelectT<void> : public SelectBase< SelectT<void> >
     {
     private:
         uint32 dbIndex;
-        
+
         // The logic operation is here
     public:
         /** Change the database connection index */
         SelectT & setDBIndex(const uint32 index) { dbIndex = index; return *this; }
-        
-        /** This is used to extract the results directly as C++ objects 
+
+        /** This is used to extract the results directly as C++ objects
             @warning If the table you pass in is not what the select refers to, then you'll get completely undefined results in your pool. */
         template <typename Table>
         operator Database::Pool<Table>() const
@@ -692,26 +692,26 @@ namespace Query
         {
             SQLFormat::cleanResults(SQLFormat::sendQuery(dbIndex, "DELETE " + Refine("").getFinalText().fromFirst(this->getActionName()) + ";"));
         }
-    
+
         // Construction
     public:
         SelectT(const String & fieldName = "") : SelectBase<SelectT>(fieldName), dbIndex(0) {}
         SelectT(const String & f1, const String & f2) : SelectBase<SelectT>(f1, f2), dbIndex(0) {}
         SelectT(const String & f1, const String & f2, const String & f3) : SelectBase<SelectT>(f1, f2, f3), dbIndex(0) {}
     };
-    
+
     /** Inject the Select name inside the system */
     typedef SelectT<void> Select;
-    
+
     /** Create a temporary table out of a selection.
         Typically, you'll write code like this:
         @code
             // Create a temporary table that's not auto dropped (you must call DropTable if you want to drop it)
             CreateTempTable("tempT1").As(Select("ID").From("Person").Where("FirstName") == "John");
-            
+
             // Create a temporary table that's auto dropped when leaving the scope
             CreateTempTable tempT1 = CreateTempTable("tempT1", true).As(Select("ID").From("Person").Where("FirstName") == "John");
-        @endcode 
+        @endcode
     */
     class CreateTempTable
     {
@@ -722,11 +722,11 @@ namespace Query
         uint32 dbIndex;
         /** Whever to drop it when leaving the scope */
         mutable bool autoDrop;
-        
+
     public:
         /** Change the database connection index */
         CreateTempTable & setDBIndex(const uint32 index) { dbIndex = index; return *this; }
-        
+
     public:
         /** As clause for another select statement. */
         template<class U>
@@ -735,7 +735,7 @@ namespace Query
             SQLFormat::cleanResults(SQLFormat::sendQuery(dbIndex, "CREATE TEMPORARY TABLE " + SQLFormat::escapeString(tableName) + " AS " + statement.getFinalText() + ";"));
             return *this;
         }
-    
+
         /** Create a temporary table  */
         CreateTempTable(const String & tableName, const bool autoDrop = false) : tableName(tableName), dbIndex(0), autoDrop(autoDrop) {}
         /** Copy constructor transfer the dropping behaviour */
@@ -746,7 +746,7 @@ namespace Query
             if (autoDrop) SQLFormat::cleanResults(SQLFormat::sendQuery(dbIndex, "DROP TABLE " + SQLFormat::escapeString(tableName) + ";"));
         }
     };
-    
+
     /** Used to drop a previously created temporary table if not asked to do it automatically.
         @sa CreateTempTable */
     struct DropTable
@@ -757,16 +757,16 @@ namespace Query
             SQLFormat::cleanResults(SQLFormat::sendQuery(dbIndex, "DROP TABLE " + SQLFormat::escapeString(tableName) + ";"));
         }
     };
-    
-    /** Emit an completely unsafe raw request. 
+
+    /** Emit an completely unsafe raw request.
         You have to specify the database connection index if you don't want to use the first one.
         @warning You should not use this code but use the Select method above */
-    class SelectRaw 
+    class SelectRaw
     {
     private:
         uint32 dbIndex;
         const String & raw;
-        
+
         // The logic operation is here
     public:
         /** Change the database connection index */
@@ -779,12 +779,12 @@ namespace Query
             // The query retrieve all results at once
             return UnsafeRowIterator(SQLFormat::sendQuery(dbIndex, raw + ";"));
         }
-    
+
         // Construction
     public:
         SelectRaw(const String & raw) : dbIndex(0), raw(raw) {}
     };
-    
+
     /** Delete from the database.
         This is exactly like Select class, but emit a DELETE request (and no results) */
     class Delete : public SelectBase<Delete>
@@ -796,7 +796,7 @@ namespace Query
         Delete & setDBIndex(const uint32 index) { dbIndex = index; return *this; }
         /** This is the main execution method that must be called explicitely */
         void execute() const { SQLFormat::cleanResults(SQLFormat::sendQuery(dbIndex, getFinalText() + ";")); }
-    
+
         /** Default construction */
         Delete() : SelectBase<Delete>(""), dbIndex(0) {}
     };

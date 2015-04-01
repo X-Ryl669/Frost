@@ -19,14 +19,14 @@ protected:
     ScopeGuardImplBase() : dismissed(false)    {}
     /** Copy constructor, undo the initial scope guard behavior */
     ScopeGuardImplBase(const ScopeGuardImplBase& other) : dismissed(other.dismissed) { other.Dismiss(); }
-    /** Destructor 
+    /** Destructor
         It is not virtual because from point of declaration to point to destruction
-        it is a child class which is created and the compiler directly call the right 
+        it is a child class which is created and the compiler directly call the right
         child destructor (it also avoid setting up and using virtual function pointer) */
     ~ScopeGuardImplBase() {}
 
     // Member
-protected:    
+protected:
     /** When set to true, the destructor ignore the asked clean up */
     mutable bool dismissed;
 

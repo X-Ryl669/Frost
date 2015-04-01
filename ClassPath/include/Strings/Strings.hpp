@@ -5,14 +5,14 @@
 #include "../Types.hpp"
 // We need Platform
 #include "../Platform/Platform.hpp"
-// We need BString 
+// We need BString
 #include "bstring.hpp"
 
 
 /** UTF-8 strings and UCS-2 strings.
     For UTF-8, use FastString (from Bstrlib::String)
     For UCS-2, use Strings::ReadOnlyUnicodeString
-    
+
     You can convert from on type to the other by calling Strings::convert function.
 */
 namespace Strings
@@ -22,15 +22,15 @@ namespace Strings
 
     typedef char const * const tCharPtr;
 
-    // Forward declare the findLength function 
+    // Forward declare the findLength function
     const unsigned int findLength(tCharPtr, const size_t limit = 0);
-    // Forward declare the findLength function 
+    // Forward declare the findLength function
     inline const unsigned int findLength(const uint8 * txt, const size_t limit = 0) { return findLength((tCharPtr)txt, limit); }
-    // Forward declare the findLengthWide function 
+    // Forward declare the findLengthWide function
     const unsigned int findLengthWide(const wchar_t *);
 
     /** Well, the name says it all, this is a very simple read only string.
-        The main advantage of this class is that it doesn't allocate any 
+        The main advantage of this class is that it doesn't allocate any
         memory at all, and works on fixed size buffer correctly.
         So you can/should use it on embedded system wherever applicable */
     class VerySimpleReadOnlyString
@@ -47,8 +47,8 @@ namespace Strings
         inline tCharPtr     getData() const     { return data; }
         /** Get the string length */
         inline const int    getLength() const   { return length; }
-        /** Limit the string length to the given value 
-            @param newLength the new length 
+        /** Limit the string length to the given value
+            @param newLength the new length
             @return true on success */
         inline bool limitTo(const int newLength)   { if (newLength > length) return false; *const_cast<int*>(&length) = newLength; return true; }
         /** Get the substring from this string */
@@ -61,10 +61,10 @@ namespace Strings
                 ret = text.splitAt(3, 1);     // ret = "de", text = "def"
                 ret = text.splitAt(9);        // ret = "def", text = ""
             @endcode
-            @param pos    The position to split this string. 
+            @param pos    The position to split this string.
                           If the position is larger than the string's length, the complete string is returned,
                           and this string is modified to be empty.
-                          If the position is negative, an empty string is returned, and this string is left 
+                          If the position is negative, an empty string is returned, and this string is left
                           unmodified.
             @param stripFromRet   This is the amount of characters to strip from the right of the returned string.
                                   This is equivalent to .limitTo(getLength() - stripFromRet)
@@ -95,25 +95,25 @@ namespace Strings
             while(t.length && rlen > 1 && data && memchr(t.data, data[rlen - 1], t.length) != NULL) rlen--;
             return VerySimpleReadOnlyString(data + (length - llen), rlen - (length  - llen));
         }
-        
+
         /** Find the specific needle in the string.
-            This is a very simple O(n*m) search. 
+            This is a very simple O(n*m) search.
             @return the position of the needle, or getLength() if not found. */
         const unsigned int Find(const VerySimpleReadOnlyString & needle, unsigned int pos = 0) const;
-        /** Find any of the given set of chars 
+        /** Find any of the given set of chars
             @return the position of the needle, or getLength() if not found. */
         const unsigned int findAnyChar(const char * chars, unsigned int pos = 0, int nlen = 0) const { int len = pos; if (!nlen && chars) nlen = (int)strlen(chars); while(len < length && data && memchr(chars, data[len], nlen) == NULL) len++; return len; }
         /** Find first char that's not in the given set of chars
             @return the position of the needle, or getLength() if not found. */
         const unsigned int invFindAnyChar(const char * chars, unsigned int pos = 0, int nlen = 0) const { int len = pos; if (!nlen && chars) nlen = (int)strlen(chars); while(len < length && data && memchr(chars, data[len], nlen) != NULL) len++; return len; }
         /** Find the specific needle in the string, starting from the end of the string.
-            This is a very simple O(n*m) search. 
+            This is a very simple O(n*m) search.
             @return the position of the needle, or getLength() if not found. */
         const unsigned int reverseFind(const VerySimpleReadOnlyString & needle, unsigned int pos = (unsigned int)-1) const;
         /** Count the number of times the given substring appears in the string */
 		const unsigned int Count(const VerySimpleReadOnlyString & needle) const;
-        
-		/** Split a string when the needle is found first, returning the part before the needle, and 
+
+		/** Split a string when the needle is found first, returning the part before the needle, and
 		    updating the string to start on or after the needle.
 		    If the needle is not found, it returns an empty string if includeFind is false, or the whole string if true.
 		    For example this code returns:
@@ -121,11 +121,11 @@ namespace Strings
 		        String text = "abcdefdef";
 		        String ret = text.splitFrom("d"); // ret = "abc", text = "efdef"
 		        ret = text.splitFrom("f", true);  // ret = "e", text = "fdef"
-		    @endcode 
+		    @endcode
 		    @param find         The string to look for
 		    @param includeFind  If true the string is updated to start on the find text. */
 		const VerySimpleReadOnlyString splitFrom(const VerySimpleReadOnlyString & find, const bool includeFind = false);
-		
+
 		/** Get the substring from the given needle up to the given needle.
 		    For example, this code returns:
 		    @code
@@ -135,32 +135,32 @@ namespace Strings
 		        ret = text.fromTo("d", "g"); // ret = ""
 		        ret = text.fromTo("d", "g", true); // ret = "defdef"
 		        ret = text.fromTo("g", "f", [true or false]); // ret = ""
-		    @endcode 
-		    
+		    @endcode
+
 		    @param from         The first needle to look for
-		    @param to           The second needle to look for 
+		    @param to           The second needle to look for
 		    @param includeFind  If true, the text searched for is included in the result
-		    @return If "from" needle is not found, it returns an empty string, else if "to" needle is not found, 
+		    @return If "from" needle is not found, it returns an empty string, else if "to" needle is not found,
 		            it returns an empty string upon includeFind being false, or the string starting from "from" if true. */
 		const VerySimpleReadOnlyString fromTo(const VerySimpleReadOnlyString & from, const VerySimpleReadOnlyString & to, const bool includeFind = false) const;
-		
-		/** Get the string up to the first occurrence of the given string 
+
+		/** Get the string up to the first occurrence of the given string
 		    If not found, it returns the whole string unless includeFind is true (empty string in that case).
 		    For example, this code returns:
 		    @code
 		        String ret = String("abcdefdef").upToFirst("d"); // ret == "abc"
 		        String ret = String("abcdefdef").upToFirst("g"); // ret == "abcdefdef"
-		    @endcode 
+		    @endcode
 		    @param find         The text to look for
 		    @param includeFind  If set, the needle is included in the result */
 		const VerySimpleReadOnlyString upToFirst(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
-		/** Get the string up to the last occurrence of the given string 
+		/** Get the string up to the last occurrence of the given string
 		    If not found, it returns the whole string unless includeFind is true (empty string in that case).
 		    For example, this code returns:
 		    @code
 		        String ret = String("abcdefdef").upToLast("d"); // ret == "abcdef"
 		        String ret = String("abcdefdef").upToLast("g"); // ret == "abcdefdef"
-		    @endcode 
+		    @endcode
 		    @param find         The text to look for
 		    @param includeFind  If set, the needle is included in the result */
 		const VerySimpleReadOnlyString upToLast(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
@@ -171,22 +171,22 @@ namespace Strings
 		        String ret = String("abcdefdef").fromLast("d"); // ret == "ef"
 		        String ret = String("abcdefdef").fromLast("d", true); // ret == "def"
 		        String ret = String("abcdefdef").fromLast("g"); // ret == ""
-		    @endcode 
+		    @endcode
 		    @param find         The text to look for
 		    @param includeFind  If set, the needle is included in the result */
 		const VerySimpleReadOnlyString fromLast(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
-		/** Get the string from the first occurrence of the given string 
+		/** Get the string from the first occurrence of the given string
 		    If not found, it returns an empty string if includeFind is false, or the whole string if true
 		    For example, this code returns:
 		    @code
 		        String ret = String("abcdefdef").fromFirst("d"); // ret == "efdef"
 		        String ret = String("abcdefdef").fromFirst("d", true); // ret == "defdef"
 		        String ret = String("abcdefdef").fromFirst("g"); // ret == ""
-		    @endcode 
+		    @endcode
 		    @param find         The text to look for
 		    @param includeFind  If set, the needle is included in the result */
 		const VerySimpleReadOnlyString fromFirst(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
-		/** Get the substring from the given needle if found, or the whole string if not. 
+		/** Get the substring from the given needle if found, or the whole string if not.
 		    For example, this code returns:
 		    @code
 		        String text = "abcdefdef";
@@ -196,8 +196,8 @@ namespace Strings
 		    @endcode
 		    @param find         The string to look for
 		    @param includeFind  If true the string is updated to start on the find text. */
-        const VerySimpleReadOnlyString dropUpTo(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;		
-		/** Get the substring up to the given needle if found, or the whole string if not, and split from here. 
+        const VerySimpleReadOnlyString dropUpTo(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
+		/** Get the substring up to the given needle if found, or the whole string if not, and split from here.
 		    For example, this code returns:
 		    @code
 		        String text = "abcdefdef";
@@ -208,10 +208,10 @@ namespace Strings
 		    @endcode
 		    @param find         The string to look for
 		    @param includeFind  If true the string is updated to start on the find text. */
-        const VerySimpleReadOnlyString splitUpTo(const VerySimpleReadOnlyString & find, const bool includeFind = false);	
-		
+        const VerySimpleReadOnlyString splitUpTo(const VerySimpleReadOnlyString & find, const bool includeFind = false);
+
 		/** The basic conversion operators */
-		operator int() const; 
+		operator int() const;
 		/** The basic conversion operators */
 		operator unsigned int() const;
         /** The basic conversion operators */
@@ -219,10 +219,10 @@ namespace Strings
 		/** The basic conversion operators */
 		operator double() const;
 
-        /** So you can check the string directly for emptiness */		
+        /** So you can check the string directly for emptiness */
 		inline bool operator !() const { return length == 0; }
-        /** So you can check the string directly for emptiness */		
-		inline operator bool() const { return length > 0; }		
+        /** So you can check the string directly for emptiness */
+		inline operator bool() const { return length > 0; }
         /** Operator [] to access a single char */
         char operator[] (int index) const { return index < length ? data[index] : 0; }
 
@@ -248,43 +248,43 @@ namespace Strings
         inline const bool operator != (tCharPtr copy) const { return !operator ==(copy); }
         /** Inverted compare operator */
         inline const bool operator != (const FastString & copy) const { return !operator ==(copy); }
-        
+
 #if (DEBUG==1)
 		// Prevent unwanted conversion
 	private:
 	    /** Prevent unwanted conversion */
 	    template <typename T> bool operator == (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
 	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
 	        CompileTimeAssertFalse(T); return false;
 	    }
 	    /** Prevent unwanted conversion */
 	    template <typename T> bool operator < (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
 	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
 	        CompileTimeAssertFalse(T); return false;
 	    }
 	    /** Prevent unwanted conversion */
 	    template <typename T> bool operator > (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
 	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
 	        CompileTimeAssertFalse(T); return false;
 	    }
 	    /** Prevent unwanted conversion */
 	    template <typename T> bool operator <= (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
 	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
 	        CompileTimeAssertFalse(T); return false;
 	    }
 	    /** Prevent unwanted conversion */
 	    template <typename T> bool operator >= (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
 	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
 	        CompileTimeAssertFalse(T); return false;
 	    }
 	    /** Prevent unwanted conversion */
-	    template <typename T> bool operator != (const T & t) const 
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+	    template <typename T> bool operator != (const T & t) const
+	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
 	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
 	        CompileTimeAssertFalse(T); return false;
 	    }
@@ -333,7 +333,7 @@ namespace Strings
         /** Default constructor
             @param _data    A pointer to the converted data (can be 0)
             @param _length  If _length == 0, then the string length is computed only if _data isn't 0 (else the length is 0). */
-        ReadOnlyUnicodeString(CharPointer _data = 0, const int _length = 0) : length(_length == 0 ? findLengthWide((const wchar_t*)_data) : _length), data((_length == 0 ? findLengthWide((const wchar_t*)_data) : _length) ? 
+        ReadOnlyUnicodeString(CharPointer _data = 0, const int _length = 0) : length(_length == 0 ? findLengthWide((const wchar_t*)_data) : _length), data((_length == 0 ? findLengthWide((const wchar_t*)_data) : _length) ?
             new CharType[(_length == 0 ? findLengthWide((const wchar_t*)_data) : _length)] : 0) { if (_data) memcpy(const_cast<CharType *>(data), _data, length * sizeof(*data)); }
         /** The destructor */
         ~ReadOnlyUnicodeString() { CharType * & _data = const_cast<CharType *&>(data); delete[] _data; _data = 0;  *const_cast<int*>(&length) = 0; }
@@ -350,26 +350,26 @@ namespace Strings
 
     /** Convert a wide char string to a UTF-8 FastString */
     extern FastString convert(const ReadOnlyUnicodeString & string);
-        
+
     /** Copy the source to the destination, padding the destination with 0 if required.
         On output, the destination ends with a 0 in all case */
     void copyAndZero(void * dest, int destSize, const void * src, int srcSize);
-    
+
     /** Quote the given string to RFC 2045 compatible format (in use in MIME messages) */
     FastString quotedPrintable(const FastString & textToQuote);
     /** Unquote the given string from RFC 2045 compatible format (used in MIME messages) */
     FastString unquotedPrintable(const FastString & textToUnquote);
-    
-    /** A class containing an array of strings, and allowing some juicy features 
+
+    /** A class containing an array of strings, and allowing some juicy features
         like joining the array into a single string or splitting a string in an array. */
     template <class T>
     class StringArrayT
     {
-        // Type definition and enumeration 
+        // Type definition and enumeration
     public:
         /** The pointer to the string array */
         typedef T *     TPtr;
-        
+
         // Members
     private:
         /** The array */
@@ -378,7 +378,7 @@ namespace Strings
         size_t      currentSize;
         /** The array allocation size */
         size_t      allocatedSize;
-    
+
         // Helpers
     private:
         /** Reset the vector to its initial state (doesn't perform destruction of data) */
@@ -396,19 +396,19 @@ namespace Strings
         }
         /** Default element */
         static T & getDefaultElement() { static T elem; return elem; }
-        
-    
+
+
         // Array interface
     public:
         /** Clear the array, and destruct any remaining objects */
         inline void Clear() { for(size_t i = 0; i < currentSize; i++) delete array[i]; free(array); Reset(); }
-    
+
         /** Append an element to the end of the array */
         inline void Append(const T & ref) { if (currentSize+1 >= allocatedSize) Enlarge(); array[currentSize++] = new T(ref); }
         /** Append an element to the end of the array */
         inline void Append(const StringArrayT & ref) { if (currentSize+1 >= allocatedSize) Enlarge(); array[currentSize++] = new T(ref); }
-        /** Append an element only if not present 
-            @param ref The string to insert in the array 
+        /** Append an element only if not present
+            @param ref The string to insert in the array
             @return getSize() - 1 if appended correctly, else the position of the element if already present in the array */
         inline size_t appendIfNotPresent(const T & ref) { size_t pos = indexOf(ref); if (pos == getSize()) Append(ref); return pos; }
         /** Grow this array by (at least) the given number of elements.
@@ -423,27 +423,27 @@ namespace Strings
             else for (size_t i = currentSize; i < currentSize + count; i++) new(&array[i]) T();
             currentSize += count;
         }
-        /** Insert an element just before the given index 
+        /** Insert an element just before the given index
             @param index    Zero based index of the element once inserted
             @param ref      The element */
-        inline void insertBefore(size_t index, const T & ref) 
-        { 
+        inline void insertBefore(size_t index, const T & ref)
+        {
             if (index >= currentSize - 1) { Append(ref); return; }
             if (currentSize + 1 >= allocatedSize) Enlarge();
             memmove(&array[index+1], &array[index], (currentSize - index) * sizeof(array[0]));
             array[index] = new T(ref);
             currentSize++;
         }
-        /** Remove an object from the array 
+        /** Remove an object from the array
             @param index Zero based index of the object to remove */
-        inline void Remove(size_t index) 
-        { 
+        inline void Remove(size_t index)
+        {
             if (index >= currentSize) return;
             delete array[index];
             memmove(&array[index], &array[index+1], (currentSize - index - 1) * sizeof(array[0]));
             array[currentSize--] = 0;
             // Reduce the size only if we have enough space left later on
-            if (allocatedSize > 2 && currentSize < allocatedSize / 2) 
+            if (allocatedSize > 2 && currentSize < allocatedSize / 2)
             {
                 TPtr * newArray = (TPtr*)realloc(array, allocatedSize / 2 * sizeof(array[0]));
                 if (newArray) { array = newArray; allocatedSize /= 2; }
@@ -451,12 +451,12 @@ namespace Strings
         }
         /** Forget an string from the array.
             The string is not deleted, and as such, will cause a memory leak unless you've taken the reference beforehand.
-            @param index Zero based index of the object to remove 
+            @param index Zero based index of the object to remove
             @return A pointer to a "new" allocated object you must delete */
         inline T * Forget(size_t index) throw() { if (index < currentSize) { Swap(index, currentSize - 1); TPtr old = array[currentSize--]; array[currentSize] = 0; return old; } return 0; }
-        /** Swap operator 
-            @param index1   The index to the first object to swap 
-            @param index2   The index to the second object to swap 
+        /** Swap operator
+            @param index1   The index to the first object to swap
+            @param index2   The index to the second object to swap
             @warning Nothing is done if any index is out of range */
         inline void Swap(const size_t index1, const size_t index2) { if (index1 < currentSize && index2 < currentSize) { TPtr tmp = array[index1]; array[index1] = array[index2]; array[index2] = tmp; } }
 
@@ -473,14 +473,14 @@ namespace Strings
             currentSize = other.currentSize;
             return *this;
         }
-        
+
         /** Access size member */
         inline size_t getSize() const { return currentSize; }
-        /** Access operator 
+        /** Access operator
             @param index The position in the array
             @return the index-th element if index is in bound, or an empty string in the other case */
         inline T & operator [] (size_t index) { return index < currentSize ? *array[index] : getDefaultElement(); }
-        /** Access operator 
+        /** Access operator
             @param index The position in the array
             @return the index-th element if index is in bound, or an empty string in the other case */
         inline const T & operator [] (size_t index) const { return index < currentSize ? *array[index] : getDefaultElement(); }
@@ -488,7 +488,7 @@ namespace Strings
             @param index The position in the array
             @return the index-th element if index is in bound, or an empty string in the other case */
         inline const T & getElementAtPosition (size_t index) const { return index < currentSize ? *array[index] : getDefaultElement(); }
-       
+
         /** Search operator
             @param objectToSearch   The object to look for in the array
             @param fromPos          The position to start from
@@ -500,7 +500,7 @@ namespace Strings
             @return true if the element is found in the array, false if not */
         inline bool Contains(const T & objectToSearch, const size_t fromPos = 0) const { return indexOf(objectToSearch, fromPos) != currentSize; }
         /** Reverse search operator
-            @param objectToSearch The object to look for in the array 
+            @param objectToSearch The object to look for in the array
             @param startPos         The position to start from
             @return the element index of the given element or getSize() if not found. */
         inline size_t lastIndexOf(const T & objectToSearch, const size_t fromPos = (size_t)(1<<30UL)) const { for (size_t i = min(currentSize, fromPos); i > 0; i--) if (*array[i - 1] == objectToSearch) return i - 1; return currentSize; }
@@ -513,10 +513,10 @@ namespace Strings
     public:
         /** Join the array in a big string, using the given separator */
         inline T Join(const T & separator = "\n") const { T ret; for (size_t i = 0; i < currentSize; i++) ret += *array[i] + ((i < currentSize-1) ? separator : T("")); return ret; }
-        /** Split the given string into an array, using the given separator. 
+        /** Split the given string into an array, using the given separator.
             The separator is not included in the resulting strings */
-        inline void appendLines(const T & text, const T & separator = "\n") 
-        { 
+        inline void appendLines(const T & text, const T & separator = "\n")
+        {
             int lastPos = 0;
             int pos = text.Find(separator);
             while (pos != -1)
@@ -528,13 +528,13 @@ namespace Strings
             Append(text.midString(lastPos, text.getLength()));
         }
         /** Inline string search.
-            Contrary to the indexOf method that's searching if the array contains a given string, this one search 
+            Contrary to the indexOf method that's searching if the array contains a given string, this one search
             if any string in the array contains the given string.
-            For example, for a array containing { "abc", "def", "xyz" }, indexOf("e") will not find anything, while 
+            For example, for a array containing { "abc", "def", "xyz" }, indexOf("e") will not find anything, while
             lookUp("e") will return 1.
             @param objectToSearch   The object to look for in the array
             @param fromPos          The position in the array to start from
-            @param internalPos      If provided, on input contains the position in the string to start searching from, 
+            @param internalPos      If provided, on input contains the position in the string to start searching from,
                                     and on output contains the position found in the substring
             @return the element index of the given element or getSize() if not found. */
         inline size_t lookUp(const T & objectToSearch, const size_t fromPos = 0, int * internalPos = 0) const
@@ -547,7 +547,7 @@ namespace Strings
         }
         /** Extract only a subpart of the array into another array.
             @param start The part to start extracting from
-            @param end   The position to stop extracting from (not included) 
+            @param end   The position to stop extracting from (not included)
             @return a StringArray that's containing a copy of the specified part of the array */
         inline StringArrayT Extract(const size_t start, size_t end) const
         {
@@ -557,7 +557,7 @@ namespace Strings
             for(size_t i = start; i < end; i++) ret.array[i - start] = new T(*array[i]);
             return ret;
         }
-        
+
         struct Internal
         {
             TPtr *      array;
@@ -567,7 +567,7 @@ namespace Strings
         /** Move strategy is explicit with this intermediate object */
         Internal getMovable() { Internal intern = { array, currentSize, allocatedSize }; Reset(); return intern; }
         static Internal emptyInternal() { Internal intern = { 0, 0, 0 }; return intern; }
-    
+
         // Construction and destruction
     public:
         /** Default Constructor */
@@ -576,7 +576,7 @@ namespace Strings
         inline StringArrayT(const StringArrayT & other) : array(0), currentSize(0), allocatedSize(0) { *this = other; }
         /** Move constructor. Use getMovable() to move the array */
         inline StringArrayT(const Internal & intern) : array(intern.array), currentSize(intern.currentSize), allocatedSize(intern.allocatedSize) {}
-        /** Construct an array by splitting the string by the given separator. 
+        /** Construct an array by splitting the string by the given separator.
             The separator is not included in the resulting strings */
         inline StringArrayT(const T & text, const T & separator = "\n", const T & trimArgs = "") : array(0), currentSize(0), allocatedSize(0)
         {
@@ -587,7 +587,7 @@ namespace Strings
 
             array = (TPtr*)realloc(array, allocatedSize * sizeof(array[0]));
             if (!array) { allocatedSize = 0; return; }
-            
+
             int lastPos = 0;
             int pos = - separator.getLength();
             while ((pos = text.Find(separator, pos + separator.getLength())) != -1)
@@ -602,19 +602,19 @@ namespace Strings
         /** Build the string array from a given const char * array[] like this:
             @code
             const char * lines[] = { "bob", "bar" };
-            StringArray array(lines); 
+            StringArray array(lines);
             String text = array.Join(); // text == "bob\nbar";
             @endcode */
         template <const size_t referenceSize>
-        inline StringArrayT(const char * (&innerArray)[referenceSize]) 
+        inline StringArrayT(const char * (&innerArray)[referenceSize])
             : array((TPtr*)realloc(NULL, referenceSize * sizeof(array[0]))), currentSize(referenceSize), allocatedSize(referenceSize)
         {
-            if (!array) currentSize = allocatedSize = 0; 
-            else for (size_t i = 0; i < referenceSize; i++) array[i] = new T(innerArray[i]); 
+            if (!array) currentSize = allocatedSize = 0;
+            else for (size_t i = 0; i < referenceSize; i++) array[i] = new T(innerArray[i]);
         }
         /** Build the string array from a given char ** array like this:
             @code
-            char ** lines; 
+            char ** lines;
             StringArray array(lines, linesCount);
             @endcode */
         inline StringArrayT(char ** innerArray, const size_t referenceSize)
@@ -627,12 +627,12 @@ namespace Strings
         /** Destructor */
         ~StringArrayT()        { Clear(); }
     };
-    
+
     /** The default version is using UTF-8 and R/W Strings */
     typedef StringArrayT<FastString> StringArray;
     /** But there's also a R/O version */
     typedef StringArrayT<VerySimpleReadOnlyString> StringArrayRO;
-    
+
     /** This is used in Container's algorithms to sort and search the array */
     template <typename T>
     struct CompareStringT
@@ -648,7 +648,7 @@ namespace Strings
     typedef CompareStringT<FastString> CompareString;
     /** But there's also a R/O version */
     typedef CompareStringT<VerySimpleReadOnlyString> CompareStringRO;
-    
+
     template <typename T>
     struct TypeToNameT
     {
@@ -669,8 +669,8 @@ namespace Strings
     /** Get the templated type name. This does not depends on RTTI, but on the preprocessor, so it should be quite safe to use even on old compilers */
     template <typename T>
     FastString getTypeName(const T *) { return TypeToNameT<T>::getTypeFromName(); }
-    
-    
+
+
 }
 
 

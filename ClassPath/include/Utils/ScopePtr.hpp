@@ -8,16 +8,16 @@ namespace Utils
 {
     /** Usual scope pointer class with operator overloading.
         Unlike the ScopeGuard, this changes the declaration line of the pointer, but can be passed around.
-        
+
         We found from our experience that reference counting was not an efficient way to deal with pointers for automatic resource management.
-        RefCounting can create loops, requires an additional counter storage (since the ClassPath compiles on 32bits systems, we don't expect 
+        RefCounting can create loops, requires an additional counter storage (since the ClassPath compiles on 32bits systems, we don't expect
         high bits in the pointer to be available for storing a counter).
         Most of the time, the reference counting never goes above 1, so this is a sign that a more efficient solution could be used.
         We present ScopePtr and OwnPtr here. A ScopePtr stored a pointer and delete it when it's deleted (usually when it goes out of scope).
         OwnPtr is like a ScopePtr except that it tracks if it owns the pointer to the object. It can be sold to become a WeakPtr.
         @sa OwnPtr
-     
-        There is nothing special with this, usage is quite 
+
+        There is nothing special with this, usage is quite
         transparent (use like a pointer) thanks to operator overloading.
         @warning Copy constructor use move semantics, so this works as intended:
                  ScopePtr<A> a = new A(); */
@@ -30,7 +30,7 @@ namespace Utils
         T *         pointer;
 
         // Helpers
-    private:    
+    private:
         /** Because we have overloaded & operator, we need this to get the object pointer itself */
         ForcedInline(const ScopePtr* pThis() const) { return this; }
         /** The forget implementation */
@@ -49,7 +49,7 @@ namespace Utils
             return *this;
         }
 
-        /** Assignment operator 
+        /** Assignment operator
             @warning This own the object passed in */
         ForcedInline(ScopePtr& operator = (T* const ownPtr))
         {
@@ -66,7 +66,7 @@ namespace Utils
 
         // Interface
     public:
-        /** Forget the object owned (don't delete it)             
+        /** Forget the object owned (don't delete it)
             The internal pointer is reset to 0.
             @return The pointer to the object */
         ForcedInline(T * Forget()) { return Forget(0); }
@@ -84,9 +84,9 @@ namespace Utils
     template <class T> ForcedInline(bool operator== (const ScopePtr<T> & ptr1, const T* const ptr2));
     template <class T> bool operator== (const ScopePtr<T> & ptr1, const T* const ptr2) { return (T*)ptr1 == ptr2; }
     template <class T> ForcedInline(bool operator!= (const ScopePtr<T> & ptr1, const T* const ptr2));
-    template <class T> bool operator!= (const ScopePtr<T> & ptr1, const T* const ptr2) { return !(ptr1 == ptr2);  } 
+    template <class T> bool operator!= (const ScopePtr<T> & ptr1, const T* const ptr2) { return !(ptr1 == ptr2);  }
 
-    /** This is like a scoped pointer class, except that the ownership 
+    /** This is like a scoped pointer class, except that the ownership
         is specified at construction, and can be changed during lifetime with the sold() method.
         You can only sell a pointer that's owned, obviously.
 
@@ -110,7 +110,7 @@ namespace Utils
         bool        own;
 
         // Helpers
-    private:    
+    private:
         /** Because we have overloaded & operator, we need this to get the object pointer itself */
         ForcedInline(const OwnPtr* pThis() const) { return this; }
         /** The forget implementation */
@@ -131,11 +131,11 @@ namespace Utils
             return *this;
         }
 
-        /** Assignment operator 
+        /** Assignment operator
             @warning This own the object passed in */
         ForcedInline(OwnPtr& operator = (T* const ownPtr))
         {
-            if (pointer != ownPtr) 
+            if (pointer != ownPtr)
             {
                 T * const prev = Forget(ownPtr);
                 if (own) delete prev;
@@ -190,8 +190,8 @@ namespace Utils
     template <class T> ForcedInline(bool operator== (const OwnPtr<T> & ptr1, const T* const ptr2));
     template <class T> bool operator== (const OwnPtr<T> & ptr1, const T* const ptr2) { return (T*)ptr1 == ptr2; }
     template <class T> ForcedInline(bool operator!= (const OwnPtr<T> & ptr1, const T* const ptr2));
-    template <class T> bool operator!= (const OwnPtr<T> & ptr1, const T* const ptr2) { return !(ptr1 == ptr2);  } 
-        
+    template <class T> bool operator!= (const OwnPtr<T> & ptr1, const T* const ptr2) { return !(ptr1 == ptr2);  }
+
 }
 
 

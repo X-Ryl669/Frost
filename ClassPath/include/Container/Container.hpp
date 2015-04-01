@@ -24,7 +24,7 @@
         // Build an double chained list of my class
         Container::PlainOldData<MyStruct>::ChainedList linkedListOfMyStruct;
 
-        // If you're not using plain old data struct, but a class 
+        // If you're not using plain old data struct, but a class
         Container::WithCopyConstructor<MyClass>::Array arrayOfMyClass;
         // Build an indexed list of my class
         Container::WithCopyConstructor<MyClass>::IndexList listOfMyClass;
@@ -35,13 +35,13 @@
         Container::NotConstructible<UnbuildableClass>::IndexList    unbuildableClassArray;
         // Or a double chained list
         Container::NotConstructible<UnbuildableClass>::ChainedList  unbuildableClassList;
-    @endcode 
+    @endcode
 */
 namespace Container
 {
-    // Overload the min / max macro in our own namespace 
+    // Overload the min / max macro in our own namespace
     template <typename T> inline T min(T a, T b) { return a < b ? a : b; }
-    // Overload the min / max macro in our own namespace 
+    // Overload the min / max macro in our own namespace
     template <typename T> inline T max(T a, T b) { return a > b ? a : b; }
 
 #define MaxValStep(t)   ( ((t)1) << (CHAR_BIT * sizeof(t) - 1 - ((t)-1 < 1)) )
@@ -52,7 +52,7 @@ namespace Container
     namespace PrivateGenericImplementation
     {
         /** The memory policy interface */
-        template <typename T> 
+        template <typename T>
         struct MemoryPolicy
         {
             /** This method copy (can also move depending on policy) the given data */
@@ -60,7 +60,7 @@ namespace Container
             /** This method copy the srcSize data from src to dest, but doesn't resizing dest if it's too small (Copy is then limited to destSize elements). */
             static void CopyArray(T * dest, const T * src, const size_t & destSize, const size_t srcSize);
             /** This method copy the srcSize data from src to dest, resizing dest if required.
-                @warning dest must not be 0 
+                @warning dest must not be 0
             */
             static void CopyArray(T *& dest, const T * src, size_t & destSize, const size_t srcSize);
             /** This method returns a default constructed element or can throw */
@@ -85,7 +85,7 @@ namespace Container
             <br>
             It deals with array growth and decrease by itself, and it's optimized to limit the copying to the minimum required.
             When using plain old data like int/float/etc..., it realloc its internal array for growing, only when absolutely required.<br>
-            When using objects with copy constructor, it still realloc its array that stores the objects, and 
+            When using objects with copy constructor, it still realloc its array that stores the objects, and
             copy the given object to the un-allocated space with the copy constructor if possible.<br>
             This way, growing the array for an append only operation, calls the copy constructor once.<br>
             If the realloc fails / or will move the data, it calls the copy constructor for all previous object like any other dynamic array.
@@ -100,7 +100,7 @@ namespace Container
             Policy must follow the MemoryPolicy interface
             @sa MemoryPolicy
         */
-        template <typename T, class Policy = MemoryPolicy<T>, bool ExactSize = false> 
+        template <typename T, class Policy = MemoryPolicy<T>, bool ExactSize = false>
         class Array
         {
             // Type definition and enumeration
@@ -113,7 +113,7 @@ namespace Container
                 size_t      currentSize;
                 size_t      allocatedSize;
             };
-            
+
         private:
             enum { elementSize = sizeof(T) };
 
@@ -133,7 +133,7 @@ namespace Container
         public:
             /** Clear the array, and destruct any remaining objects */
             inline void Clear() { Clear(0); }
-        
+
             /** Append an element to the end of the array */
             inline void Append(const T & ref) throw() { Add(ref, (Bool2Type<ExactSize> * )0); }
             /** Append an element only if not present.
@@ -147,19 +147,19 @@ namespace Container
                 @param elements    A pointer to the elements to append (they are copied, can be 0)
                 @param count       How many elements to copy from the given array */
             inline void Grow(const size_t count, T * const elements) throw() { Add(elements, count, (Bool2Type<ExactSize>*)0); }
-            /** Insert an element just before the given index 
+            /** Insert an element just before the given index
                 @param index    Zero based index of the element once inserted
                 @param ref      The element*/
             inline void insertBefore(size_t index, const T & ref) throw() { Insert(index, ref, (Bool2Type<ExactSize> * )0); }
-            /** Remove an object from the array 
+            /** Remove an object from the array
                 @param index Zero based index of the object to remove */
             inline void Remove(size_t index) throw() { Remove(index, (Bool2Type<ExactSize> * )0); }
-            /** Forget an object from the array 
+            /** Forget an object from the array
                 @param index Zero based index of the object to remove */
             inline void Forget(size_t index) throw() { Forget(index, (Bool2Type<ExactSize> * )0); }
-            /** Swap operator 
-                @param index1   The index to the first object to swap 
-                @param index2   The index to the second object to swap 
+            /** Swap operator
+                @param index1   The index to the first object to swap
+                @param index2   The index to the second object to swap
                 @warning Nothing is done if any index is out of range */
             inline void Swap(const size_t index1, const size_t index2) { if (index1 < currentSize && index2 < currentSize) { T tmp = array[index1]; array[index1] = array[index2]; array[index2] = tmp; } }
 
@@ -172,15 +172,15 @@ namespace Container
                 currentSize = other.currentSize;
                 return *this;
             }
-            
+
             /** Access size member */
             inline size_t getSize() const { return currentSize; }
-            /** Access operator 
+            /** Access operator
                 @param index The position in the array
                 @return the index-th element if index is in bound, or Policy::DefaultElement() else
             */
             inline T & operator [] (size_t index) { return index < currentSize ? array[index] : Policy::DefaultElement(); }
-            /** Access operator 
+            /** Access operator
                 @param index The position in the array
                 @return the index-th element if index is in bound, or Policy::DefaultElement() else
             */
@@ -191,13 +191,13 @@ namespace Container
                 @return the index-th element if index is in bound, or Policy::DefaultElement() else
             */
             inline const T & getElementAtPosition (size_t index) const { return index < currentSize ? array[index] : Policy::DefaultElement(); }
-           
+
             /** Search operator in O(N)
                 @param objectToSearch   The object to look for in the array
                 @param startPos         The position to start searching from
                 @return the element index of the given element or getSize() if not found. */
             inline size_t indexOf(const T & objectToSearch, const size_t startPos = 0) const { return Policy::Search(array, currentSize, startPos, objectToSearch); }
-            /** Check whether this contains contains the given object. 
+            /** Check whether this contains contains the given object.
                 Search is O(N)
                 @param objectToSearch   The object to look for in the array
                 @param startPos         The position to start searching from
@@ -209,9 +209,9 @@ namespace Container
                 @param startPos         The position to start searching from
                 @return the element index of the given element or getSize() if not found. */
             inline size_t indexOfSorted(const T & objectToSearch, const size_t startPos = 0) const { return Policy::SearchSorted(array, currentSize, startPos, objectToSearch); }
-                
-            /** Reverse search operator 
-                @param objectToSearch   The object to look for in the array 
+
+            /** Reverse search operator
+                @param objectToSearch   The object to look for in the array
                 @param startPos         The position to start searching from (usually end of array)
                 @return the element index of the given element or getSize() if not found.
             */
@@ -221,7 +221,7 @@ namespace Container
             /** Compare operator */
             inline bool operator == (const Array & other) const { return other.currentSize == currentSize && Policy::CompareArray(array, other.array, currentSize); }
 
-        
+
             /** Move strategy is explicit with this intermediate object */
             Internal getMovable() { Internal intern = { array, currentSize, allocatedSize }; Reset(); return intern; }
             /** Copy strategy is explicit with this intermediate object. Beware, don't use this as a Array constructor */
@@ -246,7 +246,7 @@ namespace Container
                     // Need to realloc the data
                     if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize>>1);
                     array = Policy::NonDestructiveAlloc(array, currentSize, allocatedSize, Policy::DefaultElement());
-                    if (array == 0) { Reset(); return; } 
+                    if (array == 0) { Reset(); return; }
                 }
                 // Copy the data
                 Policy::Copy(array[currentSize], ref);
@@ -297,7 +297,7 @@ namespace Container
                     // Need to realloc the data
                     if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize>>1);
                     array = Policy::Insert(array, currentSize, allocatedSize, index, ref);
-                    if (array == 0) { Reset(); return; } 
+                    if (array == 0) { Reset(); return; }
                 } else
                 {   // Need to move the data
                     size_t i = currentSize;
@@ -311,7 +311,7 @@ namespace Container
             /** Remove an object from the array when the array should shrink to the new size */
             inline void Remove(size_t index, Bool2Type<true> *) throw()
             {
-                if (index == 0 && currentSize == 1) 
+                if (index == 0 && currentSize == 1)
                     Clear();
                 else
                 {
@@ -366,7 +366,7 @@ namespace Container
                     // Then switch the pointers
                     --currentSize;
                     // Zero the last element
-                    array[currentSize] = Policy::DefaultElement(); 
+                    array[currentSize] = Policy::DefaultElement();
                 }
             }
 
@@ -388,7 +388,7 @@ namespace Container
         /** @cond */
         /** The memory policy interface for index list */
         template <typename T, bool WithDeref = true>
-        struct MemoryListPolicy 
+        struct MemoryListPolicy
         {
             /** This is used to select the [] return type */
             enum { CanDereference = WithDeref };
@@ -397,14 +397,14 @@ namespace Container
             /** This method copy the srcSize data from src to dest, but doesn't resizing dest if it's too small (Copy is then limited to destSize elements). */
             static void CopyArray(T** dest,  T** const src, const size_t & destSize, const size_t srcSize);
             /** This method copy the srcSize data from src to dest, resizing dest if required.
-                @warning dest must not be 0 
+                @warning dest must not be 0
             */
             static void CopyArray(T**& dest,  T** const src, size_t & destSize, const size_t srcSize);
             /** This method duplicate array and clone every member in it resizing dest if required.
-                @warning dest must not be 0 
+                @warning dest must not be 0
             */
-            static void DuplicateArray(T**& dest, T** const src, size_t & destSize, const size_t srcSize); 
-            /** This method search for the first element that match the given element and returns arraySize if not found 
+            static void DuplicateArray(T**& dest, T** const src, size_t & destSize, const size_t srcSize);
+            /** This method search for the first element that match the given element and returns arraySize if not found
                 The type must have a defined "== operator"
             */
             static size_t Search(T** const array, const size_t arraySize, const size_t from, T* const & valueToLookFor);
@@ -420,7 +420,7 @@ namespace Container
             static T** NonDestructiveAlloc(T** const array, const size_t currentSize, const size_t newSize, T** const fillWith);
             static T* * Insert(T** const array, const size_t currentSize, const size_t newSize, const size_t index, T* const & elementToInsert);
             /** Delete the array */
-            static void DeleteArray(T* * const array, const size_t currentSize); 
+            static void DeleteArray(T* * const array, const size_t currentSize);
             /** Remove on item from the array */
             static void Remove(T * const data);
             /** Compare array */
@@ -440,19 +440,19 @@ namespace Container
             <br>
             When copying, it duplicates the pointer array by calling the copy constructor of the objects<br>
             <br>
-            It's best if used like 
+            It's best if used like
             @code
             // Create an index list
             IndexList<MyObj> myList;
             myList.Append(new MyObj(something));
             // This will delete the inserted object by using the selected policy (delete in this example)
-            myList.Remove(0); 
+            myList.Remove(0);
             myList.insertBefore(2, new MyObj(foo)); // Index can be out of range
             myList.insertBefore(0, new MyObj(bar));
             // Get a reference on the list element
             const MyObj & ref = myList[1];
             // Search for an element based on its address
-            assert(1 == myList.indexOf(&ref));    
+            assert(1 == myList.indexOf(&ref));
             // Search for an element based on its value (much slower)
             assert(1 == myList.indexOfMatching(ref));
             @endcode
@@ -460,11 +460,11 @@ namespace Container
 
             @warning You can't store array of objects, as the destructor doesn't call delete[].
             @warning If you want to use it with copy-constructible objects, you'll have to provide a default constructable element returned when using the [] operator
-        
+
             Policy must follow the MemoryPolicy interface
             @sa MemoryPolicy
         */
-        template <typename TElem, class Policy = MemoryListPolicy<TElem, true>, bool ExactSize = false> 
+        template <typename TElem, class Policy = MemoryListPolicy<TElem, true>, bool ExactSize = false>
         class IndexList
         {
             // Type definition and enumeration
@@ -500,37 +500,37 @@ namespace Container
         public:
             /** Clear the array, and destruct any remaining objects */
             inline void Clear() { Clear(0); }
-        
+
             /** Append an element to the end of the array */
             inline void Append(const TPtr & ref) throw() { Add(ref, (Bool2Type<ExactSize> * )0); }
             /** Append an element only if not present.
-                The object itself is compared, not the pointer. 
+                The object itself is compared, not the pointer.
                 Usually you'll store objects in an array if they don't exist already in the array,
                 and you'll likely want the position of the object if it exists to use it directly.
                 @param ref              The pointer to a new allocated object to be appended if not found in the array.
                 @param deleteIfPresent  If true, and the object is already found in the array, the given pointed object is deleted.
                 @return The position of the searched item if found (you might need to delete the element in that case if you don't want it done here), or getSize() - 1 if not and it was appended. */
             inline size_t appendIfNotPresent(const TPtr & ref, const bool deleteIfPresent = true) { size_t pos = indexOf(ref); if (pos == getSize()) { Append(ref); return pos; } if (deleteIfPresent) delete ref; return pos; }
-            /** Grow this array by (at least) the given number of elements 
+            /** Grow this array by (at least) the given number of elements
                 This set up the allocation size to, at least, currentSize + count.
                 The elements are owned by the array.
                 @param elements    A pointer to the elements to append (they are copied, can be 0)
                 @param count       How many elements to copy from the given array */
             inline void Grow(const size_t count, TPtr * const elements) throw() { Add(elements, count, (Bool2Type<ExactSize>*)0); }
-            /** Insert an element just before the given index 
+            /** Insert an element just before the given index
                 @param index    Zero based index of the element once inserted
                 @param ref      The element to insert
                 @warning If index is out of range, the element is appended instead. */
             inline void insertBefore(size_t index, const TPtr & ref) throw() { Insert(index, ref, (Bool2Type<ExactSize> * )0); }
-            /** Remove an object from the array 
+            /** Remove an object from the array
                 @param index Index of the object to remove */
             inline void Remove(size_t index) throw() { Remove(index, (Bool2Type<ExactSize> * )0); }
-            /** Forget an object from the array 
+            /** Forget an object from the array
                 @param index Zero based index of the object to remove */
             inline void Forget(size_t index) throw() { Forget(index, (Bool2Type<ExactSize> * )0); }
-            /** Swap operator 
-                @param index1   The index to the first object to swap 
-                @param index2   The index to the second object to swap 
+            /** Swap operator
+                @param index1   The index to the first object to swap
+                @param index2   The index to the second object to swap
                 @warning Nothing is done if any index is out of range */
             inline void Swap(const size_t index1, const size_t index2) { if (index1 < currentSize && index2 < currentSize) { TPtr tmp = array[index1]; array[index1] = array[index2]; array[index2] = tmp; } }
 
@@ -543,14 +543,14 @@ namespace Container
                 currentSize = other.currentSize;
                 return *this;
             }
-            
+
             /** Access size member */
             inline size_t getSize() const { return currentSize; }
-            /** Access operator 
+            /** Access operator
                 @param index The position in the array
                 @return the index-th element if index is in bound, or Policy::DefaultElement() else */
             inline TElem & operator [] (const size_t index) { return getElementRefAtPosition(index, (Bool2Type<Policy::CanDereference> *)0); }
-            /** Access operator 
+            /** Access operator
                 @param index The position in the array
                 @return the index-th element if index is in bound, or Policy::DefaultElement() else */
             inline const TElem & operator [] (const size_t index) const { return getElementAtPosition(index, (Bool2Type<Policy::CanDereference> *)0); }
@@ -558,12 +558,12 @@ namespace Container
                 @param index The position in the array
                 @return the index-th element if index is in bound, or Policy::DefaultElement() else */
             inline const TElem & getElementAtPosition (size_t index) const { return getElementAtPosition(index, (Bool2Type<Policy::CanDereference> *)0); }
-            /** Search operator 
+            /** Search operator
                 @param objectToSearch   The object to look for in the array based on the given address
                 @param startPos         The position to start searching from
                 @return the element index of the given element or getSize() if not found. */
             inline size_t indexOf(const TPtr & objectToSearch, const size_t startPos = 0) const { return Policy::Search(array, currentSize, startPos, objectToSearch); }
-            /** Check whether this contains contains the given object. 
+            /** Check whether this contains contains the given object.
                 Search is O(N)
                 @param objectToSearch   The object to look for in the array
                 @param startPos         The position to start searching from
@@ -574,14 +574,14 @@ namespace Container
                 @param startPos         The position to start searching from
                 @return the element index of the given element or getSize() if not found. */
             inline size_t lastIndexOf(const TPtr & objectToSearch, const size_t startPos = MaxPositiveSize) const { return Policy::ReverseSearch(array, min(currentSize, startPos), objectToSearch); }
-            /** Search operator 
-                @param objectToSearch The object to look for in the array 
+            /** Search operator
+                @param objectToSearch The object to look for in the array
                 @return the element index of the given element or getSize() if not found. */
             inline size_t indexOfMatching(const TElem & objectToSearch, const size_t startPos = 0) const { return Policy::SearchRef(array, currentSize, startPos, objectToSearch); }
             /** Fast access operator, but doesn't check the index given in */
             inline TPtr & getElementAtUncheckedPosition(size_t index) { return array[index]; }
             /** Fast access operator, but doesn't check the index given in */
-            inline const TPtr & getElementAtUncheckedPosition(size_t index) const { return array[index]; }            
+            inline const TPtr & getElementAtUncheckedPosition(size_t index) const { return array[index]; }
             /** Compare operator */
             inline bool operator == (const IndexList & other) const { return other.currentSize == currentSize && Policy::CompareArray(array, other.array, currentSize); }
 
@@ -607,7 +607,7 @@ namespace Container
                     // Need to realloc the data
                     if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize >> 1); // Growth factor of 1.5 allow reuse of memory deallocated
                     array = Policy::NonDestructiveAlloc(array, currentSize, allocatedSize, Policy::DefaultElement());
-                    if (array == 0) { Reset(); return; } 
+                    if (array == 0) { Reset(); return; }
                 }
                 // Copy the data
                 Policy::CopyPtr(array[currentSize], ref);
@@ -658,7 +658,7 @@ namespace Container
                     // Need to realloc the data
                     if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize >> 1); // Growth factor of 1.5 allow reuse of memory deallocated
                     array = Policy::Insert(array, currentSize, allocatedSize, index, ref);
-                    if (array == 0) { Reset(); return; } 
+                    if (array == 0) { Reset(); return; }
                 } else
                 {   // Need to move the data
                     size_t i = currentSize;
@@ -668,7 +668,7 @@ namespace Container
                 }
                 currentSize ++;
             }
-            
+
             /** Remove an object from the array when the array should shrink to the new size */
             inline void Remove(size_t index, Bool2Type<true> *) throw()
             {
@@ -723,11 +723,11 @@ namespace Container
                     // Then switch the pointers
                     --currentSize;
                     // Zero the last element
-                    array[currentSize] = Policy::DefaultElement(); 
+                    array[currentSize] = Policy::DefaultElement();
                 }
             }
 
-            /** Access operator 
+            /** Access operator
                 @param index The position in the array
                 @return the index-th element if index is in bound, or Policy::DefaultElement() else
             */
@@ -737,7 +737,7 @@ namespace Container
                 @return the index-th element if index is in bound, or Policy::DefaultElement() else
             */
             inline const TElem & getElementAtPosition (size_t index, Bool2Type<true> *) const { return index < currentSize ? *array[index] : Policy::DefaultSubElement(); }
-            /** Access operator 
+            /** Access operator
                 @param index The position in the array
                 @return the index-th element if index is in bound, or Policy::DefaultElement() else
                 @warning If the application crash here, it's out-of-index exception
@@ -753,7 +753,7 @@ namespace Container
 
             /** Reset the vector to its initial state (doesn't perform destruction of data) */
             inline void Reset() { currentSize = 0; allocatedSize = 0; array = 0; }
-            /** Clear the list 
+            /** Clear the list
                 @param ref is checked for every item. If one of them matches, then it is not deleted */
             inline void Clear(TPtr *) { Policy::DeleteArray(array, allocatedSize); Reset(); }
         private:
@@ -773,7 +773,7 @@ namespace Container
         {
             typedef T & Result;
             /** Returns the default value when not found */
-            static Result DefaultValue(); 
+            static Result DefaultValue();
             /** Convert the type to the required type for comparing */
             static Result From(T * x);
             /** Compare an item with a given item */
@@ -817,48 +817,48 @@ namespace Container
 
         /** ChainedList class usage<br>
             <br>
-            ChainedList is a template double chained list that 
+            ChainedList is a template double chained list that
             allow high efficiency access and advantages of chained list.<br>
             <br>
             In usual chained list, random access into the list is an O(N) operation.<br>
             In this list, random access into the list is an O(N/M) operation.
             <br>
-            The list chains allocated blocks of M pointers. 
+            The list chains allocated blocks of M pointers.
             When accessing the i-th element, not all (i-1) elements
-            are accessed, but only (j)/M elements are accessed with j 
+            are accessed, but only (j)/M elements are accessed with j
             being the minimum distance from both ends.<br>
             <br>
             (Example : To reach the 41st element in a usual list
-            you have to cross the first 40 element. Here, if the 
+            you have to cross the first 40 element. Here, if the
             array is 16 pointers wide, you will cross 2 array elements
             and 8 pointer elements, that is 10 operations, not 40)<br>
             <br>
-            While appending data is almost a free operation [O(1)], 
-            inserting/removing data in such list impose accessing O(N) 
+            While appending data is almost a free operation [O(1)],
+            inserting/removing data in such list impose accessing O(N)
             elements in the worst case in order to preserve list integrity.
             <br>
-            If insertion and removing are to be frequent compared to 
+            If insertion and removing are to be frequent compared to
             indexed access, then consider using Insert and Remove method
             instead of Add and Sub.
             <br>
-            Insert and Remove both loose list integrity, so next indexed 
+            Insert and Remove both loose list integrity, so next indexed
             access will be O(N) again, but then the list will act like any
             standard chained list.
             <br>
             <br>
             So, if you don't need to use these improvements, simply use the
-            list in a usual way, via inserting and removing functions, 
+            list in a usual way, via inserting and removing functions,
             it will act as an usual chained list.
             <br>
             Another improvement with this list are the adding functions.
-            You could insert pointer to an element in the list, and they 
+            You could insert pointer to an element in the list, and they
             will be deleted when list is deleted (usual owning chained list),
-            OR, you can insert a element in the list, and a copy of it 
-            will be insert in the list and deleted. No need to know if 
+            OR, you can insert a element in the list, and a copy of it
+            will be insert in the list and deleted. No need to know if
             you should delete the object.<br>
             <br>
-            This list also provide very fast parsing system.<br> 
-            If you want extremely fast access to the list call the parseList 
+            This list also provide very fast parsing system.<br>
+            If you want extremely fast access to the list call the parseList
             method, that return the next pointer.<br>
             <br>
             @code
@@ -869,16 +869,16 @@ namespace Container
             ChainedList<int, 3>  myList1;
 
             // Add an element to list
-            myList0.Add(3); 
+            myList0.Add(3);
             // Or simply myList0.Add(new int(3));
-            myList1 += 45; 
+            myList1 += 45;
 
             // Access the i-th element
-            cout << myList0[i]; 
+            cout << myList0[i];
 
             // Remove the i-th list element
-            myList0.Sub(i); 
-            myList0 -= 3; 
+            myList0.Sub(i);
+            myList0 -= 3;
 
             // To insert an element before the i-th position
             myList0.Insert(7896, i);
@@ -889,7 +889,7 @@ namespace Container
             // Change an element value, in the i-th position
             myList0.Change(456,i);
 
-            // To parse the list, first time, beginning with i-th 
+            // To parse the list, first time, beginning with i-th
             // position
             int * a = myList0.Parse(i);
             // To parse the list, next time
@@ -900,19 +900,19 @@ namespace Container
             @endcode
         */
         template <class U, unsigned int pow2 = 4, class SearchPolicy = SearchPolicyInterface<U> >
-        class ChainedList 
+        class ChainedList
         {
         public:
             /** Define the constant that the list can return */
-            enum 
+            enum
             {
                 ChainedEnd      = -1,           //!< This is used to add and or insert at end of list
                 ChainedError    = ChainedEnd,   //!< Whenever an indexed error occurs, this is the returned value
-                ChainedStart    = 0,            //!< This is used to insert data in the head of the list 
+                ChainedStart    = 0,            //!< This is used to insert data in the head of the list
                 ChainedBS       = 1<<pow2,      //!< Process the asked pow once
             };
 
-        private:    
+        private:
             /** The node base class */
             class NodeNotCopyable
             {
@@ -924,12 +924,12 @@ namespace Container
                 /** The pointer on the data */
                 U *             mpuElement;
 
-            
+
                 /** Default constructors */
                 NodeNotCopyable(U* t = 0) : mpxPrevious(0), mpxNext(0), mpuElement(t) {}
                 /** The destructor always delete the object */
-                ~NodeNotCopyable() 
-                { 
+                ~NodeNotCopyable()
+                {
                     delete mpuElement; mpuElement = 0;
                 }
 
@@ -940,7 +940,7 @@ namespace Container
             };
 
             /** The node class for copyable objects */
-            class NodeCopyable 
+            class NodeCopyable
             {
             public:
                 /** The pointer on the previous object */
@@ -953,8 +953,8 @@ namespace Container
                 /** Default constructors */
                 NodeCopyable(U* t = 0) : mpxPrevious(0), mpxNext(0), mpuElement(t) {}
                 /** The destructor always delete the object */
-                ~NodeCopyable() 
-                { 
+                ~NodeCopyable()
+                {
                     delete mpuElement; mpuElement = 0;
                 }
 
@@ -972,14 +972,14 @@ namespace Container
 
             };
 
-            typedef typename Select<SearchPolicy::DefaultConstructibleAndCopyable, NodeCopyable, NodeNotCopyable>::Result Node; 
+            typedef typename Select<SearchPolicy::DefaultConstructibleAndCopyable, NodeCopyable, NodeNotCopyable>::Result Node;
 
             /** Select the parameters type depending on constructible policy */
             typedef typename Select<SearchPolicy::DefaultConstructibleAndCopyable, U&, U*>::Result                  DefaultParamType;
             typedef typename Select<SearchPolicy::DefaultConstructibleAndCopyable, const U&, const U*>::Result      DefaultConstParamType;
 
         private:
-            /** The memory array holding pointers */ 
+            /** The memory array holding pointers */
             template <unsigned int size>
             class LinearBlock
             {
@@ -997,37 +997,37 @@ namespace Container
                 // Construction
             public:
                 /** Default constructor */
-                LinearBlock(LinearBlock * previous = 0, LinearBlock * next = 0) : spxNext(next), spxPrevious(previous) , soUsed(0)    {}          
+                LinearBlock(LinearBlock * previous = 0, LinearBlock * next = 0) : spxNext(next), spxPrevious(previous) , soUsed(0)    {}
                 /** Default destruction too : destruct object if needed */
-                ~LinearBlock()                             
-                { 
+                ~LinearBlock()
+                {
                     if ( spxNext!=0 || spxPrevious!=0)
                     {
-                        if (spxNext!=0)  
+                        if (spxNext!=0)
                             spxNext->spxPrevious = spxPrevious;
-                        if (spxPrevious!=0)  
+                        if (spxPrevious!=0)
                             spxPrevious->spxNext = spxNext;
 
-                        spxNext = spxPrevious = 0; 
+                        spxNext = spxPrevious = 0;
                     }
                 }
 
                 // Interface
             public:
                 /** Connect to other nodes */
-                inline void Connect(LinearBlock * previous, LinearBlock * next)     { spxPrevious = previous; spxNext = next; } 
+                inline void Connect(LinearBlock * previous, LinearBlock * next)     { spxPrevious = previous; spxNext = next; }
                 /** Delete this object safely, reconnect other node if needed */
-                inline void Delete() 
-                {       
-                    if (spxNext!=0)  
+                inline void Delete()
+                {
+                    if (spxNext!=0)
                         spxNext->spxPrevious = spxPrevious;
-                    if (spxPrevious!=0)  
+                    if (spxPrevious!=0)
                         spxPrevious->spxNext = spxNext;
-                    
-                    spxNext = spxPrevious = 0; 
+
+                    spxNext = spxPrevious = 0;
                     delete this;
                 }
-                
+
                 /** Return first element in the list (O(n) speed) */
                 inline LinearBlock<size> * GoFirst()    {  LinearBlock<size>* pNode = this; while (pNode->spxPrevious != 0) pNode = spxPrevious; return pNode; }
                 /** Return last element in the list (O(n) speed) */
@@ -1036,10 +1036,10 @@ namespace Container
 
                 /** Append a new block to the end */
                 inline bool CreateNewBlock()
-                {   
+                {
                     if (spxNext!=0) return false;
                     LinearBlock<size>* pNode = new LinearBlock<size>(this, 0);
-                    if (pNode == 0) return false; 
+                    if (pNode == 0) return false;
                     else               spxNext = pNode;
                     return true;
                 }
@@ -1048,27 +1048,27 @@ namespace Container
                 inline Node * GetData()     {   return &sapxBlock[0]; }
                 /** Find a node */
                 LinearBlock<size> * Find(Node * pNode)
-                { 
-                    if (pNode==0) return 0; 
-                    LinearBlock<size> * pBlock = GoFirst(); 
+                {
+                    if (pNode==0) return 0;
+                    LinearBlock<size> * pBlock = GoFirst();
                     LinearBlock<size> * pEnd = GoLast();
                     for (; pBlock != pEnd; pBlock = pBlock->spxNext)
                         if ( pNode >= pBlock->GetData() && pNode <= pBlock->GetData() + size) return pBlock;
                     return 0;
                 }
-                
+
             private:
                 /** Delete all list
                     Note : this list should never be deleted explicitely
                     Only when ChainedList<U>::Delete is called
-                    This list can only grow (for memory saving purpose, there is a protection, when two nodes are 
+                    This list can only grow (for memory saving purpose, there is a protection, when two nodes are
                     free of data pointers, last one is deleted
                 */
-                bool DeleteAll() 
-                { 
-                    LinearBlock<size>* pNode2, *pNode = GoFirst(); 
+                bool DeleteAll()
+                {
+                    LinearBlock<size>* pNode2, *pNode = GoFirst();
                     if (pNode == 0) return false;
-                    if (pNode->spxNext == 0) 
+                    if (pNode->spxNext == 0)
                     {
                         pNode->Delete();
                         pNode = 0;
@@ -1082,7 +1082,7 @@ namespace Container
                         pNode->Delete();
                         pNode = pNode2;
                     }
-                    return true; 
+                    return true;
                 }
             public:
                 friend class ChainedList<U, pow2, SearchPolicy>;
@@ -1098,7 +1098,7 @@ namespace Container
             mutable Node *  mpxCurrent;
             /** The node count */
             unsigned int    mlNumberOfNodes;
-            
+
             /** Number of allocated blocks */
             unsigned int                        mlNumberOfBlocks;
             /** Block size = 2^(template)pow2 */
@@ -1109,7 +1109,7 @@ namespace Container
             LinearBlock<ChainedBS> *    mpxBLast;
 
         private:
-            /** Should we use blocks ? (same thing as (template)pow2 = 0) 
+            /** Should we use blocks ? (same thing as (template)pow2 = 0)
                 If not, the list act like a standard linked list
             */
             bool                        mbUseBlocks;
@@ -1121,51 +1121,51 @@ namespace Container
             /** Get the current used node number */
             inline unsigned int getSize() const { return mlNumberOfNodes; }
 
-            // Interface 
+            // Interface
         public:
             /** Add a node to list
                 @warning Take care that add function preserve list integrity
                 whereas Insert function doesn't in most of case.
-                Even if Add function can insert node in list just before the 
+                Even if Add function can insert node in list just before the
                 given position, it is slower than a Insert function.
-                So, in realtime application, prefer adding node in a 
+                So, in realtime application, prefer adding node in a
                 preprocessing step, or using Insert function...
-                (Inserting with Add is O(Number of node - position)) 
+                (Inserting with Add is O(Number of node - position))
                 @return true if insertion was successful */
             bool Add(DefaultConstParamType, const unsigned int& = ChainedEnd);
             /** Add a node to list via pointers
-                @sa virtual bool Add(const U&, const unsigned int &)    
+                @sa virtual bool Add(const U&, const unsigned int &)
                 @return true if insertion was successful */
             bool Add(U*, const unsigned int& = ChainedEnd);
 
             /** Take care that Insert doesn't preserve list integrity
-                @sa Add function summary for details                    
+                @sa Add function summary for details
                 @return true if insertion was successful */
             bool Insert(DefaultConstParamType, const unsigned int& = ChainedStart);
             /** Subtract a node from list
-                @warning Please note, that Sub conserve list integrity, 
+                @warning Please note, that Sub conserve list integrity,
                 whereas Remove function does not. However, Sub is slower
                 than Remove, because of list reconstruction...
                 So, in realtime, prefer using remove (that is faster)
                 @return true if removing was successful */
             bool Sub(const unsigned int& = ChainedEnd);
-            /** Remove a node from the list, but in most of case, it doesn't 
-                preserve list integrity 
-                @sa Sub method                                          
+            /** Remove a node from the list, but in most of case, it doesn't
+                preserve list integrity
+                @sa Sub method
                 @return true if insertion was successful */
             bool Remove(const unsigned int& = ChainedStart);
-            
-            /** Find a node in the list 
-                If provided an operator == for U, then this method 
+
+            /** Find a node in the list
+                If provided an operator == for U, then this method
                 perform a O(N) search in the list
                 @return The node index if found or ChainedError if not */
             unsigned int indexOf(DefaultConstParamType);
-            /** Find the last matching node in the list 
-                If provided an operator == for U, then this method 
+            /** Find the last matching node in the list
+                If provided an operator == for U, then this method
                 perform a O(N) search in the list
                 @return The node index if found or ChainedError if not */
             unsigned int lastIndexOf(DefaultConstParamType);
-            /** Swap two nodes, preserve list integrity for the given indexes 
+            /** Swap two nodes, preserve list integrity for the given indexes
                 @return true on successful swapping */
             bool Swap(const unsigned int &, const unsigned int &);
 
@@ -1181,16 +1181,16 @@ namespace Container
             bool Connect(Node *, Node *, Node *);
 
         public:
-            /** Insert a list to this list 
+            /** Insert a list to this list
                 @sa virtual bool Add(const U&, const unsigned int &)
                 @return true on successful insertion    */
             bool Add(const ChainedList&, const unsigned int & = ChainedEnd);
 
-            /** Delete the list 
-                @warning This function do delete nodes... (and data) 
+            /** Delete the list
+                @warning This function do delete nodes... (and data)
                 @return true on successful deletion     */
             bool Free();
-            /** Allow mutating a node data at the given index 
+            /** Allow mutating a node data at the given index
                 @return true on successful mutation     */
             bool Change(DefaultConstParamType, const unsigned int &);
 
@@ -1225,16 +1225,16 @@ namespace Container
             U * reverseParseListStart(const unsigned int & uiPos = ChainedEnd) const;
 
 
-            // Operators 
+            // Operators
         public:
             /** Operator [] return U type at i-th position.
-                @param i the indexed position to retrieve 
+                @param i the indexed position to retrieve
                 @return The returned type depends on the selected policy
             */
-            inline typename SearchPolicy::Result operator [] (const unsigned int &i)                  
-            {   Node * pNode = Goto(i); 
-                if (pNode == 0)    return SearchPolicy::DefaultValue();  
-                return SearchPolicy::From(pNode->mpuElement); 
+            inline typename SearchPolicy::Result operator [] (const unsigned int &i)
+            {   Node * pNode = Goto(i);
+                if (pNode == 0)    return SearchPolicy::DefaultValue();
+                return SearchPolicy::From(pNode->mpuElement);
             }
 
             /** Append the given element to the list end */
@@ -1245,13 +1245,13 @@ namespace Container
             /** The classic copy and modify operators */
             inline ChainedList operator + (DefaultConstParamType a) const   { return ChainedList(*this)+= a; }
             inline ChainedList operator - (DefaultConstParamType a) const   { return ChainedList(*this)-= a; }
-            
+
             /** Equality operator */
             inline ChainedList& operator = (const ChainedList& );
             /** Append the given list to ours */
             inline ChainedList& operator += (const ChainedList& a)  { this->Add(a); return (*this); }
 
-            /** It costs nothing... */ 
+            /** It costs nothing... */
             inline ChainedList& operator + (const ChainedList& a) const { return ChainedList(*this)+= a; }
 
             /** Move the object from the given position to the given position.
@@ -1266,7 +1266,7 @@ namespace Container
                 @return true on success, false on error */
             inline bool moveAppendedList(ChainedList & a)
             {
-                if (mlNumberOfNodes) 
+                if (mlNumberOfNodes)
                 {
                     if (!a.Add(*this, ChainedStart)) return false;
                 }
@@ -1286,7 +1286,7 @@ namespace Container
                 a.mbIntegrity = true;
                 return true;
             }
-            
+
             // Construction
         public:
             /** Default constructor */
@@ -1324,10 +1324,10 @@ namespace Container
         {
             /** This method copy (can also move depending on policy) the given data */
             inline static void Copy(T & dest, const T & src) { dest = src; }
-            
+
             /** This method copy the srcSize data from src to dest, not resizing dest even if required */
-            inline static void CopyArray(T * dest, const T * src, const size_t & destSize, const size_t srcSize) 
-            { 
+            inline static void CopyArray(T * dest, const T * src, const size_t & destSize, const size_t srcSize)
+            {
                 memmove(dest, src, Container::min(srcSize, destSize) * sizeof(T));
             }
             /** This method copy the srcSize data from src to dest, resizing dest if required */
@@ -1340,9 +1340,9 @@ namespace Container
                     if (tmp == 0) { DeleteArray(dest, destSize); dest = 0; destSize = 0; return;  }
 
                     memcpy(tmp, src, srcSize * sizeof(T));
-                    
+
                     // Erase the previous array
-                    DeleteArray(dest, destSize); 
+                    DeleteArray(dest, destSize);
                     dest = tmp;
 
                     destSize = srcSize;
@@ -1354,13 +1354,13 @@ namespace Container
             inline static size_t Search(const T* array, const size_t arraySize, const size_t from, const T & valueToLookFor) { size_t i = from; while (i < arraySize && array[i] != valueToLookFor) i++; return i; }
             /** This method search for the given element and returns arraySize if not found */
             inline static size_t SearchSorted(const T* array, const size_t arraySize, const size_t from, const T & valueToLookFor)
-            {   
+            {
                 size_t highPos = arraySize, lowPos = from, i = 0;
                 while (1)
                 {
                     if (lowPos >= highPos) return arraySize;
                     else if (array[lowPos] == valueToLookFor) return lowPos;
-                    else 
+                    else
                     {
                         i = (highPos + lowPos) / 2;
                         if (i == lowPos) return arraySize;
@@ -1368,7 +1368,7 @@ namespace Container
                     }
                 }
             }
-            
+
             /** This method search for the last given element and returns arraySize if not found */
             inline static size_t ReverseSearch(const T* array, const size_t arraySize, const T & valueToLookFor) { size_t i = arraySize; while (i && array[i-1] != valueToLookFor) i--; return i ? i - 1 : arraySize; }
             /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it */
@@ -1393,17 +1393,17 @@ namespace Container
 
                 return ret;
             }
-            /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it, 
+            /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it,
                 plus inserting the given object at the given place and DefaultElement for empty places if any */
             static T * Insert(const T* array, const size_t currentSize, const size_t newSize, const size_t index, const T & elementToInsert)
             {
                 T * ret = (T*)realloc((void*)array, newSize * sizeof(T));
                 if (ret == 0) { free((void*)array); return 0; }
-                
+
                 size_t i = newSize - 1;
                 for (; i > currentSize; i--)
                     ret[i] = DefaultElement();
-                for (; i > index; i--) 
+                for (; i > index; i--)
                     ret[i] = ret[i-1];
 
                 ret[index] = elementToInsert;
@@ -1426,7 +1426,7 @@ namespace Container
                     dest[size] = new T(*src[size]);
             }
 
-            inline static void Delete(T * data) 
+            inline static void Delete(T * data)
             {
                 delete data;
             }
@@ -1434,19 +1434,19 @@ namespace Container
 
         /** The default memory policy interface for plain old data */
         template <typename T, bool WithDeref = true, typename CloneMixin = CloneAsNew<T> >
-        struct DefaultMemoryListPolicy 
+        struct DefaultMemoryListPolicy
         {
             /** This is used to select the [] return type */
             enum { CanDereference = WithDeref };
-            
+
             typedef T * Tptr;
             typedef const Tptr * constPtr;
 
             inline static void CopyPtr(T* & dest, T* const & src)                                                 { DefaultMemoryPolicy<T*>::Copy(dest, src); }
             inline static void CopyArray(T** dest,  T** const src, const size_t & destSize, const size_t srcSize) { DefaultMemoryPolicy<T*>::CopyArray(dest, src, destSize, srcSize); }
             inline static void CopyArray(T**& dest,  T** const src, size_t & destSize, const size_t srcSize)      { DefaultMemoryPolicy<T*>::CopyArray(dest, src, destSize, srcSize); }
-            inline static void DuplicateArray(T**& dest, T** const src, size_t & destSize, const size_t srcSize) 
-            { 
+            inline static void DuplicateArray(T**& dest, T** const src, size_t & destSize, const size_t srcSize)
+            {
                 if (destSize < srcSize)
                 {
                     // Need to resize the array
@@ -1454,20 +1454,20 @@ namespace Container
                     if (tmp == 0) { DeleteArray(dest, destSize); dest = 0; destSize = 0; return;  }
 
                     CloneMixin::Clone(tmp, src, srcSize);
-                    
+
                     // Erase the previous array
-                    DeleteArray(dest, destSize); 
+                    DeleteArray(dest, destSize);
                     dest = tmp;
 
                     destSize = srcSize;
                 } else CloneMixin::Clone(dest, src, srcSize);
             }
 
-            /** This method search for the first element that match the given element and returns arraySize if not found 
+            /** This method search for the first element that match the given element and returns arraySize if not found
                 The type must have a defined "== operator"
             */
             inline static size_t Search(T** const array, const size_t arraySize, const size_t from, T* const & valueToLookFor)        { size_t i = from; while (i < arraySize && !(array[i] == valueToLookFor)) i++; return i; }
-            /** This method search for the last element that match the given element and returns arraySize if not found 
+            /** This method search for the last element that match the given element and returns arraySize if not found
                 The type must have a defined "== operator"
             */
             inline static size_t ReverseSearch(T** const array, const size_t arraySize, T* const & valueToLookFor) { size_t i = arraySize; while (i && !(array[i-1] == valueToLookFor)) i--; return i ? i - 1 : arraySize; }
@@ -1488,14 +1488,14 @@ namespace Container
             }
             inline static T* * Insert(T** const array, const size_t currentSize, const size_t newSize, const size_t index, T* const & elementToInsert) { return DefaultMemoryPolicy<T*>::Insert(array, currentSize, newSize, index, elementToInsert); }
             /** Delete the array */
-            inline static void DeleteArray(Tptr * const array, const size_t currentSize) 
-            { 
+            inline static void DeleteArray(Tptr * const array, const size_t currentSize)
+            {
                 // Delete all pointers in the array
                 for (size_t i = 0; i < currentSize; i++)
                 {
                     Remove(array[i]); array[i] = 0;
                 }
-                free((void*)array); 
+                free((void*)array);
             }
             /** Remove on item from the array */
             inline static void Remove(T * const data)             { CloneMixin::Delete(data); }
@@ -1518,20 +1518,20 @@ namespace Container
 
     }
     /** @endcond */
-    
+
     /** The array for plain old data and movable objects */
     template <typename T, class Policy = PlainOldDataPolicy::DefaultMemoryPolicy<T> >
     struct PlainOldData
     {
-        /** @copydoc Container::PrivateGenericImplementation::Array 
+        /** @copydoc Container::PrivateGenericImplementation::Array
             @sa Container::PrivateGenericImplementation::Array for interface description
         */
         typedef Container::PrivateGenericImplementation::Array<T, Policy, false> Array;
-        /** @copydoc Container::PrivateGenericImplementation::IndexList 
+        /** @copydoc Container::PrivateGenericImplementation::IndexList
             @sa Container::PrivateGenericImplementation::IndexList for interface description
         */
         typedef Container::PrivateGenericImplementation::IndexList<T, PlainOldDataPolicy::DefaultMemoryListPolicy<T>, false> IndexList;
-        /** @copydoc Container::PrivateGenericImplementation::ChainedList 
+        /** @copydoc Container::PrivateGenericImplementation::ChainedList
             @sa Container::PrivateGenericImplementation::ChainedList for interface description
         */
         typedef Container::PrivateGenericImplementation::ChainedList<T, 4, PlainOldDataPolicy::SearchPolicy<T> > ChainedList;
@@ -1564,17 +1564,17 @@ namespace Container
         {
             /** This is used to select the [] return type */
             enum { CanDereference = WithDeref };
-        
+
             typedef const T * constPtr;
             typedef const T constT;
             /** This method copy (can also move depending on policy) the given data */
             inline static void Copy(T & dest, const T & src) { dest.~T(); new(&dest) T(src); }
             /** This method copy the srcSize data from src to dest, not resizing dest even if required */
-            inline static void CopyArray(T * dest, const T * src, const size_t & destSize, const size_t srcSize) 
-            { 
+            inline static void CopyArray(T * dest, const T * src, const size_t & destSize, const size_t srcSize)
+            {
                 constPtr it = src, end = &src[srcSize < destSize ? srcSize : destSize];
                 T * itd = dest;
-                while (it != end) 
+                while (it != end)
                 {   // Destruct itd
                     itd->~T();
                     // Construct it again
@@ -1592,11 +1592,11 @@ namespace Container
                     if (tmp == 0) { DeleteArray(dest, destSize); dest = 0; destSize = 0; return;  }
 
                     size_t i = 0;
-                    for (; i < srcSize; i++) 
+                    for (; i < srcSize; i++)
                         new (&tmp[i]) T(src[i]);
 
                     // Erase the previous array
-                    DeleteArray(dest, destSize); 
+                    DeleteArray(dest, destSize);
                     dest = tmp;
 
                     destSize = srcSize;
@@ -1604,11 +1604,11 @@ namespace Container
             }
             /** This method returns a default constructed element or can throw */
             inline static T & DefaultElement() { static T t; return t; }
-            /** This method search for the given element and returns arraySize if not found 
+            /** This method search for the given element and returns arraySize if not found
                 The type must have a defined "!= operator"
             */
             inline static size_t Search(const T* array, const size_t arraySize, const size_t from, const T & valueToLookFor) { size_t i = from; while (i < arraySize && array[i] != valueToLookFor) i++; return i; }
-            /** This method search for the last element that match the given element and returns arraySize if not found 
+            /** This method search for the last element that match the given element and returns arraySize if not found
                 The type must have a defined "== operator"
             */
             inline static size_t ReverseSearch(const T * array, const size_t arraySize, const T & valueToLookFor) { size_t i = arraySize; while (i && array[i-1] != valueToLookFor) i--; return i ? i - 1 : arraySize; }
@@ -1620,10 +1620,10 @@ namespace Container
                 if (ret == 0) { DeleteArray(array, currentSize); return 0; }
 
                 size_t i = 0;
-                for (; i < currentSize; i++) 
+                for (; i < currentSize; i++)
                     new (&ret[i]) T(array[i]);
 
-                for (; i < newSize; i++) 
+                for (; i < newSize; i++)
                     new (&ret[i]) T(fillWith);
 
                 // Ok, let's delete the previous array
@@ -1648,7 +1648,7 @@ namespace Container
                 DeleteArray(array, currentSize);
                 return ret;
             }
-            /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it, 
+            /** This method perform a non destructive allocation in place if possible or move the given array to a new place copying data in it,
                 plus inserting the given object at the given place and DefaultElement for empty places if any */
             static T * Insert(const T* array, const size_t currentSize, const size_t newSize, const size_t index, const T & elementToInsert)
             {
@@ -1656,14 +1656,14 @@ namespace Container
                 if (ret == 0) { DeleteArray(array, currentSize); return 0; }
 
                 size_t i = 0;
-                for (; i < index; i++) 
+                for (; i < index; i++)
                     new (&ret[i]) T(array[i]);
-                
+
                 new (&ret[index]) T(elementToInsert);
 
                 for (; i < currentSize; i++)
                     new (&ret[i+1]) T(array[i]);
-                for (; i < newSize - 1; i++) 
+                for (; i < newSize - 1; i++)
                     new (&ret[i+1]) T(DefaultElement());
 
                 // Ok, let's delete the previous array
@@ -1672,11 +1672,11 @@ namespace Container
             }
 
             /** Delete the array */
-            inline static void DeleteArray(const T * array, const size_t currentSize) 
-            { 
+            inline static void DeleteArray(const T * array, const size_t currentSize)
+            {
                 if (!currentSize) return;
                 constPtr end = array + currentSize, it = array;
-                for (; it != end; it++) 
+                for (; it != end; it++)
                     it->~T();
 
                 free((void*)array);
@@ -1685,23 +1685,23 @@ namespace Container
                 The type must have a defined "!= operator"            */
             inline static bool CompareArray(const T * array1, const T * array2, const size_t commonSize) { constPtr end = array1 + commonSize; constPtr it = array1, it2 = array2; while (it != end) { if (*it++ != *it2++) return false; } return true; }
         };
-        
+
         /** The default memory policy interface for plain old data */
         template <typename T, const bool WithDeref = true>
         struct SimplerMemoryPolicy
         {
             /** This is used to select the [] return type */
             enum { CanDereference = WithDeref };
-                    
+
             typedef const T * constPtr;
             inline static void Copy(T & dest, const T & src)                                                       { DefaultMemoryPolicy<T>::Copy(dest, src); }
             inline static void CopyArray(T * dest, const T * src, const size_t & destSize, const size_t srcSize)   { DefaultMemoryPolicy<T>::CopyArray(dest, src, destSize, srcSize); }
             inline static void CopyArray(T *& dest, const T * src, size_t & destSize, const size_t srcSize)        { DefaultMemoryPolicy<T>::CopyArray(dest, src, destSize, srcSize); }
             inline static T & DefaultElement()                                                                     { return DefaultMemoryPolicy<T>::DefaultElement(); }
-            /** This method search for the given element and returns arraySize if not found 
+            /** This method search for the given element and returns arraySize if not found
                 The type must have a defined "== operator" */
             inline static size_t Search(const T* array, const size_t arraySize, const size_t from, const T & valueToLookFor)          { size_t i = from; while (i < arraySize && !(array[i] == valueToLookFor)) i++; return i; }
-            /** This method search for the last element that match the given element and returns arraySize if not found 
+            /** This method search for the last element that match the given element and returns arraySize if not found
                 The type must have a defined "== operator" */
             inline static size_t ReverseSearch(const T* array, const size_t arraySize, const T & valueToLookFor)   { size_t i = arraySize; while (i && !(array[i-1] == valueToLookFor)) i--; return i ? i - 1 : arraySize; }
 
@@ -1723,7 +1723,7 @@ namespace Container
                     dest[size] = new T(*src[size]);
             }
 
-            inline static void Delete(T * data) 
+            inline static void Delete(T * data)
             {
                 delete data;
             }
@@ -1731,19 +1731,19 @@ namespace Container
 
         /** The default memory policy interface for plain old data */
         template <typename T, typename CloneMixin = CloneAsNew<T>, const bool WithDeref = true >
-        struct DefaultMemoryListPolicy 
+        struct DefaultMemoryListPolicy
         {
             /** This is used to select the [] return type */
             enum { CanDereference = WithDeref };
-            
+
             typedef T * Tptr;
             typedef const Tptr * constPtr;
 
             inline static void CopyPtr(T* & dest, T* const & src)                                                 { DefaultMemoryPolicy<T*>::Copy(dest, src); }
             inline static void CopyArray(T** dest,  T** const src, const size_t & destSize, const size_t srcSize) { DefaultMemoryPolicy<T*>::CopyArray(dest, src, destSize, srcSize); }
             inline static void CopyArray(T**& dest,  T** const src, size_t & destSize, const size_t srcSize)      { DefaultMemoryPolicy<T*>::CopyArray(dest, src, destSize, srcSize); }
-            inline static void DuplicateArray(T**& dest, T** const src, size_t & destSize, const size_t srcSize) 
-            { 
+            inline static void DuplicateArray(T**& dest, T** const src, size_t & destSize, const size_t srcSize)
+            {
                 if (destSize < srcSize)
                 {
                     // Need to resize the array
@@ -1751,20 +1751,20 @@ namespace Container
                     if (tmp == 0) { DeleteArray(dest, destSize); dest = 0; destSize = 0; return;  }
 
                     CloneMixin::Clone(tmp, src, srcSize);
-                    
+
                     // Erase the previous array
-                    DeleteArray(dest, destSize); 
+                    DeleteArray(dest, destSize);
                     dest = tmp;
 
                     destSize = srcSize;
                 } else CloneMixin::Clone(dest, src, srcSize);
             }
 
-            /** This method search for the given element and returns arraySize if not found 
+            /** This method search for the given element and returns arraySize if not found
                 The type must have a defined "== operator"
             */
             inline static size_t Search(T** const array, const size_t arraySize, const size_t from, T* const & valueToLookFor)        { size_t i = from; while (i < arraySize && !(array[i] == valueToLookFor)) i++; return i; }
-            /** This method search for the last element that match the given element and returns arraySize if not found 
+            /** This method search for the last element that match the given element and returns arraySize if not found
                 The type must have a defined "== operator"
             */
             inline static size_t ReverseSearch(T** const array, const size_t arraySize, T* const & valueToLookFor) { size_t i = arraySize; while (i && !(array[i-1] == valueToLookFor)) i--; return i ? i - 1 : arraySize; }
@@ -1778,14 +1778,14 @@ namespace Container
             inline static T** NonDestructiveAlloc(T** const array, const size_t currentSize, const size_t newSize, T** const fillWith) { return DefaultMemoryPolicy<T*>::NonDestructiveAlloc(array, currentSize, newSize, fillWith); }
             inline static T* * Insert(T** const array, const size_t currentSize, const size_t newSize, const size_t index, T* const & elementToInsert) { return DefaultMemoryPolicy<T*>::Insert(array, currentSize, newSize, index, elementToInsert); }
             /** Delete the array */
-            inline static void DeleteArray(Tptr * const array, const size_t currentSize) 
-            { 
+            inline static void DeleteArray(Tptr * const array, const size_t currentSize)
+            {
                 // Delete all pointers in the array
                 for (size_t i = 0; i < currentSize; i++)
                 {
                     Remove(array[i]); array[i] = 0;
                 }
-                free((void*)array); 
+                free((void*)array);
             }
             /** Remove on item from the array */
             inline static void Remove(T * const data)             { CloneMixin::Delete(data); }
@@ -1823,11 +1823,11 @@ namespace Container
         };
     }
     /** @endcond */
-    
-    /** The copy constructor implementation 
 
-        The given class must provide an explicit copy constructor 
-        (don't rely on compiler generated copy constructor, or use POD) 
+    /** The copy constructor implementation
+
+        The given class must provide an explicit copy constructor
+        (don't rely on compiler generated copy constructor, or use POD)
         and an "== operator" and "!= operator" too.
 
         @remark No "= operator" is required.
@@ -1835,36 +1835,36 @@ namespace Container
     template <typename T, class Policy = WithCopyConstructorPolicy::DefaultMemoryPolicy<T> >
     struct WithCopyConstructorAndOperators
     {
-        /** @copydoc Container::PrivateGenericImplementation::Array 
+        /** @copydoc Container::PrivateGenericImplementation::Array
             @sa Container::PrivateGenericImplementation::Array for interface description
         */
         typedef Container::PrivateGenericImplementation::Array<T, Policy, true> Array;
-        /** @copydoc Container::PrivateGenericImplementation::IndexList 
+        /** @copydoc Container::PrivateGenericImplementation::IndexList
             @sa Container::PrivateGenericImplementation::IndexList for interface description
         */
         typedef Container::PrivateGenericImplementation::IndexList<T, WithCopyConstructorPolicy::DefaultMemoryListPolicy<T>, false> IndexList;
-        /** @copydoc Container::PrivateGenericImplementation::ChainedList 
+        /** @copydoc Container::PrivateGenericImplementation::ChainedList
             @sa Container::PrivateGenericImplementation::ChainedList for interface description
         */
         typedef Container::PrivateGenericImplementation::ChainedList<T, 4, WithCopyConstructorPolicy::SearchPolicy<T> > ChainedList;
     };
 
-    /** The easiest implementation with only copy constructor and == operator  
-    
+    /** The easiest implementation with only copy constructor and == operator
+
         @remark No "= operator" is required.
-    */ 
+    */
     template <typename T, class Policy = WithCopyConstructorPolicy::SimplerMemoryPolicy<T> >
     struct WithCopyConstructor
     {
-        /** @copydoc Container::PrivateGenericImplementation::Array 
+        /** @copydoc Container::PrivateGenericImplementation::Array
             @sa Container::PrivateGenericImplementation::Array for interface description
         */
         typedef Container::PrivateGenericImplementation::Array<T, Policy, true> Array;
-        /** @copydoc Container::PrivateGenericImplementation::IndexList 
+        /** @copydoc Container::PrivateGenericImplementation::IndexList
             @sa Container::PrivateGenericImplementation::IndexList for interface description
         */
         typedef Container::PrivateGenericImplementation::IndexList<T, WithCopyConstructorPolicy::DefaultMemoryListPolicy<T>, false> IndexList;
-        /** @copydoc Container::PrivateGenericImplementation::ChainedList 
+        /** @copydoc Container::PrivateGenericImplementation::ChainedList
             @sa Container::PrivateGenericImplementation::ChainedList for interface description
         */
         typedef Container::PrivateGenericImplementation::ChainedList<T, 4, WithCopyConstructorPolicy::SearchPolicy<T> > ChainedList;
@@ -1873,24 +1873,24 @@ namespace Container
 
     namespace PrivateNotConstructibleImplementation
     {
-        /** ChainedList class usage 
+        /** ChainedList class usage
 
             @copydoc Container::PrivateGenericImplementation::ChainedList
         */
         template <class U, unsigned int pow2 = 4, class SearchPolicy = NotConstructiblePolicy::SearchPolicy<U> >
-        class ChainedList 
+        class ChainedList
         {
         public:
             /** Define the constant that the list can return */
-            enum 
+            enum
             {
                 ChainedEnd      = -1,           //!< This is used to add and or insert at end of list
                 ChainedError    = ChainedEnd,   //!< Whenever an indexed error occurs, this is the returned value
-                ChainedStart    = 0,            //!< This is used to insert data in the head of the list 
+                ChainedStart    = 0,            //!< This is used to insert data in the head of the list
                 ChainedBS       = 1<<pow2,      //!< Process the asked pow once
             };
 
-        private:    
+        private:
             /** The node base class */
             class NodeNotCopyable
             {
@@ -1902,12 +1902,12 @@ namespace Container
                 /** The pointer on the data */
                 U *             mpuElement;
 
-            
+
                 /** Default constructors */
                 NodeNotCopyable(U* t = 0) : mpxPrevious(0), mpxNext(0), mpuElement(t) {}
                 /** The destructor always delete the object */
-                ~NodeNotCopyable() 
-                { 
+                ~NodeNotCopyable()
+                {
                     delete mpuElement; mpuElement = 0;
                 }
 
@@ -1918,7 +1918,7 @@ namespace Container
             };
 
             /** The node class for copyable objects */
-            class NodeCopyable 
+            class NodeCopyable
             {
             public:
                 /** The pointer on the previous object */
@@ -1931,8 +1931,8 @@ namespace Container
                 /** Default constructors */
                 NodeCopyable(U* t = 0) : mpxPrevious(0), mpxNext(0), mpuElement(t) {}
                 /** The destructor always delete the object */
-                ~NodeCopyable() 
-                { 
+                ~NodeCopyable()
+                {
                     delete mpuElement; mpuElement = 0;
                 }
 
@@ -1950,13 +1950,13 @@ namespace Container
 
             };
 
-            typedef typename Container::PrivateGenericImplementation::Select<SearchPolicy::DefaultConstructibleAndCopyable, NodeCopyable, NodeNotCopyable>::Result Node; 
+            typedef typename Container::PrivateGenericImplementation::Select<SearchPolicy::DefaultConstructibleAndCopyable, NodeCopyable, NodeNotCopyable>::Result Node;
 
             /** Select the parameters type depending on constructible policy */
             typedef typename Container::PrivateGenericImplementation::Select<SearchPolicy::DefaultConstructibleAndCopyable, U&, U*>::Result                  DefaultParamType;
             typedef typename Container::PrivateGenericImplementation::Select<SearchPolicy::DefaultConstructibleAndCopyable, const U&, U* const>::Result      DefaultConstParamType;
         private:
-            /** The memory array holding pointers */ 
+            /** The memory array holding pointers */
             template <unsigned int size>
             class LinearBlock
             {
@@ -1974,37 +1974,37 @@ namespace Container
                 // Construction
             public:
                 /** Default constructor */
-                LinearBlock(LinearBlock * previous = 0, LinearBlock * next = 0) : spxPrevious(previous), spxNext(next) , soUsed(0)    {}          
+                LinearBlock(LinearBlock * previous = 0, LinearBlock * next = 0) : spxPrevious(previous), spxNext(next) , soUsed(0)    {}
                 /** Default destruction too : destruct object if needed */
-                ~LinearBlock()                             
-                { 
+                ~LinearBlock()
+                {
                     if ( spxNext!=0 || spxPrevious!=0)
                     {
-                        if (spxNext!=0)  
+                        if (spxNext!=0)
                             spxNext->spxPrevious = spxPrevious;
-                        if (spxPrevious!=0)  
+                        if (spxPrevious!=0)
                             spxPrevious->spxNext = spxNext;
 
-                        spxNext = spxPrevious = 0; 
+                        spxNext = spxPrevious = 0;
                     }
                 }
 
                 // Interface
             public:
                 /** Connect to other nodes */
-                inline void Connect(LinearBlock * previous, LinearBlock * next)     { spxPrevious = previous; spxNext = next; } 
+                inline void Connect(LinearBlock * previous, LinearBlock * next)     { spxPrevious = previous; spxNext = next; }
                 /** Delete this object safely, reconnect other node if needed */
-                inline void Delete() 
-                {       
-                    if (spxNext!=0)  
+                inline void Delete()
+                {
+                    if (spxNext!=0)
                         spxNext->spxPrevious = spxPrevious;
-                    if (spxPrevious!=0)  
+                    if (spxPrevious!=0)
                         spxPrevious->spxNext = spxNext;
-                    
-                    spxNext = spxPrevious = 0; 
+
+                    spxNext = spxPrevious = 0;
                     delete this;
                 }
-                
+
                 /** Return first element in the list (O(n) speed) */
                 inline LinearBlock<size> * GoFirst()    {  LinearBlock<size>* pNode = this; while (pNode->spxPrevious != 0) pNode = spxPrevious; return pNode; }
                 /** Return last element in the list (O(n) speed) */
@@ -2013,10 +2013,10 @@ namespace Container
 
                 /** Append a new block to the end */
                 inline bool CreateNewBlock()
-                {   
+                {
                     if (spxNext!=0) return false;
                     LinearBlock<size>* pNode = new LinearBlock<size>(this, 0);
-                    if (pNode == 0) return false; 
+                    if (pNode == 0) return false;
                     else               spxNext = pNode;
                     return true;
                 }
@@ -2025,27 +2025,27 @@ namespace Container
                 inline Node * GetData()     {   return &sapxBlock[0]; }
                 /** Find a node */
                 LinearBlock<size> * Find(Node * pNode)
-                { 
-                    if (pNode==0) return 0; 
-                    LinearBlock<size> * pBlock = GoFirst(); 
+                {
+                    if (pNode==0) return 0;
+                    LinearBlock<size> * pBlock = GoFirst();
                     LinearBlock<size> * pEnd = GoLast();
                     for (; pBlock != pEnd; pBlock = pBlock->spxNext)
                         if ( pNode >= pBlock->GetData() && pNode <= pBlock->GetData() + size) return pBlock;
                     return 0;
                 }
-                
+
             private:
                 /** Delete all list
                     Note : this list should never be deleted explicitely
                     Only when ChainedList<U>::Delete is called
-                    This list can only grow (for memory saving purpose, there is a protection, when two nodes are 
+                    This list can only grow (for memory saving purpose, there is a protection, when two nodes are
                     free of data pointers, last one is deleted
                 */
-                bool DeleteAll() 
-                { 
-                    LinearBlock<size>* pNode2, *pNode = GoFirst(); 
+                bool DeleteAll()
+                {
+                    LinearBlock<size>* pNode2, *pNode = GoFirst();
                     if (pNode == 0) return false;
-                    if (pNode->spxNext == 0) 
+                    if (pNode->spxNext == 0)
                     {
                         pNode->Delete();
                         pNode = 0;
@@ -2059,7 +2059,7 @@ namespace Container
                         pNode->Delete();
                         pNode = pNode2;
                     }
-                    return true; 
+                    return true;
                 }
             public:
                 friend class ChainedList<U, pow2, SearchPolicy>;
@@ -2075,7 +2075,7 @@ namespace Container
             mutable Node *  mpxCurrent;
             /** The node count */
             unsigned int    mlNumberOfNodes;
-            
+
             /** Number of allocated blocks */
             unsigned int                        mlNumberOfBlocks;
             /** Block size = 2^(template)pow2 */
@@ -2086,7 +2086,7 @@ namespace Container
             LinearBlock<ChainedBS> *    mpxBLast;
 
         private:
-            /** Should we use blocks ? (same thing as (template)pow2 = 0) 
+            /** Should we use blocks ? (same thing as (template)pow2 = 0)
                 If not, the list act like a standard linked list
             */
             bool                        mbUseBlocks;
@@ -2098,47 +2098,47 @@ namespace Container
             /** Get the current used node number */
             inline unsigned int getSize() const { return mlNumberOfNodes; }
 
-            // Interface 
+            // Interface
         public:
             /** Add a node to list
                 @warning Take care that add function preserve list integrity
                 whereas Insert function doesn't in most of case.
-                Even if Add function can insert node in list just before the 
+                Even if Add function can insert node in list just before the
                 given position, it is slower than a Insert function.
-                So, in realtime application, prefer adding node in a 
+                So, in realtime application, prefer adding node in a
                 preprocessing step, or using Insert function...
-                (Inserting with Add is O(Number of node - position)) 
+                (Inserting with Add is O(Number of node - position))
                 @return true if insertion was successful */
             bool Add(U*, const unsigned int& = ChainedEnd);
 
             /** Take care that Insert doesn't preserve list integrity
-                @sa Add function summary for details                    
+                @sa Add function summary for details
                 @return true if insertion was successful */
             bool Insert(DefaultConstParamType, const unsigned int& = ChainedStart);
             /** Subtract a node from list
-                @warning Please note, that Sub conserve list integrity, 
+                @warning Please note, that Sub conserve list integrity,
                 whereas Remove function does not. However, Sub is slower
                 than Remove, because of list reconstruction...
                 So, in realtime, prefer using remove (that is faster)
                 @return true if removing was successful */
             bool Sub(const unsigned int& = ChainedEnd);
-            /** Remove a node from the list, but in most of case, it doesn't 
-                preserve list integrity 
-                @sa Sub method                                          
+            /** Remove a node from the list, but in most of case, it doesn't
+                preserve list integrity
+                @sa Sub method
                 @return true if insertion was successful */
             bool Remove(const unsigned int& = ChainedStart);
-            
-            /** Find a node in the list 
-                If provided an operator == for U, then this method 
+
+            /** Find a node in the list
+                If provided an operator == for U, then this method
                 perform a O(N) search in the list
                 @return The node index if found or ChainedError if not */
             unsigned int indexOf(DefaultConstParamType);
-            /** Find the last matching node in the list 
-                If provided an operator == for U, then this method 
+            /** Find the last matching node in the list
+                If provided an operator == for U, then this method
                 perform a O(N) search in the list
                 @return The node index if found or ChainedError if not */
             unsigned int lastIndexOf(DefaultConstParamType);
-            /** Swap two nodes, preserve list integrity for the given indexes 
+            /** Swap two nodes, preserve list integrity for the given indexes
                 @return true on successful swapping */
             bool Swap(const unsigned int &, const unsigned int &);
 
@@ -2154,16 +2154,16 @@ namespace Container
             bool Connect(Node *, Node *, Node *);
 
         public:
-            /** Insert a list to this list 
+            /** Insert a list to this list
                 @sa virtual bool Add(const U&, const unsigned int &)
                 @return true on successful insertion    */
             bool Add(const ChainedList&, const unsigned int & = ChainedEnd);
 
-            /** Delete the list 
-                @warning This function do delete nodes... (and data) 
+            /** Delete the list
+                @warning This function do delete nodes... (and data)
                 @return true on successful deletion     */
             bool Free();
-            /** Allow mutating a node data at the given index 
+            /** Allow mutating a node data at the given index
                 @return true on successful mutation     */
             bool Change(DefaultConstParamType, const unsigned int &);
 
@@ -2231,7 +2231,7 @@ namespace Container
                 @return true on success, false on error */
             inline bool moveAppendedList(ChainedList & a)
             {
-                if (mlNumberOfNodes) 
+                if (mlNumberOfNodes)
                 {
                     if (!a.Add(*this, ChainedStart)) return false;
                 }
@@ -2253,16 +2253,16 @@ namespace Container
             }
 
 
-            // Operators 
+            // Operators
         public:
             /** Operator [] return U type at i-th position.
-                @param i the indexed position to retrieve 
+                @param i the indexed position to retrieve
                 @return The returned type depends on the selected policy
             */
-            inline typename SearchPolicy::Result operator [] (const unsigned int &i)                  
-            {   Node * pNode = Goto(i); 
-                if (pNode == 0)    return SearchPolicy::DefaultValue();  
-                return SearchPolicy::From(pNode->mpuElement); 
+            inline typename SearchPolicy::Result operator [] (const unsigned int &i)
+            {   Node * pNode = Goto(i);
+                if (pNode == 0)    return SearchPolicy::DefaultValue();
+                return SearchPolicy::From(pNode->mpuElement);
             }
 
             /** Append the given element to the list end */
@@ -2270,7 +2270,7 @@ namespace Container
             /** Remove the given element if found */
             inline ChainedList& operator -= (DefaultConstParamType a)       { unsigned int i = this->lastIndexOf(a); if (i!=ChainedEnd) this->Sub(i); return (*this); }
 
-            
+
             /** Append the given list to ours */
             inline ChainedList& operator += (const ChainedList& a)  { this->Add(a); return (*this); }
 
@@ -2281,7 +2281,7 @@ namespace Container
             ChainedList(const ChainedList &);
             /** Equality operator */
             inline ChainedList& operator = (const ChainedList& );
-            /** It costs nothing... */ 
+            /** It costs nothing... */
             inline ChainedList& operator + (const ChainedList& a) const;
             /** The classic copy and modify operators */
             inline ChainedList operator + (const U & a) const;
@@ -2299,7 +2299,7 @@ namespace Container
 
 
         // Inclusion for template definition, and implementation (it's too big to be implemented here)
-        #define NotCopyable  
+        #define NotCopyable
 #ifndef DOXYGEN
         #include "template/ChainedList.hpp"
 #endif
@@ -2311,11 +2311,11 @@ namespace Container
     template <typename T>
     struct NotConstructible
     {
-        /** @copydoc Container::PrivateGenericImplementation::IndexList 
+        /** @copydoc Container::PrivateGenericImplementation::IndexList
             @sa Container::PrivateGenericImplementation::IndexList for interface description
         */
         typedef Container::PrivateGenericImplementation::IndexList<T, PlainOldDataPolicy::DefaultMemoryListPolicy<T, false>, false> IndexList;
-        /** @copydoc Container::PrivateGenericImplementation::ChainedList 
+        /** @copydoc Container::PrivateGenericImplementation::ChainedList
             @sa Container::PrivateGenericImplementation::ChainedList for interface description
 
             @warning Dealing with unconstructible type is a pain for templated code, so you might get errors
@@ -2323,7 +2323,7 @@ namespace Container
         typedef PrivateNotConstructibleImplementation::ChainedList<T, 4, NotConstructiblePolicy::SearchPolicy<T> > ChainedList;
     };
 
-    /** Define some basic algorithms like sorting 
+    /** Define some basic algorithms like sorting
         @param T    The container to apply algorithms on */
     template <typename T>
     struct Algorithms
@@ -2333,19 +2333,19 @@ namespace Container
 
             @param array            A reference on the container to sort. The container must have a Swap(index, index) method
             @param comparator       A object that must have a <pre>compareData</pre> method which compare 2 container's object.
-                                    Typically with a IndexList&lt;float&gt;, the expected method signature will be "int compareData(const float & a, const float & b)". 
+                                    Typically with a IndexList&lt;float&gt;, the expected method signature will be "int compareData(const float & a, const float & b)".
                                     It can be static or const.<br>
                                     This method must return -1 if the first object should come before the second<br>
                                     This method must return 0 if the first object similar to the second<br>
                                     This method must return 1 if the first object should come after the second<br>
-            @param sortSameElements If set to true, the similar object are sorted (and therefore can be moved from their current relative position). 
+            @param sortSameElements If set to true, the similar object are sorted (and therefore can be moved from their current relative position).
                                     It's faster to set this to true, but it's sometimes better not to move relative position of similar objects
             @param firstIndex       The first index to start sorting with
             @param lastIndex        The last index to stop sorting with
             @return true if the sort is possible, false on error
             The algorithm is a mix of (quickSort and insertionSort) from http://www.seeingwithc.org/topic2html.html and http://www.rawmaterialsoftware.com/juce  */
         template <typename Comparator>
-        static bool sortContainer(T & array, Comparator & comparator, const bool sortSameElements = true, uint32 firstIndex = 0, uint32 lastIndex = (uint32)-1) 
+        static bool sortContainer(T & array, Comparator & comparator, const bool sortSameElements = true, uint32 firstIndex = 0, uint32 lastIndex = (uint32)-1)
         {
             (void) comparator;  // if you pass in an object with a static compareElements() method, this
                                 // avoids getting warning messages about the parameter being unused
@@ -2356,7 +2356,7 @@ namespace Container
             if (lastIndex < firstIndex) return false;
 
             if (!sortSameElements)
-            {   
+            {
                 // Use simple Bubble sort in that case, as we are not supposed to sort the same elements
                 for (uint32 i = firstIndex; i < lastIndex; ++i)
                 {
@@ -2371,8 +2371,8 @@ namespace Container
             else
             {
                 // Use Quicksort here
-                enum 
-                { 
+                enum
+                {
                     StackSize = (sizeof(uint32) * 8), // Quicksort uses a stack size of O(log2(N)) for keeping the indexes to data. If you use more than 32bits indexes, increase this number
                 };
                 uint32 fromStack[StackSize], toStack[StackSize];
@@ -2383,9 +2383,9 @@ namespace Container
                     const uint32 size = (lastIndex - firstIndex) + 1;
 
                     if (size <= 8)
-                    {   
-                        // Quick sort is not efficient when the amount of data to sort is not that high, so simply 
-                        // perform a O(N*N) Insertion sort here (with N being 8 at max) 
+                    {
+                        // Quick sort is not efficient when the amount of data to sort is not that high, so simply
+                        // perform a O(N*N) Insertion sort here (with N being 8 at max)
                         uint32 j = lastIndex;
                         uint32 maxIndex;
 
@@ -2407,11 +2407,11 @@ namespace Container
                         // The quick sort algorithm starts here
                         const uint32 mid = firstIndex + (size >> 1);
                         // Make sure the first index is in the middle place
-                        array.Swap(mid, firstIndex); 
+                        array.Swap(mid, firstIndex);
 
                         uint32 i = firstIndex;
                         uint32 j = lastIndex + 1;
-    
+
                         // Main compare loop
                         while (1)
                         {
@@ -2474,24 +2474,24 @@ namespace Container
         }
         /** Search the given container using the comparator object.
             @warning This only works if the container is sorted.
-            
+
             You can safely use this algorithm on the IndexList and ChainedList containers too.
 
             @param array            A reference on the container to sort. The container must have a Swap(index, index) method
             @param comparator       A object that must have a <pre>compareData</pre> method which compare 2 container's object.
-                                    Typically with a IndexList&lt;float&gt;, the expected method signature will be "int compareData(const float & a, const float & b)". 
+                                    Typically with a IndexList&lt;float&gt;, the expected method signature will be "int compareData(const float & a, const float & b)".
                                     It can be static or const.<br>
                                     This method must return -1 if the first object should come before the second<br>
                                     This method must return 0 if the first object similar to the second<br>
                                     This method must return 1 if the first object should come after the second<br>
-            @param value            The value to search for                                    
-            @param below            If the exact match isn't found, and if this is set to true, this 
+            @param value            The value to search for
+            @param below            If the exact match isn't found, and if this is set to true, this
                                     will return the element that's just below the value to search for, else it returns the one just above
             @param firstIndex       The first index to start searching with
             @param lastIndex        The last index to stop searching with
             @return the index of the matched element, or the array size if not found (even concidering the "below" parameter) */
         template <typename Comparator, typename Val>
-        static size_t searchContainer(T & array, Comparator & comparator, const Val & value, const bool below = true, size_t firstIndex = 0, size_t lastIndex = (size_t)-1) 
+        static size_t searchContainer(T & array, Comparator & comparator, const Val & value, const bool below = true, size_t firstIndex = 0, size_t lastIndex = (size_t)-1)
         {
             (void) comparator; // Unused param
 
@@ -2504,17 +2504,17 @@ namespace Container
             while (pos < array.getSize())
             {
                 int comparand = comparator.compareData(array[pos], value);
-                if (comparand == 0) 
+                if (comparand == 0)
                 {
                     // Depending on below parameter, we'll return the exact value that's matching on the left or right side of the range
                     if (!below)
                         while (pos + 1 < array.getSize() && comparator.compareData(array[pos + 1], value) == 0) ++pos;
                     else
                         while (pos > 0 && comparator.compareData(array[pos - 1], value) == 0) --pos;
-                        
+
                     return pos;
                 }
-                if (comparand > 0) 
+                if (comparand > 0)
                 {
                     if (!pos) return below ? array.getSize() : 0;
                     if (lastIndex == pos)
@@ -2524,7 +2524,7 @@ namespace Container
                     pos = (lastIndex + firstIndex) / 2;
                     continue;
                 }
-                
+
                 if (firstIndex == lastIndex)
                     // Can't find it in the current array
                     return below ? array.getSize() - 1 : array.getSize();

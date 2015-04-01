@@ -23,28 +23,28 @@ namespace Time
             funcWithTimeout(a1, a2);
             // If you need to set the timeout
             funcWithTimeout(a1, a2, 200); // 200ms of timeout
-     
+
             // If you care about underlying errors or timeout event
             TimeOut out(200); // 200ms of timeout
             funcWithTimeout(a1, a2, out);
             if (out.timedOut()) { log(Error, "Timed out or error"); }
             else { log(Dump, "Func took %dms to complete", 200 - out); }
-        @endcode 
-        
+        @endcode
+
         When writing a function supporting timeout, you'll write it this way:
         @code
             void myFunc(const TimeOut & timeout = DefaultTimeout)
             {
                 // Perform some lengthy operation that returns 0 on timeout or < 0 on error (as most standard function does)
                 int ret = lengthyCode(..., (int)timeout);
-     
+
                 timeout.filterError(ret); // Use the internal method to filter error
                 if (timeout <= 0) return; // Use int operator to access the remaining time
-     
+
                 // Another example, if the lengthy operation is not standard reporting
                 // Please notice that the timeout object here accumulated the time spent in the former operation
                 // so the complete myFunc execution time will likely be close to timeout.
-                while (!done && !timeout.timedOut()) { progress(); }     
+                while (!done && !timeout.timedOut()) { progress(); }
             }
         @endcode
         */

@@ -1,7 +1,7 @@
 /*
  * This source file is part of the bstring string library.  This code was
- * written by Paul Hsieh in 2002 - 2006, and is covered by the BSD open source 
- * license. Refer to the accompanying documentation for details on usage and 
+ * written by Paul Hsieh in 2002 - 2006, and is covered by the BSD open source
+ * license. Refer to the accompanying documentation for details on usage and
  * license.
  */
 
@@ -18,7 +18,7 @@
 /////////////////// Configuration defines //////////////////////////////
 
 // By default it is assumed that your compiler can deal with and has enabled
-// exception handlling.  If this is not the case then you will need to 
+// exception handlling.  If this is not the case then you will need to
 // #define BSTRLIB_DOESNT_THROW_EXCEPTIONS
 #if !defined(BSTRLIB_THROWS_EXCEPTIONS) && !defined(BSTRLIB_DOESNT_THROW_EXCEPTIONS)
 #define BSTRLIB_THROWS_EXCEPTIONS
@@ -54,13 +54,13 @@ extern "C" char* utoa(unsigned long value, char* result, int base);
 
 
 /** The better string lib namespace. */
-namespace Bstrlib 
+namespace Bstrlib
 {
-    // Forward declaration 
+    // Forward declaration
     struct  String;
-    
+
     /** Provide write protected char functionality */
-    class  CharWriteProtected 
+    class  CharWriteProtected
     {
     	// Members
     private:
@@ -72,17 +72,17 @@ namespace Bstrlib
     	const unsigned int idx;
 
     	/** Constructor is private and only used in the String class */
-    	CharWriteProtected(const struct tagbstring& c, int i) : s(c), idx((unsigned int)i) 
+    	CharWriteProtected(const struct tagbstring& c, int i) : s(c), idx((unsigned int)i)
     		{	if (idx >=(unsigned) s.slen) bstringThrow("character index out of bounds");	}
-    	
+
     	// Operators
     public:
-    	/** Assignment operator */		
-    	inline char operator=(char c) 
+    	/** Assignment operator */
+    	inline char operator=(char c)
     	{
     		if (s.mlen <= 0)
     			bstringThrow("Write protection error");
-    		else 
+    		else
     		{
 #ifndef BSTRLIB_THROWS_EXCEPTIONS
     			if (idx >=(unsigned) s.slen)
@@ -92,13 +92,13 @@ namespace Bstrlib
     		}
     		return (char) s.data[idx];
     	}
-    	
-    	/** Assignment operator */		
-    	inline unsigned char operator=(unsigned char c) 
+
+    	/** Assignment operator */
+    	inline unsigned char operator=(unsigned char c)
     	{
     		if (s.mlen <= 0)
     			bstringThrow("Write protection error");
-    		else 
+    		else
     		{
 #ifndef BSTRLIB_THROWS_EXCEPTIONS
     			if (idx >=(unsigned) s.slen)
@@ -109,7 +109,7 @@ namespace Bstrlib
     		return s.data[idx];
     	}
     	/** Access operator */
-    	inline operator unsigned char() const 
+    	inline operator unsigned char() const
     	{
 #ifndef BSTRLIB_THROWS_EXCEPTIONS
     		if (idx >=(unsigned) s.slen)
@@ -118,11 +118,11 @@ namespace Bstrlib
     		return s.data[idx];
     	}
     };
-    
+
     /** The string class.
 
         The functions in this string class are very straightforward to use. */
-    struct String : public tagbstring 
+    struct String : public tagbstring
     {
     // Construction and destruction
     //public:
@@ -150,16 +150,16 @@ namespace Bstrlib
             The block is copyied so it's safe to reuse it in your code later on.
             If you don't need to reuse the block, use the transitiveConstruct instead, as it avoid a memory allocation and copy */
     	String(const void * blk, int len);
-        /** Transitive constructor. 
+        /** Transitive constructor.
             This is taking ownership of the opaque block passed in.
             This avoids a memory allocation and copying, but the block must be allocated by malloc or realloc. */
         String(const void * ownedBlock, const int len, const int allocLen);
-        
+
     	/** Destructor */
     	~String();
 
     // Operators
-    //public:		
+    //public:
 
     	/** = operator */
     	const String& operator=(char c);
@@ -167,7 +167,7 @@ namespace Bstrlib
     	const String& operator=(const char *s);
     	const String& operator=(const String& b);
     	const String& operator=(const tagbstring& x);
-    	
+
     	/** += operator */
     	const String& operator +=(char c);
     	const String& operator +=(unsigned char c);
@@ -180,14 +180,14 @@ namespace Bstrlib
         const String& operator +=(const uint64 val);
         const String& operator +=(const float val);
         const String& operator +=(const double val);
-    	
+
     	/** *= operator, this one simply repeats the string count times (0 if negative) */
-    	inline const String& operator *=(int count) 
+    	inline const String& operator *=(int count)
     	{
     		this->Repeat(count);
     		return *this;
     	}
-    	
+
     	/** + operator */
     	const String operator+(char c) const;
     	const String operator+(unsigned char c) const;
@@ -201,18 +201,18 @@ namespace Bstrlib
     	const String operator+(const uint64 c) const;
     	const String operator+(const float c) const;
     	const String operator+(const double c) const;
-    	
-    	
-    	/** * operator, repeat and copy 
+
+
+    	/** * operator, repeat and copy
             @sa Repeat
             @param count    Repeat this string this given amount of times, 0 if negative */
-    	inline const String operator * (int count) const 
+    	inline const String operator * (int count) const
     	{
     		String retval(*this);
     		retval.Repeat(count);
     		return retval;
     	}
-    	
+
     	/** Comparison operators */
     	bool operator ==(const String& b) const;
     	bool operator ==(const char * s) const;
@@ -237,8 +237,8 @@ namespace Bstrlib
 
     	inline bool operator !() const { return slen == 0; }
     	inline operator bool() const { return slen > 0; }
-    	
-    // Casting 
+
+    // Casting
     //public:
     	/** To char * and unsigned char * */
     	inline operator const char* () const            { return (const char *)data; }
@@ -246,19 +246,19 @@ namespace Bstrlib
         inline const char * getData() const             { return (const char *)data; }
 
 #if WantFloatParsing == 1
-    	/** To double, as long as the string contains a double value (0 on error) 
+    	/** To double, as long as the string contains a double value (0 on error)
     		@warning if you have disabled float parsing, you must provide a double atof (const char*) function */
     	operator double() const;
-    	/** To float, as long as the string contains a float value (0 on error) 
+    	/** To float, as long as the string contains a float value (0 on error)
     		@warning if you have disabled float parsing, you must provide a double atof (const char*) function */
     	operator float() const;
-    	
+
         /** Serialize a float to this string with the given precision after the decimal point
     		@warning if you have disabled float parsing, you must provide a int ftoa(float, char out[15], int precision) function */
-    	void storeFloat(float v, int precision) { Format(String::Print("%%.%df", precision), v); } 
+    	void storeFloat(float v, int precision) { Format(String::Print("%%.%df", precision), v); }
         /** Serialize a double to this string with the given precision after the decimal point
     		@warning if you have disabled float parsing, you must provide a int ftoa(float, char out[15], int precision) function */
-    	void storeDouble(double v, int precision) { Format(String::Print("%%.%dlg", precision), v); } 
+    	void storeDouble(double v, int precision) { Format(String::Print("%%.%dlg", precision), v); }
 
         /** Get the double stored in this string
             @param consumed If provided, will be filled with the number of consumed characters.
@@ -266,20 +266,20 @@ namespace Bstrlib
         double parseDouble(int * consumed = 0) const;
 #define HasFloatParsing 1
 #else
-    	/** To double, as long as the string contains a double value (0 on error) 
+    	/** To double, as long as the string contains a double value (0 on error)
     		@warning if you have disabled float parsing, you must provide a double atof (const char*) function */
     	operator double() const { return atof((const char*)data); }
-    	/** To float, as long as the string contains a float value (0 on error) 
+    	/** To float, as long as the string contains a float value (0 on error)
     		@warning if you have disabled float parsing, you must provide a double atof (const char*) function */
     	operator float() const { return (float)atof((const char*)data); }
 
-        /** Serialize a float to this string with the given precision after the decimal point 
+        /** Serialize a float to this string with the given precision after the decimal point
     		@warning if you have disabled float parsing, you must provide a int ftoa(float, char out[15], int precision) function */
-    	void storeFloat(float v, int precision) { char Buf[15]; ftoa(v, Buf, precision); *this = Buf; } 
+    	void storeFloat(float v, int precision) { char Buf[15]; ftoa(v, Buf, precision); *this = Buf; }
         /** Serialize a double to this string with the given precision after the decimal point
     		@warning if you have disabled float parsing, you must provide a int dtoa(double, char out[20], int precision) function */
     	void storeDouble(double v, int precision) { char Buf[20]; lftoa(v, Buf, precision); *this = Buf; }
-        
+
         /** Get the double stored in this string
             @param consumed If provided, will be filled with the number of consumed characters.
             @return The largest possible double number that's parseable. */
@@ -295,9 +295,9 @@ namespace Bstrlib
     	/** To unsigned int, as long as the string contains a int value in base 10 (0 on error) */
     	operator unsigned int() const;
         /** To int64, as long as the string contains a int64 value in base 10 (0 on error) */
-        operator int64() const;		
-        
-        /** Handy function to get the hexadecimal representation of a number 
+        operator int64() const;
+
+        /** Handy function to get the hexadecimal representation of a number
             @return a lowercase hexadecimal version, with "0x" prefix for the given number */
         static String getHexOf(const uint64 c);
 
@@ -308,7 +308,7 @@ namespace Bstrlib
             @sa parseInt */
         inline uint32 fromHex() const { uint32 ret = 0; dropUpTo("0x").asUppercase().Scan("%08X", &ret); return ret; }
 
-        /** Get the integer out of this string. 
+        /** Get the integer out of this string.
             This method support any usual encoding of the integer, and detect the integer format automatically.
             This method is optimized for speed, and does no memory allocation on heap
             Supported formats examples: "0x1234, 0700, -1234, 0b00010101"
@@ -322,7 +322,7 @@ namespace Bstrlib
     	/** Return the length of the string */
     	inline int getLength() const {return slen;}
     	/** Bound checking character retrieval */
-    	inline unsigned char Character(int i) const 
+    	inline unsigned char Character(int i) const
     	{
     		if (((unsigned) i) >=(unsigned) slen)
     		{
@@ -339,7 +339,7 @@ namespace Bstrlib
     	/** Character retrieval when write protected */
     	inline CharWriteProtected Character(int i) { return CharWriteProtected(*this, i); }
     	inline CharWriteProtected operator[](int i) { return Character(i); }
-    	
+
     	/** Space allocation.
                     This allocate the given length, and return the allocated buffer.
                     You must call releaseLock() once you know the final string's size in byte.
@@ -349,7 +349,7 @@ namespace Bstrlib
     	// Unlocking mechanism for char * like access
     	/** Release a lock acquired with Alloc method */
     	inline void releaseLock(const int & len ) { slen = len; mlen = slen + 1; }
-    	
+
     	// Search methods.
     	/** Check if the argument is equal in a case insensitive compare */
     	bool caselessEqual(const String& b) const;
@@ -396,7 +396,7 @@ namespace Bstrlib
         /** Extract tokens from by splitting the string with the given char, starting at position pos (first call should set pos == 0)
             While called in loop, it extracts the token one by one, until either the returned value is empty, or pos > getLength() */
         String extractToken(char c, int & pos) const;
-    	
+
 
 #if (WantRegularExpressions == 1)
     	/** @name Regular expressions.
@@ -415,7 +415,7 @@ namespace Bstrlib
             NotEnoughMemory        = -8,
         };
 
-        
+
         /** Match this string against a regular expression and extract any captured element.
             The common regular expression syntax's term are supported but there is no extension.
             The supported syntax is:
@@ -446,18 +446,18 @@ namespace Bstrlib
             @param captures      If provided will be filled with the captures.
                                  The size of the array must match the regular expression capture's amount.
                                  No allocation is done in this method.
-            @param capturesCount On input, contains the size of the captures array, on output will be filled 
-                                 with the number of captures required. You can call with captures set to 0 in 
+            @param capturesCount On input, contains the size of the captures array, on output will be filled
+                                 with the number of captures required. You can call with captures set to 0 in
                                  order to query the number of captures required.
             @param caseSensitive If set, the search is case sensitive
             @param matchPos      If set, will be filled by the first position found where the regular expression match
 
-            @warning First capture does not match the whole string unlike some other engine to avoid useless 
+            @warning First capture does not match the whole string unlike some other engine to avoid useless
                      memory allocation and copying.
                      In the regExReplace method, \0 does represent the whole string.
             @return The last position the expression matched, or a negative value on error (check RegExError for details) */
         int regExMatch(const String & regEx, String * captures, int & capturesCount, const bool caseSensitive = true, int * matchPos = 0) const;
-        
+
         /** Simpler version of regExMatch that performs no capture.
             @param regEx         The regular expression to match against. @sa RE macro to avoid double escape
                                  of the backlash in some regular expression.
@@ -465,7 +465,7 @@ namespace Bstrlib
             @param capturesOpt   If provided and you need to search the same regular expression numerous time, then it's allocated to store the captures internally.
                                  In that case, you need to free the returned pointer when not used anymore.
             @param capturesCount If provided and you need to search the same regular expression numerous time, then it's set to the number of captures to use (no allocation is made)
-         
+
             @return True if the string matches the given regular expression (partial match will return true too). */
         bool regExFit(const String & regEx, const bool caseSensitive = true, void ** capturesOpt = 0, int * capturesCount = 0) const;
 
@@ -476,7 +476,7 @@ namespace Bstrlib
             @param replaceExp       The replacing pattern. @sa RE macro to avoid double escape of backlashes.
             @param caseSensitive    If set, the search is case sensitive
             @param iterations       The number of iterations to run, -1 for until it fails matching, default to one.
-            @return The replaced String or empty string on failure. 
+            @return The replaced String or empty string on failure.
             The replace pattern follow this scheme:
             @verbatim
                 \0      The complete input string
@@ -492,7 +492,7 @@ namespace Bstrlib
 
     	/** @name Extraction methods.
                   Extract, split, find, process in a fluent interface.
-                  This makes the code much easier to read, write and maintain, since the intend is clear, instead of 
+                  This makes the code much easier to read, write and maintain, since the intend is clear, instead of
                   dealing with indexes, midString and so forth
             @{*/
     	/** Extract the string starting at left of len char long.
@@ -511,24 +511,24 @@ namespace Bstrlib
     	    @param left     The index to start with (0 based)
     	    @param len      The number of bytes to return */
     	const String midString(int left, int len) const;
-    	
-    	/** Get the string up to the first occurrence of the given string 
+
+    	/** Get the string up to the first occurrence of the given string
     	    If not found, it returns the whole string.
     	    For example, this code returns:
     	    @code
     	        String ret = String("abcdefdef").upToFirst("d"); // ret == "abc"
     	        String ret = String("abcdefdef").upToFirst("g"); // ret == "abcdefdef"
-    	    @endcode 
+    	    @endcode
     	    @param find         The text to look for
     	    @param includeFind  If set, the needle is included in the result */
     	const String upToFirst(const String & find, const bool includeFind = false) const;
-    	/** Get the string up to the last occurrence of the given string 
+    	/** Get the string up to the last occurrence of the given string
     	    If not found, it returns the whole string.
     	    For example, this code returns:
     	    @code
     	        String ret = String("abcdefdef").upToLast("d"); // ret == "abcdef"
     	        String ret = String("abcdefdef").upToLast("g"); // ret == "abcdefdef"
-    	    @endcode 
+    	    @endcode
     	    @param find         The text to look for
     	    @param includeFind  If set, the needle is included in the result */
     	const String upToLast(const String & find, const bool includeFind = false) const;
@@ -539,22 +539,22 @@ namespace Bstrlib
     	        String ret = String("abcdefdef").fromLast("d"); // ret == "ef"
     	        String ret = String("abcdefdef").fromLast("d", true); // ret == "def"
     	        String ret = String("abcdefdef").fromLast("g"); // ret == ""
-    	    @endcode 
+    	    @endcode
     	    @param find         The text to look for
     	    @param includeFind  If set, the needle is included in the result */
     	const String fromLast(const String & find, const bool includeFind = false) const;
-    	/** Get the string from the first occurrence of the given string 
+    	/** Get the string from the first occurrence of the given string
     	    If not found, it returns an empty string if includeFind is false, or the whole string if true
     	    For example, this code returns:
     	    @code
     	        String ret = String("abcdefdef").fromFirst("d"); // ret == "efdef"
     	        String ret = String("abcdefdef").fromFirst("d", true); // ret == "defdef"
     	        String ret = String("abcdefdef").fromFirst("g"); // ret == ""
-    	    @endcode 
+    	    @endcode
     	    @param find         The text to look for
     	    @param includeFind  If set, the needle is included in the result */
     	const String fromFirst(const String & find, const bool includeFind = false) const;
-    	/** Split a string when the needle is found first, returning the part before the needle, and 
+    	/** Split a string when the needle is found first, returning the part before the needle, and
     	    updating the string to start on or after the needle.
     	    If the needle is not found, it returns an empty string if includeFind is false, or the whole string if true.
     	    For example this code returns:
@@ -562,7 +562,7 @@ namespace Bstrlib
     	        String text = "abcdefdef";
     	        String ret = text.splitFrom("d"); // ret = "abc", text = "efdef"
     	        ret = text.splitFrom("f", true);  // ret = "e", text = "fdef"
-    	    @endcode 
+    	    @endcode
     	    @param find         The string to look for
     	    @param includeFind  If true the string is updated to start on the find text. */
     	const String splitFrom(const String & find, const bool includeFind = false);
@@ -575,15 +575,15 @@ namespace Bstrlib
     	        ret = text.fromTo("d", "g"); // ret = ""
     	        ret = text.fromTo("d", "g", true); // ret = "defdef"
     	        ret = text.fromTo("g", "f", [true or false]); // ret = ""
-    	    @endcode 
-    	    
+    	    @endcode
+
     	    @param from         The first needle to look for
     	    @param to           The second needle to look for
             @param includeFind  If true the string includes the from and to needles (if found).
-    	    @return If "from" needle is not found, it returns an empty string, else if "to" needle is not found, 
+    	    @return If "from" needle is not found, it returns an empty string, else if "to" needle is not found,
     	            it returns an empty string upon includeFind being false, or the string starting from "from" if true. */
     	const String fromTo(const String & from, const String & to, const bool includeFind = false) const;
-    	/** Get the substring from the given needle if found, or the whole string if not. 
+    	/** Get the substring from the given needle if found, or the whole string if not.
     	    For example, this code returns:
     	    @code
     	        String text = "abcdefdef";
@@ -593,8 +593,8 @@ namespace Bstrlib
     	    @endcode
     	    @param find         The string to look for
     	    @param includeFind  If true the string is updated to start on the find text. */
-        const String dropUpTo(const String & find, const bool includeFind = false) const;		
-    	/** Get the substring up to the given needle if found, or the whole string if not, and split from here. 
+        const String dropUpTo(const String & find, const bool includeFind = false) const;
+    	/** Get the substring up to the given needle if found, or the whole string if not, and split from here.
     	    For example, this code returns:
     	    @code
     	        String text = "abcdefdef";
@@ -606,7 +606,7 @@ namespace Bstrlib
     	    @param find         The string to look for
     	    @param includeFind  If true the string is updated to start on the find text. */
         const String splitUpTo(const String & find, const bool includeFind = false);
-        
+
         /** Split the string at the given position.
             The string is modified to start at the split position.
             @return the string data up to split point. */
@@ -622,8 +622,8 @@ namespace Bstrlib
             @endcode */
         const String splitWhenNoMore(const String & set);
         /** @}*/
-        
-        		
+
+
     	// Standard manipulation methods.
     	/** Set the substring at pos to the string b. If pos > len, (pos-len) 'fill' char are inserted */
     	void setSubstring(int pos, const String& b, unsigned char fill = ' ');
@@ -635,19 +635,19 @@ namespace Bstrlib
     	void Insert(int pos, const char * b, unsigned char fill = ' ');
     	/** Insert at pos len times the 'fill' char */
     	void insertChars(int pos, int len, unsigned char fill = ' ');
-    	/** Replace, at pos, len char to the string b. 
+    	/** Replace, at pos, len char to the string b.
     		If pos > string length or pos+len > string length, the missing 'fill' char are inserted  */
     	void Replace(int pos, int len, const String& b, unsigned char fill = ' ');
-    	/** Replace, at pos, len char to the string b. 
+    	/** Replace, at pos, len char to the string b.
     		If pos > string length or pos+len > string length, the missing 'fill' char are inserted  */
     	void Replace(int pos, int len, const char * s, unsigned char fill = ' ');
     	/** Remove, at pos, len char from the string */
     	void Remove(int pos, int len);
     	/** Truncate the string at the given len */
     	void Truncate(int len);
-    	
+
     	// Miscellaneous methods.
-    	/** Scan the string and extract to the given data (fmt follows scanf's format spec) 
+    	/** Scan the string and extract to the given data (fmt follows scanf's format spec)
     	    @warning Only one parameter can be extracted by this method.
     	    @return the number of parameter extracted (1 or 0 on error) */
     	int Scan(const char * fmt, void * data) const;
@@ -669,7 +669,7 @@ namespace Bstrlib
     	/** Trim the right side of this string with the given chars */
     	void rightTrim(const String& b = String(" \t\v\f\r\n", sizeof(" \t\v\f\r\n")));
     	/** Trim the both sides of this string with the given chars */
-    	inline void Trim(const String& b = String(" \t\v\f\r\n", sizeof(" \t\v\f\r\n"))) 
+    	inline void Trim(const String& b = String(" \t\v\f\r\n", sizeof(" \t\v\f\r\n")))
     	{
             if (!b.slen) return;
             rightTrim(b);
@@ -688,7 +688,7 @@ namespace Bstrlib
     	void writeAllow();
     	/** Is the current string write protected ? */
     	inline bool isWriteProtected() const { return mlen <= 0; }
-        
+
         /** @name Fluent interface.
                   The methods in this section returns reference on a string object (either mutated or new).
                   This makes the code much easier to read and write, it's more consise yet it gives the developer intend.
@@ -710,7 +710,7 @@ namespace Bstrlib
     	String & findAndReplaceCaseless(const char * find, const String& repl, int pos = 0);
     	/** Find the given substring starting at position pos and replace it with caseless search */
     	String & findAndReplaceCaseless(const char * find, const char * repl, int pos = 0);
-        
+
         /** Printf like format */
     	String & Format(const char * fmt, ...)
 #ifdef __GNUC__
@@ -724,11 +724,11 @@ namespace Bstrlib
 #endif
         ;
         /** Fill the string with 'fill' char length times */
-    	inline String Filled(int length, unsigned char fill = ' ') const 
-    	{ 
-    	    String a = *this; 
-    	    a.Fill(length, fill); 
-    	    return a; 
+    	inline String Filled(int length, unsigned char fill = ' ') const
+    	{
+    	    String a = *this;
+    	    a.Fill(length, fill);
+    	    return a;
     	}
     	/** Trim the both sides of this string with the given chars */
         inline String Trimmed(const String& b = String(" \t\v\f\r\n", sizeof(" \t\v\f\r\n"))) const
@@ -738,7 +738,7 @@ namespace Bstrlib
             a.Trim(b);
             return a;
         }
-        /** Get a uppercased version 
+        /** Get a uppercased version
             @sa toUppercase for the non fluent version */
         inline String asUppercase() const { String ret(*this); ret.toUppercase(); return ret; }
         /** Get a lowercased version
@@ -754,22 +754,22 @@ namespace Bstrlib
     	        String centered = text.alignedTo(6, 0); // " abc  "
     	        String larger = text.alignedTo(2, -1 or 1 or 0); // "abc"
     	    @endcode
-    	    @param length   The length of the final string. 
-    	                    If the current string is larger than this length, the current string is returned 
+    	    @param length   The length of the final string.
+    	                    If the current string is larger than this length, the current string is returned
     	    @param fill     The char to fill the empty space with
     	    @param side     If 1, it's right aligned, 0 is centered (+- 1 char) and -1 is left aligned */
     	String alignedTo(const int length, int side = -1, char fill = ' ') const;
-    	
+
         /** Replace a token by another token
             @return A reference on this string, modified */
         String & replaceAllTokens(char from, char to);
         /** Return a string with all occurences of "find" replaced by "by" */
         String replacedAll(const String & find, const String & by) const;
-        
-        
+
+
         /** @}*/
-        
-        
+
+
         /** @name Unicode methods.
                   This string class stores strings as UTF-8. However, most methods expect one char to be one byte.
                   The methods below handle unicode encoding correctly, and deal with variable length encoding of UTF-8
@@ -784,42 +784,42 @@ namespace Bstrlib
             @warning Do not use for converting the string to UTF-16 or UTF-32, you should use Strings::convert functions. */
         size_t getUnicodeLength() const;
         /** @}*/
-    	
+
     	// Prevent unwanted conversion
     private:
         /** Prevent unwanted conversion */
         template <typename T> bool operator == (const T & t) const
-        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
             // Try to cast this type to (const char*) or (String), but don't rely on default.
             CompileTimeAssertFalse(T); return false;
         }
         /** Prevent unwanted conversion */
         template <typename T> bool operator < (const T & t) const
-        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
             // Try to cast this type to (const char*) or (String), but don't rely on default.
             CompileTimeAssertFalse(T); return false;
         }
         /** Prevent unwanted conversion */
         template <typename T> bool operator > (const T & t) const
-        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
             // Try to cast this type to (const char*) or (String), but don't rely on default.
             CompileTimeAssertFalse(T); return false;
         }
         /** Prevent unwanted conversion */
         template <typename T> bool operator <= (const T & t) const
-        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
             // Try to cast this type to (const char*) or (String), but don't rely on default.
             CompileTimeAssertFalse(T); return false;
         }
         /** Prevent unwanted conversion */
         template <typename T> bool operator >= (const T & t) const
-        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
             // Try to cast this type to (const char*) or (String), but don't rely on default.
             CompileTimeAssertFalse(T); return false;
         }
         /** Prevent unwanted conversion */
-        template <typename T> bool operator != (const T & t) const 
-        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand. 
+        template <typename T> bool operator != (const T & t) const
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
             // Try to cast this type to (const char*) or (String), but don't rely on default.
             CompileTimeAssertFalse(T); return false;
         }
@@ -830,7 +830,7 @@ namespace Bstrlib
     extern const String operator+(char c, const String& b);
     extern const String operator+(unsigned char c, const String& b);
     extern const String operator+(const tagbstring& x, const String& b);
-    inline const String operator * (int count, const String& b) 
+    inline const String operator * (int count, const String& b)
     {
     	String retval(b);
     	retval.Repeat(count);
@@ -845,7 +845,7 @@ namespace Bstrlib
         @endcode
         @sa String::regExMatch method */
     #define REx(var, re)  static char var##_[] = _STRINGIFY_(re); const char * var = ( var##_[ sizeof(var##_) - 2] = '\0',  (var##_ + 1) )
-    
+
     template <size_t size>
     struct StackStr
     {
@@ -854,11 +854,11 @@ namespace Bstrlib
         StackStr(const char (&str)[size]) { memcpy(data, str+1, size - 3); data[size - 3] = 0; }
     };
     /** This is used to create a regular expression strings without double escaping the strings.
-        Unlike RE, it does not create a named variable, but instead allocate space on the stack to 
-        store the regular expression in a temporary object 
+        Unlike RE, it does not create a named variable, but instead allocate space on the stack to
+        store the regular expression in a temporary object
         Use like this:
         @code
-            Logger::log(Logger::Dump, "Regular expression to match: %s", REI("(\w+\d)")); // Equivalent to (const char *)"(\\w+\\d)" 
+            Logger::log(Logger::Dump, "Regular expression to match: %s", REI("(\w+\d)")); // Equivalent to (const char *)"(\\w+\\d)"
         @endcode
         @sa String::regExMatch and String::regExReplace method */
     #define RE(re) (const char*)::Bstrlib::StackStr<sizeof(_STRINGIFY_(re))>(_STRINGIFY_(re))

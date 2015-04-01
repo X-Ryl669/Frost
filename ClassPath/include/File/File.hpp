@@ -5,7 +5,7 @@
 #include "../Types.hpp"
 // We need platform specific structure
 #include "../Platform/Platform.hpp"
-// We need strings 
+// We need strings
 #include "../Strings/Strings.hpp"
 // And container
 #include "../Container/Container.hpp"
@@ -28,32 +28,32 @@ namespace File
 
     /** The stream interface.
 
-        Once you've retrieved file informations (Info), you can get a stream to 
+        Once you've retrieved file informations (Info), you can get a stream to
         manipulate file content.
 
-        The interface is limited to basic stream operations    
+        The interface is limited to basic stream operations
     */
     struct BaseStream
     {
         /** The end of line enumeration */
         typedef Platform::EndOfLine EndOfLine;
         /** Read the stream of the given amount of bytes.
-            Depending on the stream blocking behaviour, the stream pointer position, 
+            Depending on the stream blocking behaviour, the stream pointer position,
             and the memory, this method can fail to retrieve the queried amount of data.
             @param buffer   The buffer to read into
-            @param length   The data length to read 
+            @param length   The data length to read
             @return 0 on end of file, -1 on error, or the actual length read else */
         virtual int read(char * buffer, int length) = 0;
         /** Read a line from the stream.
             @param buffer   The buffer to read into (buffer must be at least length bytes)
-            @param length   The length of the data to read into buffer 
+            @param length   The length of the data to read into buffer
             @param EOL      The allowed end of line marker (@sa EndOfLine) */
         virtual int readLine(char * buffer, int length, const EndOfLine EOL = Platform::Default) = 0;
         /** Write the given amount of bytes to the stream.
-            Depending on the stream blocking behaviour, the stream pointer position, 
+            Depending on the stream blocking behaviour, the stream pointer position,
             and the memory, this method can fail to write the queried amount of data.
             @param buffer   The buffer to read into
-            @param length   The data length to read 
+            @param length   The data length to read
             @return 0 on end of file, -1 on error, or the actual length read else */
         virtual int write(const char * buffer, int length) = 0;
 
@@ -65,14 +65,14 @@ namespace File
         /** Get the current pointer position in the stream. */
         virtual uint64 getPosition() const = 0;
         /** Set the current pointer position in the stream */
-        virtual bool setPosition(const uint64 offset) = 0; 
+        virtual bool setPosition(const uint64 offset) = 0;
 
         /** Set the stream size.
             This only work for specific stream, like files */
         virtual bool setSize(const uint64 offset) = 0;
         /** Check if the stream is finished. */
         virtual bool endOfStream() const = 0;
-        
+
         /** Get the private field.
             This is used to store an unknown data per socket.
             It is set to 0 at construction.
@@ -129,11 +129,11 @@ namespace File
             Link        = 0x100,
             Directory   = 0x002,
             FIFO        = 0x004,
-            Pipe        = 0x008, 
+            Pipe        = 0x008,
             Device      = 0x010,
             Socket      = 0x020,
         };
-        
+
         /** Compare in metadata */
         enum Comparand
         {
@@ -157,11 +157,11 @@ namespace File
             ContentMode type;
 
             SetContentMode(const ContentMode type) : type(type) {}
-            SetContentMode(const bool append = false) : type(append ? Append : AtomicReplace) {} 
+            SetContentMode(const bool append = false) : type(append ? Append : AtomicReplace) {}
         };
 
         // Members
-    public:    
+    public:
         /** The file name */
         String      name;
         /** The full file path without file name */
@@ -184,7 +184,7 @@ namespace File
         uint32      permission;
         /** The file POSIX type */
         Type        type;
-        
+
 
         // Interface
     public:
@@ -198,19 +198,19 @@ namespace File
             @return true on success */
         bool checkPermission(const PermissionType type, const uint32 userID = (uint32)-1, const uint32 groupID = (uint32)-1) const;
         /** Get a stream from this file.
-            @param blocking         When true, return a blocking stream, else return an asynchronous stream 
+            @param blocking         When true, return a blocking stream, else return an asynchronous stream
             @param forceReadOnly    If true, the stream is read only (even if you have write permission to it), otherwise the stream is open with the current permission
             @param forceOverwrite   If true, the stream overwrite the previous file content (if any)
             @return a pointer to a new allocated base stream you must delete, or 0 on error */
         BaseStream * getStream(const bool blocking = true, const bool forceReadOnly = false, const bool forceOverwrite = false) const;
-        
+
         /** Copy the file to the given path.
             This methods use the most efficient implementation available.
-            The destination should point to a file. 
+            The destination should point to a file.
             If the destination exists, it's overwritten (provided it's possible to do so).
             If the destination is a directory, a file with the same name as the source file is created in it.
-            If the destination does not exist all path segment but to the last will be used to create the destination hierarchy, the last path segment 
-            will be the destination name (for example, specifying '/tmp/app/loc.txt' will create "/tmp/app" folder, and copy the source file to a file 
+            If the destination does not exist all path segment but to the last will be used to create the destination hierarchy, the last path segment
+            will be the destination name (for example, specifying '/tmp/app/loc.txt' will create "/tmp/app" folder, and copy the source file to a file
             called "loc.txt" in this folder).
             @param destination      The destination path. */
         bool copyTo(const String & destination) const;
@@ -227,11 +227,11 @@ namespace File
             @param destination   The link destination (where the link points to)
             @param hardLink      If true a hard link is created, else a symbolic link is created */
         bool createAsLinkTo(const String & destination, const bool hardLink = false);
-        
+
 
         /** Make the directory for this (invalid) file.
             @param recursive    If true, will create missing directory up to the given path */
-        bool makeDir(const bool recursive = true); 
+        bool makeDir(const bool recursive = true);
 
         /** Change the file modification time.
             @param  newTime     In second since Epoch */
@@ -248,7 +248,7 @@ namespace File
         /** Check if the pointed value is a device */
         inline bool isDevice() const { return (type & Device) > 0; }
         /** Get the last 16 bytes of the file.
-            This is only used for file fingerprint matching, file have usually same start bytes, but rarely same end bytes. 
+            This is only used for file fingerprint matching, file have usually same start bytes, but rarely same end bytes.
             It's only used as a fast (and likely not exact) discrimination method */
         String last16Bytes() const;
 
@@ -269,10 +269,10 @@ namespace File
             @param metadata    The metadata to update
             @return true on successful metadata update. */
         bool setMetaData(String metadata);
-        /** Analyse the metadata string and set the stat value based on it. 
-            This is useful if you don't intend to apply the metadata on the file system immediately and want 
-            to decide whether to do so or not at a later stage. 
-            @sa getMetaData and setMetaData 
+        /** Analyse the metadata string and set the stat value based on it.
+            This is useful if you don't intend to apply the metadata on the file system immediately and want
+            to decide whether to do so or not at a later stage.
+            @sa getMetaData and setMetaData
             @param metadata    The metadata to analyze
             @return true if the parsing of the metadata succeeded */
         bool analyzeMetaData(String metadata);
@@ -287,22 +287,22 @@ namespace File
             @param metadata    The metadata to analyze
             @return a string for the given metadata in the specified format */
         static String printMetaData(String metadata);
-            
+
         /** Get the complete content as a String.
             @warning Beware that the whole content is read in memory so big file will exhaust your memory */
         String getContent() const;
-        /** Replace the file content with the given string. 
-            The replacement is atomic (so the file contains either the previous content or the new one). 
+        /** Replace the file content with the given string.
+            The replacement is atomic (so the file contains either the previous content or the new one).
             If the file doesn't exist, it's created.
             @param content       The new file's content.
-            @param mode          Depending on the mode chose, either the file is replaced atomically, either it's appended, 
+            @param mode          Depending on the mode chose, either the file is replaced atomically, either it's appended,
                                  either it's not replaced atomically. @sa ContentMode
             @return false if it was not possible to set the content (either disk full, either permissions issues) */
         bool setContent(const String & content, const SetContentMode mode = AtomicReplace);
         /** Get the parent folder (if any applicable).
             This method actually resolves any symbolic link, path substitution and stack abuse */
         String getParentFolder() const;
-        /** Get the real path for this file. 
+        /** Get the real path for this file.
             This method actually resolves any symbolic link, path substitution and stack abuse */
         String getRealFullPath() const;
         /** Get the file permission (if applicable).
@@ -319,7 +319,7 @@ namespace File
             On platform with no owner per file, this is completely ignored.
             @param userID        The user ID to own the file (ignored if -1)
             @param groupID       The group ID to own the file (ignored if -1)
-            @param followSymLink If true and the the file is a symbolic link, the linked file is changed, else, the symbolic link is changed 
+            @param followSymLink If true and the the file is a symbolic link, the linked file is changed, else, the symbolic link is changed
             @return true on success */
         bool setOwner(const uint32 userID = (uint32)-1, const uint32 groupID = (uint32)-1, const bool followSymlink = true);
         /** Get the file's user ID.
@@ -329,15 +329,15 @@ namespace File
             On platform with no owner per file, this returns a fake owner. */
         inline uint32 getOwnerGroup() const { return group; }
         /** Get the number of contained files/items inside this item.
-            For most file type, this will be 1, but for directories (or "pseudo-archive") 
+            For most file type, this will be 1, but for directories (or "pseudo-archive")
             this will returns the number of files inside the directory.
             @note If the current item is a symbolic link, it's not followed (so it returns 1) */
         uint32 getEntriesCount() const;
-        
-        
+
+
 
         // Construction / Destruction
-    public: 
+    public:
         /** Build an info object from a file path (will query the info by itself) */
         Info(const String & fullPath);
         /** Build an info object from a file path (will query the info by itself).
@@ -377,12 +377,12 @@ namespace File
     struct DirectoryIterator
     {
         // Type definition and enumeration
-    public:    
+    public:
         /** The file array (if retrieving all files at once) */
         typedef Container::WithCopyConstructor<Info>::Array     InfoArray;
         /** The file name array (if retrieving all files at once) */
         typedef Container::WithCopyConstructor<String>::Array   NameArray;
-    
+
         // Members
     private:
 #ifdef _WIN32
@@ -400,26 +400,26 @@ namespace File
         // Interface
     public:
         /** Retrieve all the files information at once.
-            This method modify the iterator, so you'll only get the entries that 
+            This method modify the iterator, so you'll only get the entries that
             aren't iterated yet. The iterator is reset after the method.
             This method is a shortcut to "while(getNextFile())"
 
             @param array    A reference on the array to retrieve */
         bool getAllFilesAtOnce(InfoArray & array) const;
         /** Get a minimal file listing from this iterator.
-            This method doesn't modify the iterator, so you will not loose your 
+            This method doesn't modify the iterator, so you will not loose your
             current position in iteration with getNextFile.
 
             @param array    A reference on the array to retrieve
             @param withPath When set, the array is filled with full file path */
         bool getAllFilesAtOnce(NameArray & array, const bool withPath = false) const;
-        /** Get the next file iteratively 
-            @param info     The file info to retrieve 
+        /** Get the next file iteratively
+            @param info     The file info to retrieve
             @return false when iteration should stop */
         bool getNextFile(Info & info) const;
         /** Get the next file iteratively.
             The path member of the info object is not filled.
-            @param info     The file info to retrieve 
+            @param info     The file info to retrieve
             @return false when iteration should stop */
         bool getNextFilePath(Info & info) const;
 
@@ -433,7 +433,7 @@ namespace File
 
     public:
         DirectoryIterator(const DirectoryIterator & dir);
-        ~DirectoryIterator(); 
+        ~DirectoryIterator();
 
     };
 
@@ -446,15 +446,15 @@ namespace File
         {
             Home        =   0x00000001, //!< The current user home directory
             Root        =   0x00000002, //!< The root directory (under Windows, this is C:\\ )
-            Programs    =   0x00000003, //!< The program directory 
-            Temporary   =   0x00000004, //!< The temporary directory 
-            Current     =   0x00000005, //!< The current directory 
+            Programs    =   0x00000003, //!< The program directory
+            Temporary   =   0x00000004, //!< The temporary directory
+            Current     =   0x00000005, //!< The current directory
         };
 
         /** Enumerate directory at the given path */
         static DirectoryIterator listFilesIn(const String & path);
         /** Normalize a path.
-            You can put whatever path on input (even most complex path like "../../C:/.././a/b/.../") 
+            You can put whatever path on input (even most complex path like "../../C:/.././a/b/.../")
             When using this method, the input path must come from a logical value, illogical value is silently removed, see example output below:
             @verbatim
                 "../../C:/.././a/b/.../" => "a/b/.../" on Posix, "C:/a/b/.../" on windows
@@ -465,19 +465,19 @@ namespace File
                 "./././././././././././././" => "/"
             @endverbatim
             @param strangePath    A non relative path, the path must starts from something tangible
-            @warning This does not interpret the path. 
-                     If you give for example "../../" the normalization will not figure out the current path, and strip the last 
+            @warning This does not interpret the path.
+                     If you give for example "../../" the normalization will not figure out the current path, and strip the last
                      two segments, but instead will return an empty string.
             @return a normalized path ending with PathSeparator */
         static String normalizePath(String strangePath);
-        /** Get the special folder 
-            @param folder   Any of SpecialFolder enumeration 
+        /** Get the special folder
+            @param folder   Any of SpecialFolder enumeration
             @return The absolute path to the special folder or empty string on error */
         static String getSpecialPath(const SpecialFolder folder);
-        /** Get the total and free space for the given mount point path 
-            @param path         The mount point path to analyze free space with 
-            @param totalBytes   On output, contains the total drive space 
-            @param freeBytes    On output, contains the total free space on the drive 
+        /** Get the total and free space for the given mount point path
+            @param path         The mount point path to analyze free space with
+            @param totalBytes   On output, contains the total drive space
+            @param freeBytes    On output, contains the total free space on the drive
             @return true on successful drive space query */
         static bool getDriveUsage(const String & path, uint64 & totalBytes, uint64 & freeBytes);
 		/** Get the list of mount points (or drives) in the system.
@@ -496,27 +496,27 @@ namespace File
         /** The private field */
         void    *       priv;
         /** The stream pointer */
-        FILE    *       file; 
+        FILE    *       file;
 
         // Interface
-    public:    
+    public:
         /** Read the stream of the given amount of bytes.
-            Depending on the stream blocking behaviour, the stream pointer position, 
+            Depending on the stream blocking behaviour, the stream pointer position,
             and the memory, this method can fail to retrieve the queried amount of data.
             @param buffer   The buffer to read into
-            @param length   The data length to read 
+            @param length   The data length to read
             @return 0 on end of file, -1 on error, or the actual length read else */
         virtual int read(char * buffer, int length);
         /** Read a line from the stream.
             @param buffer   The buffer to read into (buffer must be at least length bytes)
-            @param length   The length of the data to read into buffer 
+            @param length   The length of the data to read into buffer
             @param EOL      The allowed end of line marker (@sa EndOfLine) */
         virtual int readLine(char * buffer, int length, const EndOfLine EOL = Platform::Default);
         /** Write the given amount of bytes to the stream .
-            Depending on the stream blocking behaviour, the stream pointer position, 
+            Depending on the stream blocking behaviour, the stream pointer position,
             and the memory, this method can fail to write the queried amount of data.
             @param buffer   The buffer to read into
-            @param length   The data length to read 
+            @param length   The data length to read
             @return 0 on end of file, -1 on error, or the actual length read else */
         virtual int write(const char * buffer, int length);
         /** Flush the stream (this is a no op in most implementation). */
@@ -527,14 +527,14 @@ namespace File
         /** Get the current pointer position in the stream. */
         virtual uint64 getPosition() const;
         /** Set the current pointer position in the stream */
-        virtual bool setPosition(const uint64 offset); 
+        virtual bool setPosition(const uint64 offset);
         /** Check if the stream is finished. */
         virtual bool endOfStream() const;
 
         /** Set the stream size.
             This only work for specific stream, like files */
-        virtual bool setSize(const uint64 offset); 
-       
+        virtual bool setSize(const uint64 offset);
+
 
         /** Get the private field.
             This is used to store an unknown data per socket.
@@ -542,8 +542,8 @@ namespace File
 
             @return a reference to a pointer you can set to whatever struct you want.
             @warning you must manage this field allocation and destruction. */
-        virtual void * & getPrivateField() { return priv; }  
-        
+        virtual void * & getPrivateField() { return priv; }
+
         /** Default constructor */
         Stream(const String & fullPath = "", const String & mode = "r+b");
         ~Stream();
@@ -554,15 +554,15 @@ namespace File
     };
 
 
-    /** The asynchronous file stream. 
-        
+    /** The asynchronous file stream.
+
         All IO operations in this stream will likely return Asynchronous error.
         This is the expected behaviour.
-        Using asynchronous file stream is a bit more difficult than classic stream, 
+        Using asynchronous file stream is a bit more difficult than classic stream,
         as you'll have to handle asynchronous operations.
 
-        Using this class is interesting when you're reading or writing multiple 
-        different files and you don't want to write them sequentially (adding the latency), 
+        Using this class is interesting when you're reading or writing multiple
+        different files and you don't want to write them sequentially (adding the latency),
         but as fast as possible (max of biggest latency).
 
         Typically using this class is done like this:
@@ -574,11 +574,11 @@ namespace File
                 int len = 0;
                 // You should wait until the read operation is possible
                 while (ret == Asynchronous && stream.isReadPossible(DefaultTimeout))
-                {   // Then read 
+                {   // Then read
                     ret = stream.read(&buffer[len], length - len);
                     if (ret > 0 && ret < (length - len))
                     {
-                        len += ret; 
+                        len += ret;
                         ret == Asynchronous;
                     }
                 }
@@ -606,12 +606,12 @@ namespace File
         /** The private field */
         void    *       priv;
         /** The stream pointer */
-#ifdef _WIN32   
+#ifdef _WIN32
         HANDLE                  file;
         mutable OVERLAPPED      over;
         char *                  tmpBuffer;
 #elif defined(_POSIX)
-        int                     file; 
+        int                     file;
         mutable struct aiocb    over;
         void *                  monitored;
 #endif
@@ -620,24 +620,24 @@ namespace File
         uint64                  asyncSize;
 
         // Interface
-    public:    
+    public:
         /** Read the stream of the given amount of bytes.
-            Depending on the stream blocking behaviour, the stream pointer position, 
+            Depending on the stream blocking behaviour, the stream pointer position,
             and the memory, this method can fail to retrieve the queried amount of data.
             @param buffer   The buffer to read into
-            @param length   The data length to read 
+            @param length   The data length to read
             @return 0 on end of file, -1 on error, or the actual length read else */
         virtual int read(char * buffer, int length);
         /** Read a line from the stream.
             @param buffer   The buffer to read into (buffer must be at least length bytes)
-            @param length   The length of the data to read into buffer 
+            @param length   The length of the data to read into buffer
             @param EOL      The allowed end of line marker (@sa EndOfLine) */
         virtual int readLine(char * buffer, int length, const EndOfLine EOL = Platform::CRLF);
         /** Write the given amount of bytes to the stream .
-            Depending on the stream blocking behaviour, the stream pointer position, 
+            Depending on the stream blocking behaviour, the stream pointer position,
             and the memory, this method can fail to write the queried amount of data.
             @param buffer   The buffer to read into
-            @param length   The data length to read 
+            @param length   The data length to read
             @return 0 on end of file, -1 on error, or the actual length read else */
         virtual int write(const char * buffer, int length);
         /** Flush the stream (this is a no op in most implementation). */
@@ -655,7 +655,7 @@ namespace File
 
         /** Set the stream size.
             This only work for specific stream, like files */
-        virtual bool setSize(const uint64 offset); 
+        virtual bool setSize(const uint64 offset);
 
         /** Get the private field.
             This is used to store an unknown data per socket.
@@ -663,41 +663,41 @@ namespace File
 
             @return a reference to a pointer you can set to whatever struct you want.
             @warning you must manage this field allocation and destruction. */
-        virtual void * & getPrivateField() { return priv; }  
-        
+        virtual void * & getPrivateField() { return priv; }
+
         /** Default constructor */
         AsyncStream(const String & fullPath = "", const OpenMode mode = ReadWrite);
         ~AsyncStream();
 
         // Our interface
     public:
-        /** Check if it's possible to read from this stream 
+        /** Check if it's possible to read from this stream
             @param timeout  The time to wait for a state change. */
         bool isReadPossible(const Time::TimeOut & timeout = Time::DefaultTimeOut) const;
-        /** Check if it's possible to write to this stream 
+        /** Check if it's possible to write to this stream
             @param timeout  The time to wait for a state change. */
         bool isWritePossible(const Time::TimeOut & timeout = Time::DefaultTimeOut) const;
 
         // The required access to the monitoring pool
-    private:    
+    private:
         /** Get the internal object */
         void * getInternal() const;
 
     private:
         /** Prevent copying */
-        AsyncStream(const AsyncStream &);        
+        AsyncStream(const AsyncStream &);
 
-    public:    
+    public:
         /** Allow access to the monitoring pool */
         friend struct MonitoringPool;
     };
 
     /** The monitoring pool base interface.
 
-        Typically, using a monitoring pool, is as simple as appending asynchronous stream to monitor to the pool, 
+        Typically, using a monitoring pool, is as simple as appending asynchronous stream to monitor to the pool,
         then calling the monitoring method, and then get the results.
         @code
-            // Construct a pool 
+            // Construct a pool
             MonitoringPool & pool = ...;
             // Ok, let's append some stream
             pool.appendStream(info.getStream(false));
@@ -717,7 +717,7 @@ namespace File
             }
         @endcode
         @warning A pool never owns the stream passed in unless you specify it in its constructor (see specialization) */
-    struct MonitoringPool 
+    struct MonitoringPool
     {
         // Type definition and enumeration
     public:
@@ -732,10 +732,10 @@ namespace File
         struct AsyncCompleted
         {
             uint32           index;
-            bool             completed; 
+            bool             completed;
             MonitoringPool & pool;
             void wasCompleted()
-            {   // Simply append a index to the ready pool 
+            {   // Simply append a index to the ready pool
                 pool.indexLock.Acquire();
                 pool.indexPool[pool.triggerCount++] = (uint16)index;
                 completed = true;
@@ -773,7 +773,7 @@ namespace File
         /** The event ready */
         mutable Threading::Event    eventReady;
         /** The array of callback handler */
-        Container::NotConstructible<AsyncCompleted>::IndexList  asyncCB;    
+        Container::NotConstructible<AsyncCompleted>::IndexList  asyncCB;
         /** The last request triggered event's count */
         mutable int         triggerCount;
 #endif
@@ -781,20 +781,20 @@ namespace File
         bool                own;
 
         // Monitoring pool interface
-    public:    
+    public:
         /** Append a socket to this pool */
         virtual bool    appendStream(AsyncStream * socket);
         /** Remove a socket from the pool */
         virtual bool    removeStream(AsyncStream * socket);
         /** Get the pool size */
-        virtual uint32  getSize() const; 
+        virtual uint32  getSize() const;
 
-        /** Select the pool for at least an element that is ready 
-            @param reading When true, the select return true as soon as the socket has read data available 
+        /** Select the pool for at least an element that is ready
+            @param reading When true, the select return true as soon as the socket has read data available
             @param writing When true, the select return true as soon as the socket is ready to be written to
-            @param timeout The timeout in millisecond to wait for before returning (negative for infinite time) 
+            @param timeout The timeout in millisecond to wait for before returning (negative for infinite time)
             @return false on timeout or error, or true if at least one socket in the pool is ready */
-        virtual bool select(const bool reading, const bool writing, const Time::TimeOut & timeout = Time::DefaultTimeOut) const; 
+        virtual bool select(const bool reading, const bool writing, const Time::TimeOut & timeout = Time::DefaultTimeOut) const;
 
         /** Check if at least a socket in the pool is ready for reading */
         virtual bool isReadPossible(const Time::TimeOut & timeout = Time::DefaultTimeOut) const;
@@ -811,8 +811,8 @@ namespace File
         virtual AsyncStream * getReadyAt(const int index);
 
         // Construction and destruction
-    public:  
-        /** Build a pool using epoll or kqueue when available. 
+    public:
+        /** Build a pool using epoll or kqueue when available.
             @param own  When set to true, the poll own the socket passed in. */
         MonitoringPool(const bool own = false);
         ~MonitoringPool();

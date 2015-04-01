@@ -332,7 +332,7 @@ namespace Database
             if (init && tdl) tdl->hasBeenModified((uint32)index, ref);
             return *this;
         }
-        
+
         // Comparison operators
         bool operator == (const WriteMonitored & value) const { return ref == value.ref; }
         bool operator != (const WriteMonitored & value) const { return ref != value.ref; }
@@ -428,7 +428,7 @@ namespace Database
             return *this;
         }
         /*
-        // Comparison operators 
+        // Comparison operators
         bool operator == (const WriteMonitored & value) const { return ref == value.ref; }
         bool operator != (const WriteMonitored & value) const { return ref != value.ref; }
         bool operator > (const WriteMonitored & value) const { return ref > value.ref; }
@@ -441,7 +441,7 @@ namespace Database
         bool operator > (const unsigned int value) const { return ref > value; }
         bool operator < (const unsigned int value) const { return ref < value; }
         bool operator >= (const unsigned int value) const { return ref >= value; }
-        bool operator <= (const unsigned int value) const { return ref <= value; }        
+        bool operator <= (const unsigned int value) const { return ref <= value; }
         // Comparison operators
         bool operator == (const Index value) const { return ref == (uint32)value; }
         bool operator != (const Index value) const { return ref != (uint32)value; }
@@ -449,7 +449,7 @@ namespace Database
         bool operator < (const Index value) const { return ref < (uint32)value; }
         bool operator >= (const Index value) const { return ref >= (uint32)value; }
         bool operator <= (const Index value) const { return ref <= (uint32)value; }
-        // Enum checking 
+        // Enum checking
         template <typename E> bool operator == (const typename IfEnum<E>::Type & value) const { return ref == (unsigned int)value; }
         template <typename E> bool operator != (const typename IfEnum<E>::Type & value) const { return ref != (unsigned int)value; }
         template <typename E> bool operator > (const typename IfEnum<E>::Type & value) const { return ref > (unsigned int)value; }
@@ -536,7 +536,7 @@ namespace Database
             return *this;
         }
         /*
-        // Comparison operators 
+        // Comparison operators
         bool operator == (const WriteMonitored & value) const { return ref == value.ref; }
         bool operator != (const WriteMonitored & value) const { return ref != value.ref; }
         bool operator > (const WriteMonitored & value) const { return ref > value.ref; }
@@ -549,7 +549,7 @@ namespace Database
         bool operator > (const int value) const { return ref > value; }
         bool operator < (const int value) const { return ref < value; }
         bool operator >= (const int value) const { return ref >= value; }
-        bool operator <= (const int value) const { return ref <= value; }        
+        bool operator <= (const int value) const { return ref <= value; }
         // Comparison operators
         bool operator == (const Index value) const { return ref == (uint32)value; }
         bool operator != (const Index value) const { return ref != (uint32)value; }
@@ -557,7 +557,7 @@ namespace Database
         bool operator < (const Index value) const { return ref < (uint32)value; }
         bool operator >= (const Index value) const { return ref >= (uint32)value; }
         bool operator <= (const Index value) const { return ref <= (uint32)value; }
-        // Enum checking 
+        // Enum checking
         template <typename E> bool operator == (const typename IfEnum<E>::Type & value) const { return ref == (int)value; }
         template <typename E> bool operator != (const typename IfEnum<E>::Type & value) const { return ref != (int)value; }
         template <typename E> bool operator >  (const typename IfEnum<E>::Type & value) const { return ref > (int)value; }
@@ -661,7 +661,7 @@ namespace Database
         bool operator > (const unsigned int value) const { return ref > value; }
         bool operator < (const unsigned int value) const { return ref < value; }
         bool operator >= (const unsigned int value) const { return ref >= value; }
-        bool operator <= (const unsigned int value) const { return ref <= value; }        
+        bool operator <= (const unsigned int value) const { return ref <= value; }
         // Comparison operators
         bool operator == (const Index value) const { return ref == (uint32)value; }
         bool operator != (const Index value) const { return ref != (uint32)value; }
@@ -751,7 +751,7 @@ namespace Database
         }
         /*
 
-        // Comparison operators 
+        // Comparison operators
         bool operator == (const WriteMonitored & value) const { return ref == value.ref; }
         bool operator != (const WriteMonitored & value) const { return ref != value.ref; }
         bool operator > (const WriteMonitored & value) const { return ref > value.ref; }
@@ -764,7 +764,7 @@ namespace Database
         bool operator > (const uint64 value) const { return ref > value; }
         bool operator < (const uint64 value) const { return ref < value; }
         bool operator >= (const uint64 value) const { return ref >= value; }
-        bool operator <= (const uint64 value) const { return ref <= value; }        
+        bool operator <= (const uint64 value) const { return ref <= value; }
         // Comparison operators
         bool operator == (const LongIndex value) const { return ref == (uint64)value; }
         bool operator != (const LongIndex value) const { return ref != (uint64)value; }
@@ -772,7 +772,7 @@ namespace Database
         bool operator < (const LongIndex value) const { return ref < (uint64)value; }
         bool operator >= (const LongIndex value) const { return ref >= (uint64)value; }
         bool operator <= (const LongIndex value) const { return ref <= (uint64)value; }
-        // Enum checking 
+        // Enum checking
         template <typename E> bool operator == (const typename IfEnum<E>::Type & value) const { return ref == (uint64)value; }
         template <typename E> bool operator != (const typename IfEnum<E>::Type & value) const { return ref != (uint64)value; }
         template <typename E> bool operator >  (const typename IfEnum<E>::Type & value) const { return ref > (uint64)value; }
@@ -868,13 +868,13 @@ namespace Database
         bool operator < (const WriteMonitored & value) const { return ref < value.ref; }
         bool operator >= (const WriteMonitored & value) const { return ref >= value.ref; }
         bool operator <= (const WriteMonitored & value) const { return ref <= value.ref; }
-        // Comparison operators 
+        // Comparison operators
         bool operator == (const uint64 value) const { return ref == value; }
         bool operator != (const uint64 value) const { return ref != value; }
         bool operator > (const uint64 value) const { return ref > value; }
         bool operator < (const uint64 value) const { return ref < value; }
         bool operator >= (const uint64 value) const { return ref >= value; }
-        bool operator <= (const uint64 value) const { return ref <= value; }        
+        bool operator <= (const uint64 value) const { return ref <= value; }
         // Comparison operators
         bool operator == (const LongIndex value) const { return ref == (uint64)value; }
         bool operator != (const LongIndex value) const { return ref != (uint64)value; }
@@ -1322,8 +1322,8 @@ namespace Database
         @sa TableDescription for example use */
     MACRO DeclareField(Field X, TYPE TYPE);
     /** Start declaring a field in the table. This field will be used as an index.
-        You can have multiple indexes on a table. 
-        If you're doing a lot of search on a table's field, then it's worth creating an index on it, else it'll slow down the insertion 
+        You can have multiple indexes on a table.
+        If you're doing a lot of search on a table's field, then it's worth creating an index on it, else it'll slow down the insertion
         operations, so avoid it.
         @param X        The given name will be the member name and the name seen in the database's table.
         @param TYPE     The database type (guess from C++ type written here). You can use NotNullInt et al, or Index or Blob here
@@ -1715,16 +1715,16 @@ namespace Database
             DeclareDatabase(OperatingDB, "user:password@192.168.0.234:3306")
         EndDatabaseConnection
         @endcode
-        
-        Even when using the MultipleDatabaseConnection, one has to call SQLFormat::initialize (probably also SQLFormat::createModelsForAllConnections), and 
-        finally SQLFormat::finalize. 
+
+        Even when using the MultipleDatabaseConnection, one has to call SQLFormat::initialize (probably also SQLFormat::createModelsForAllConnections), and
+        finally SQLFormat::finalize.
         <br>
         <br>
         @warning The MultipleDatabaseConnection tell the system what database/table to use with what connection, but does not handle the system initialization
                  and finalization that still has to be done.
-        @warning When using MultipleDatabaseConnection system, a static object will be instantiated before the main function is entered, so calling 
-                 SQLFormat::initialize will be using the MultipleDatabaseConnection's connection factory (instead of the SingleConnection-default- one). This 
-                 also means you can't have a static object doing SQLFormat::initialize in its constructor and SQLFormat::finalize in its destructor as this would 
+        @warning When using MultipleDatabaseConnection system, a static object will be instantiated before the main function is entered, so calling
+                 SQLFormat::initialize will be using the MultipleDatabaseConnection's connection factory (instead of the SingleConnection-default- one). This
+                 also means you can't have a static object doing SQLFormat::initialize in its constructor and SQLFormat::finalize in its destructor as this would
                  probably break due to undefined static initialization order. */
     template <typename Decl>
     struct MultipleDatabaseConnection : public DatabaseConnection
@@ -1938,20 +1938,20 @@ namespace Database
     };
 }
 
-namespace UniversalTypeIdentifier 
-{  
-    // If the compiler stops here, it's because you are trying to store a table's field directly in a Variant, 
-    // instead of the class itself. You should use table.field.asVariant() instead 
-    template <class Type, int position> 
+namespace UniversalTypeIdentifier
+{
+    // If the compiler stops here, it's because you are trying to store a table's field directly in a Variant,
+    // instead of the class itself. You should use table.field.asVariant() instead
+    template <class Type, int position>
     TypeID Deprecated(getTypeIDImpl(Database::WriteMonitored<Type, position> * t , Bool2Type< false > *));
 
-    template <class Type, int position> 
-    TypeID getTypeIDImpl(Database::WriteMonitored<Type, position> * t , Bool2Type< false > *) 
+    template <class Type, int position>
+    TypeID getTypeIDImpl(Database::WriteMonitored<Type, position> * t , Bool2Type< false > *)
     {
         // See above
         CompileTimeAssertFalse(Type);
         return 0;
-    } 
+    }
 }
 
 

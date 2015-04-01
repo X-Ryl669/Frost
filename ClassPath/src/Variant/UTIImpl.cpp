@@ -66,7 +66,7 @@ namespace UniversalTypeIdentifier
 }
 
 
-/** Needed for registration */ 
+/** Needed for registration */
 /*
 RegisterClassForVariant(::VarT<ObjectCopyPolicy>::Empty , 0x00000000, 0x00000000, 0x00000001, 0x00000000)
 RegisterClassFunctions(::VarT<ObjectCopyPolicy>::Empty  , ("<Value></Value>"), ; )
@@ -83,7 +83,7 @@ RegisterClassForVariant(Database::ReferenceBase, 0x00000000, 0x00000000, 0x00000
 RegisterClassFunctions(Database::ReferenceBase, ("<Value>%u</Value>", ((Database::ReferenceBase*)pData)->ref), sSrc.Scan("%u", &((Database::ReferenceBase*)pData)->ref))
 RegisterClassForVariant(Database::TableDefinition*, 0x00000000, 0x00000000, 0x00000000, 0xdeadf00d)
 RegisterClassFunctions(Database::TableDefinition*, ("<Value></Value>"), throw ConversionNotAllowed(); )
-  
+
 */
 #ifndef DOXYGEN
 

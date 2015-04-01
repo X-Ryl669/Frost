@@ -45,7 +45,7 @@ namespace Crypto
 
         /** Establish the DH session.
             Please check the startSession method for example code.
-         
+
             @param privateKey       The private key used to decode the message
             @param message          The message that's received from the other party
             @param messageLen       The message length (in bytes)
@@ -67,7 +67,7 @@ namespace Crypto
                 Utils::MemoryBlock message(dh.getMessageLength());
                 Utils::MemoryBlock secret(dh.getSecretLength());
                 if (!dh.startSession(ephemeralPrivKey, message.getBuffer(), message.getSize(), secret.getBuffer(), secret.getSize())) return false;
-                
+
                 // Now you can use the secret on this side too
                 // If you don't need the private key anymore, destroy it
                 ephemeralPrivKey.Destroy();
@@ -80,12 +80,12 @@ namespace Crypto
                 Utils::MemoryBlock message = ... received from other side ...;
                 Utils::MemoryBlock secret(dh.getSecretLength());
                 if (!dh.establishSession(privKey, message.getConstBuffer(), message.getSize(), secret.getBuffer(), secret.getSize())) return false;
-                
+
                 // Now you can use the secret on this side too
                 // If you don't need the private key anymore, destroy it
                 privKey.Destroy();
             @endcode
-         
+
             @param privateKey       On output, contains the ephemeral privateKey used to generate the message. You unlikely need this key anymore.
             @param message          The public information that can be send on the wire after starting the session.
             @param messageLen       The public info length (in bytes)

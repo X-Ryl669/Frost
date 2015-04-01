@@ -40,8 +40,8 @@ namespace File
         /** The file filter array */
         typedef Container::WithCopyConstructor<FileFilter>::Array   FileFilters;
 
-        /** When using the low-level system, you can provide your own EntryFound 
-            structure that'll be called each time a new entry is found in the folder 
+        /** When using the low-level system, you can provide your own EntryFound
+            structure that'll be called each time a new entry is found in the folder
             scanning process.
             @sa DefaultEntryIterator */
         struct EntryIterator
@@ -50,13 +50,13 @@ namespace File
                 @return false when no more file of interest in the given directory. */
             virtual bool getNextFile(File::DirectoryIterator & dir, File::Info & file, const String & name) = 0;
             virtual ~EntryIterator() {}
-            
+
             /** The entry iterator */
             EntryIterator(const bool recursive) : recursive(recursive) {}
             /** Set to true in case the iterator should recurse into directories */
             const bool    recursive;
         };
-        
+
         /** The default implementation:
             - ignores hidden files and parent directory
             - ignores symbolic link for directories (since there is no way to figure out if they lead out of the initial path)
@@ -64,14 +64,14 @@ namespace File
         class DefaultEntryIterator : public EntryIterator
         {
             FileFilters & filters;
-            
+
         public:
             /** Called to fetch information about files in directory */
             virtual bool getFileInfo(File::DirectoryIterator & dir, File::Info & file)
             {
                 return dir.getNextFile(file);
             }
-        
+
             /** Called to extract the next file in the given directory.
                 @return false when no more file of interest in the given directory. */
             virtual bool getNextFile(File::DirectoryIterator & dir, File::Info & file, const String & name)
@@ -91,7 +91,7 @@ namespace File
             /** We need the filters and recursive information to figure out what to do next */
             DefaultEntryIterator(FileFilters & filters, const bool recursive) : EntryIterator(recursive), filters(filters) {}
         };
-        
+
         /** The filename only implementation:
             - ignores hidden files and parent directory
             - ignores symbolic link for directories (since there is no way to figure out if they lead out of the initial path)
@@ -104,10 +104,10 @@ namespace File
             /** We need the filters and recursive information to figure out what to do next */
             FileNameOnlyIterator(FileFilters & filters, const bool recursive) : DefaultEntryIterator(filters, recursive) {}
         };
-        
-        /** Event based iterator. 
+
+        /** Event based iterator.
             The given callback is called for each matching file.
-            @warning If you use this class, the scanFolderGeneric function will always return false (since no files are matched anyway), 
+            @warning If you use this class, the scanFolderGeneric function will always return false (since no files are matched anyway),
                      and you must set onlyFile to true (the default) */
         class EventIterator : public EntryIterator
         {
@@ -121,7 +121,7 @@ namespace File
                     @param strippedFilePath The file path that was stripped from the given mount point
                     @return false to stop iterating */
                 virtual bool fileFound(File::Info & info, const String & strippedFilePath) = 0;
-                
+
                 virtual ~FileFoundCB() {}
             };
         private:
@@ -129,7 +129,7 @@ namespace File
             bool finished;
             /** The callback to call */
             FileFoundCB & callback;
-            
+
         public:
             /** Called to extract the next file in the given directory.
                 @return false when no more file of interest in the given directory. */
@@ -139,7 +139,7 @@ namespace File
                 while (dir.getNextFilePath(file))
                 {
                     if (file.name == "." || file.name == "..") continue;
-                    
+
                     if (!callback.fileFound(file, name + file.name)) { finished = true; return false; }
                     if (recursive && file.isDir() && !file.isLink())
                     {
@@ -152,7 +152,7 @@ namespace File
             /** You need to provide a logical callback that's not owned */
             EventIterator(const bool recursive, FileFoundCB & callback) : EntryIterator(recursive), finished(false), callback(callback) {}
         };
-        
+
         /** The basic engine.
             This scans the files hierarchy in a depth last manner, that is for a folder structure like this:
             @verbatim
@@ -161,9 +161,9 @@ namespace File
                 |--- subDir1
                 |       |--- file2
                 |--- file3
-            @endverbatim 
-            
-            will be filled/called in the following order: 
+            @endverbatim
+
+            will be filled/called in the following order:
             @verbatim
             root, file1, subDir1, file3, file2
             @endverbatim */

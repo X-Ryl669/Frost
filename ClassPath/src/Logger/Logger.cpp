@@ -23,16 +23,16 @@ namespace Logger
             va_start(argp, format);
             char * buffer = (char*)malloc(startSize);
             if(!buffer) return;
-            
+
             const int err = (int)vsnprintf(buffer, startSize - 1, format, argp);
             va_end(argp);
-            
+
             // Not enough space
-            if (err <= 0) 
+            if (err <= 0)
             {
                 // Safety check to exit when vsnprintf fails to print anything
                 if (err == 0 || startSize > 131072) return;
-                startSize <<= 1; 
+                startSize <<= 1;
                 free(buffer);
                 continue;
             }
@@ -49,23 +49,23 @@ namespace Logger
         static ConsoleSink sink(~(Logger::Database | Logger::Packet | Logger::Dump));
         return &sink;
     }
-    // Get a reference on the default sink pointer 
+    // Get a reference on the default sink pointer
     static OutputSink *& getDefaultSinkPointer()
     {
         static OutputSink * defaultSink = getStaticSink();
         return defaultSink;
     }
     // Get the default sink
-    OutputSink & getDefaultSink() 
-    { 
+    OutputSink & getDefaultSink()
+    {
         return *getDefaultSinkPointer();
     }
     // Change the default sink
-    void setDefaultSink(OutputSink * newSink) 
+    void setDefaultSink(OutputSink * newSink)
     {
         // If it's not the static sink, let's delete it
-        if (&getDefaultSink() != getStaticSink()) delete &getDefaultSink(); 
-        getDefaultSinkPointer() = newSink; 
+        if (&getDefaultSink() != getStaticSink()) delete &getDefaultSink();
+        getDefaultSinkPointer() = newSink;
     }
 
 #if defined(_WIN32) || defined(_POSIX)
@@ -77,14 +77,14 @@ namespace Logger
             fprintf(file, "%s" ENDOFLINE, (const char*)message);
         }
     }
-    
+
     void StructuredFileOutputSink::flushLastMessage()
     {
         if (!lastMessage) return;
-        
+
         if (lastMessageCount > 1)
             fprintf(file, "[%08X][%08X] %s (last message repeated %d times)" ENDOFLINE, lastTime, lastFlags, (const char*)lastMessage.upToLast("\n"), lastMessageCount);
-        else 
+        else
             fprintf(file, "[%08X][%08X] %s" ENDOFLINE, lastTime, lastFlags, (const char*)lastMessage);
 
         if ((lastFlags & Error) != 0) fflush(file); // Errors messages should be flushed as soon as possible
@@ -93,7 +93,7 @@ namespace Logger
     void StructuredFileOutputSink::gotMessage(const char * message, const unsigned int flags)
     {
         if ((logMask & flags) == 0 || file == 0) return;
-        // Need to structure the file 
+        // Need to structure the file
         // Find out the time
         time_t now = time(NULL);
         // Don't allow 64 bits time
@@ -142,12 +142,12 @@ namespace Logger
     StructuredFileOutputSink::StructuredFileOutputSink(unsigned int logMask, const Strings::FastString & fileName, const bool appendToFile, const int breakSize)
         : OutputSink(logMask), baseFileName(fileName), breakSize(breakSize), currentSize(0), flipFlop(false), lastMessageCount(0), lastTime(0), lastFlags(0),
 #ifdef _WIN32
-        file(_fsopen(fileName, appendToFile ? "ab" : "wb", _SH_DENYWR)) 
+        file(_fsopen(fileName, appendToFile ? "ab" : "wb", _SH_DENYWR))
 #elif defined(_POSIX)
         file(fopen(fileName, appendToFile ? "ab" : "wb"))
 #endif
-	{ 
-        if (file) 
+	{
+        if (file)
         {
 #if defined(_POSIX)
             struct flock fl;
@@ -162,7 +162,7 @@ namespace Logger
             flags |= FD_CLOEXEC;
             fcntl(fileno(file), F_SETFD, flags);
             flags = fcntl(fileno(file), F_GETFD);
-#endif				
+#endif
             // Find out the file size (and leave the pointer at end of file)
             fseek(file, 0, SEEK_END);
             currentSize = (int)ftell(file);

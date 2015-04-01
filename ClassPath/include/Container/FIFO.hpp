@@ -7,7 +7,7 @@
 // Need operator new
 #include <new>
 
-// Need global definitions 
+// Need global definitions
 #include "../Types.hpp"
 // Need assert too
 #include "../Utils/Assert.hpp"
@@ -22,8 +22,8 @@ namespace Stack
 	{
 		/** Provides FIFO like stack functionalities only for POD objects
 			It is recommended not to push heap stored objects (like new/malloced object)
-			
-			The stack takes care of memory management in its internal array when 
+
+			The stack takes care of memory management in its internal array when
 			destructed or reallocated (size zeros and grow again)
 
 			@code
@@ -36,11 +36,11 @@ namespace Stack
 			// Don't delete the popped pointer
 			double b = stack.Pop();
 			// c will be default constructed object (probably 0xCDCDCDCDCDCDCDCD)
-			double c = stack.Pop(); 
+			double c = stack.Pop();
             // On leaving scope, the array will be destructed
 			@endcode
 		*/
-		template <typename T> 
+		template <typename T>
 		class FIFO
 		{
 		public:
@@ -58,7 +58,7 @@ namespace Stack
 			/** Pop an element from the list */
 			inline T & Pop()	{ if (currentSize == 0) return defaultElement; T& ref = *(T*)&array[currentPos]; currentPos += sizeof(T); currentSize --; return ref; }
 			/** Push an element to the list */
-			inline void Push(const T & ref) 
+			inline void Push(const T & ref)
 			{
 				// Check if the object can be freed
 				if (currentSize == 0 && currentPos) Clear();
@@ -85,32 +85,32 @@ namespace Stack
 
 				return *this;
 			}
-			
+
 			/** Access size member */
 			inline size_t getSize() const { return currentSize; }
-			/** Tell the stack it is no more required to delete the given pop'd object 
+			/** Tell the stack it is no more required to delete the given pop'd object
 				@return false because it is not supported for POD
 			*/
 			inline bool Forget(const T& avoidDeleting) { return false;	}
 
         private:
             /** Clear the fifo */
-            inline void Clear() 
-            { 
-                while (currentSize)	
-                { 
-                    currentSize --; 
-                    T * pPtr = (T*)&array[currentSize * sizeof(T) + currentPos]; 
-                    pPtr->~T(); 
+            inline void Clear()
+            {
+                while (currentSize)
+                {
+                    currentSize --;
+                    T * pPtr = (T*)&array[currentSize * sizeof(T) + currentPos];
+                    pPtr->~T();
                 }
-                while (currentPos)	
-                { 
-                    currentPos -= sizeof(T); 
-                    T * pPtr = (T*)&array[currentPos]; 
-                    pPtr->~T(); 
+                while (currentPos)
+                {
+                    currentPos -= sizeof(T);
+                    T * pPtr = (T*)&array[currentPos];
+                    pPtr->~T();
                 }
                 Platform::safeRealloc(array, 0);
-                Reset(); 
+                Reset();
             }
 		private:
 			/** The array holder */
@@ -134,10 +134,10 @@ namespace Stack
 	{
 		/** Provides FIFO like stack functionalities for any object
 			It is recommended to push "new" created object
-			
-			The stack takes care of deleting the pushed pointer when 
+
+			The stack takes care of deleting the pushed pointer when
 			destructed or reallocated (size zeros and grow again)
-			If you plan to use copy constructor or operator =, the 
+			If you plan to use copy constructor or operator =, the
 			objects must provide a "clone" method.
 
 			@code
@@ -150,16 +150,16 @@ namespace Stack
 			// You must delete the popped pointer
 			MyClass * t2 = stack.Pop();
 			// t3 will be NULL, but t and t2 still points to valid memory
-			MyClass * t3 = stack.Pop(); 
+			MyClass * t3 = stack.Pop();
 			// And so on...
 			stack.Push(new MyChildClass(3));
-			
+
 			// This will use virtual MyClass::clone method
-			Stack::WithClone::FIFO<MyClass> stack2 = stack; 
+			Stack::WithClone::FIFO<MyClass> stack2 = stack;
             // On leaving scope, the array will be destructed, so will MyChildClass instance.
 			@endcode
 		*/
-		template <typename T> 
+		template <typename T>
 		class FIFO
 		{
 		private:
@@ -179,7 +179,7 @@ namespace Stack
 			/** Pop an element from the list */
 			inline T * Pop()	{ Assert(currentSize + currentPos <= allocatedSize); if (currentSize == 0) return NULL; T* ref = array[currentPos]; array[currentPos] = 0; currentPos ++; currentSize --; return ref; }
 			/** Push an element to the list */
-			inline void Push(T * ref) 
+			inline void Push(T * ref)
 			{
                 Assert(!allocatedSize || currentSize + currentPos <= allocatedSize);
 				// Check if the object can be freed
@@ -212,16 +212,16 @@ namespace Stack
 				for (size_t i = 0; i < fifo.currentSize; i++) Push(fifo.array[i + fifo.currentPos]->clone());
 				return *this;
 			}
-			
+
 			/** Access size member */
 			inline size_t getSize() const { return currentSize; }
 
 		private:
-			/** Clear the fifo 
+			/** Clear the fifo
 				@param ref is checked for every item. If one of them matches, then it is not deleted
 			*/
-			inline void Clear(T * ref = NULL) 
-			{	
+			inline void Clear(T * ref = NULL)
+			{
                 Assert(currentSize + currentPos <= allocatedSize);
                 while (currentSize--) { T * pPtr = array[currentSize + currentPos]; if (pPtr != ref) delete pPtr; }
 				while (currentPos--)  { T * pPtr = array[currentPos]; if (pPtr != ref) delete pPtr; }

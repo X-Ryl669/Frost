@@ -14,13 +14,13 @@
 
 namespace Random
 {
-    /** The generator interface 
+    /** The generator interface
 
         While in most case, it is not required to use this code directly, using this code is done the following way :
         @code
         Random::MersenneTwister generator;
         // You can give a true random pool if you want, but you can also use default pool (entropy is collected from CPU time)
-        generator.Init(); 
+        generator.Init();
         // Get a random number
         uint32 randomNumber = generator.Random();
         @endcode
@@ -31,7 +31,7 @@ namespace Random
     {
     private:
         /** Some constant for this generator */
-        enum 
+        enum
         {
             Size        = 624,
             Offset      = 397,
@@ -59,7 +59,7 @@ namespace Random
         {
             return (((u & Constant4) | (v & Constant5)) >> 1) ^ ((v & 1) ? Constant3 : 0);
         }
-        
+
         // Interface
     public:
         /** Initialize with a seed */
@@ -85,7 +85,7 @@ namespace Random
                 array = (uint32*)entropyBucket;
                 arraySize = ArrSz(entropyBucket) / sizeof(array[0]);
             }
-            
+
             int i = 1, j = 0;
             for (int k = max(arraySize, (uint32)Size); k; --k)
             {
@@ -116,7 +116,7 @@ namespace Random
 #endif
             *(time_t*)&EntropyBucket[8] = time(NULL);
             *(clock_t*)&EntropyBucket[12] = clock();
-            
+
             // Try to gather entropy from some real source
 #if defined(_WIN32)
             uint64 driveSpace = Hardware::Scanner::getFreeDriveSpace(File::General::getSpecialPath(File::General::Temporary));
@@ -135,7 +135,7 @@ namespace Random
                 fclose(rnd);
             }
 #endif
-                        
+
 
             // This is lame code here
             for (; size > 16; size -= 16)
@@ -148,7 +148,7 @@ namespace Random
                 arrayToStoreEntropyTo[size] += (uint8)(((uint32)arrayToStoreEntropyTo[size - 1] * 31) % 256);
             }
 
-            return true; 
+            return true;
         }
 
         /** Get a 32 bits random number */
@@ -161,7 +161,7 @@ namespace Random
             {
                 for (int i = 0; i < Size - Offset; ++i)
                     state[i] = state[i + Offset] ^ twiddle(state[i], state[i + 1]);
-                
+
                 for (int i = Size - Offset; i < (Size - 1); ++i)
                     state[i] = state[i + Offset - Size] ^ twiddle(state[i], state[i + 1]);
                 state[Size - 1] = state[Offset - 1] ^ twiddle(state[Size - 1], state[0]);
@@ -172,7 +172,7 @@ namespace Random
             tmp ^= (tmp >> 11);
             tmp ^= (tmp << 7) & Constant1;
             tmp ^= (tmp << 15) & Constant2;
-            return tmp ^ (tmp >> 18);            
+            return tmp ^ (tmp >> 18);
         }
 
     public:
@@ -196,7 +196,7 @@ namespace Random
         int i, nbits;
         uint32 mask;
 
-        if ( highest <= lowest ) 
+        if ( highest <= lowest )
             return lowest;
 
         range = highest - lowest;
@@ -226,21 +226,21 @@ namespace Random
 
             d &= mask;
 
-        } while (d > range); 
+        } while (d > range);
 
-        return (lowest + d);        
+        return (lowest + d);
     }
-    
-    // Fill the given block of data with random bytes 
+
+    // Fill the given block of data with random bytes
     void fillBlock(uint8 * buffer, size_t size, const bool reSeed)
     {
         if (!buffer || !size) return;
         if (reSeed) getDefaultGenerator().Init();
-        
+
         size_t units = size / sizeof(uint32);
         for (size_t i = 0; i < units; i++)
             ((uint32*)buffer)[i] = getDefaultGenerator().Random();
-        
+
         uint32 lastValue = getDefaultGenerator().Random();
         for (size_t i = units * sizeof(uint32); i < size; i++)
             buffer[i] = ((uint8*)&lastValue)[i - units];

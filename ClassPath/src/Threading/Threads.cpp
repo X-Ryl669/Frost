@@ -183,15 +183,15 @@ using namespace Threading;
             {
                 // Get the this pointer in the TLS
                 Thread * pThis = (Thread*)pthread_getspecific(Thread::threadThisKey);
-                if (pThis != NULL) 
+                if (pThis != NULL)
                 {
                     pThis->stack = "";
                     for (size_t i = 0; i < size; i++)
                         pThis->stack += frames[i].getFrame();
                     // And set the semaphore
                     SemPost(pThis->semaphore);
-                } else 
-                { 
+                } else
+                {
                     // Probably the main thread, so handle the stack now with global variables
                     sStack = "";
                     for (size_t i = 0; i < size; i++)
@@ -229,48 +229,48 @@ bool Thread::LocalVariableList::addVariable(Thread::LocalVariable * localVariabl
     return true;
 }
 
-            
+
 void Thread::LocalVariableList::removeVariable(LocalVariable::Key key)
 {
     ScopedLock scope(lock);
-    LocalVariable * cur = first; 
+    LocalVariable * cur = first;
     if (first && first->getKey() == key)
     {
-        LocalVariable * found = first->next; 
+        LocalVariable * found = first->next;
         delete first;
         first = found;
-        
+
 #ifdef _WIN32
         TlsFree(key);
 #else
         pthread_key_delete(key);
-#endif      
+#endif
         isLocalVariableUsed = first != 0;
-        return;     
+        return;
     }
-    while (cur) 
-    { 
-        if (cur->next && cur->next->getKey() == key) 
+    while (cur)
+    {
+        if (cur->next && cur->next->getKey() == key)
         {   // Found
             // Delete the next variable
-            LocalVariable * found = cur->next->next; 
+            LocalVariable * found = cur->next->next;
             delete cur->next;
             cur->next = found;
 #ifdef _WIN32
             TlsFree(key);
 #else
             pthread_key_delete(key);
-#endif                
-            return;     
+#endif
+            return;
         }
         cur = cur->next;
     }
 }
 
-bool Thread::LocalVariableList::logExistingVariable(Thread::LocalVariable * var) 
-{ 
+bool Thread::LocalVariableList::logExistingVariable(Thread::LocalVariable * var)
+{
 #if (DEBUG==1)
-    if (var) Logger::log(Logger::Warning, "Remaining thread local variable found before leaving: [%s]", (const char*)var->getName()); 
+    if (var) Logger::log(Logger::Warning, "Remaining thread local variable found before leaving: [%s]", (const char*)var->getName());
 #endif
     return true;
 }
@@ -405,7 +405,7 @@ void * Thread::RunThread(void * pVoid)
 #ifdef _WIN32
         DWORD dw = pThread->runThread();
 #else
-       
+
 #ifdef _POSIX
         // Install the signal handler for SIGUSR1 if not set already
         // Check if the signal handler as already been set
@@ -443,7 +443,7 @@ void * Thread::RunThread(void * pVoid)
 #elif defined(_MAC) && (DEBUG==1)
         if (pThread->threadName || pThread->lock.getName()) pthread_setname_np(pThread->threadName ? (const char*)*pThread->threadName : pThread->lock.getName());
 #endif
-        
+
 #endif
         void * dw = (void*)(long int)pThread->runThread();
 #endif
@@ -454,10 +454,10 @@ void * Thread::RunThread(void * pVoid)
 
 #if (HasThreadLocalStorage == 1)
         // Then delete all the TLS variable, if any used
-        if (Threading::isLocalVariableUsed) 
+        if (Threading::isLocalVariableUsed)
             getLocalVariableList().enumerateVariables(destructAllLocalVariables);
 #endif
-        
+
         return dw;
     }
     return 0;
@@ -653,8 +653,8 @@ bool Thread::setCurrentThreadPriority(const int priority)
 #elif defined(_POSIX)
     int policy = 0;
     struct sched_param param = {0};
-    
-    // Need to figure out the current scheduler parameters 
+
+    // Need to figure out the current scheduler parameters
     if (pthread_getschedparam (pthread_self(), &policy, &param) != 0)
         return false;
 
@@ -666,7 +666,7 @@ bool Thread::setCurrentThreadPriority(const int priority)
     // Change priority now
     param.sched_priority = (priority - MinPriority) * (maxPriority - minPriority) / (MaxPriority - MinPriority) + minPriority;
     return pthread_setschedparam (pthread_self(), policy, &param) == 0;
-#else 
+#else
     return false;
 #endif
 }
@@ -683,13 +683,13 @@ bool Thread::setCurrentThreadOnProcessorMask(const uint64 mask)
 
     // If this doesn't compile, you need to update your glibc library
     // Quote from man page:
-    // "The CPU affinity system calls were introduced in Linux kernel 2.5.8. The library interfaces were introduced in glibc 2.3. 
-    // Initially, the glibc interfaces included a cpusetsize argument. In glibc 2.3.2, the cpusetsize argument was removed, 
+    // "The CPU affinity system calls were introduced in Linux kernel 2.5.8. The library interfaces were introduced in glibc 2.3.
+    // Initially, the glibc interfaces included a cpusetsize argument. In glibc 2.3.2, the cpusetsize argument was removed,
     // but this argument was restored in glibc 2.3.4. "
     sched_setaffinity (0, sizeof(Mask), &Mask);
     sched_yield();
     return true;
-#else 
+#else
     return false;
 #endif
 }
@@ -701,11 +701,11 @@ int Thread::getCurrentCoreCount()
     return info.dwNumberOfProcessors;
 #elif defined(_POSIX)
     return sysconf(_SC_NPROCESSORS_CONF);
-#else 
+#else
     return 1;
 #endif
-    
-/*    
+
+/*
     struct sysinfo info;
     if (sysinfo(&info) == 0) return info.procs;
     return 0;

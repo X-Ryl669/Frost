@@ -8,7 +8,7 @@
 
 namespace Database
 {
-    typedef Strings::FastString String; 
+    typedef Strings::FastString String;
     struct DatabaseDeclaration;
     struct Blob;
     /** A database connection.
@@ -30,7 +30,7 @@ namespace Database
             /** Call back to implement */
             virtual void databaseErrorCallback(DatabaseConnection * connection, const uint32 index, const ErrorType & error, const String & message) = 0;
         };
-        
+
         /** Callback to use when error occurs*/
         static ClassErrorCallback * errorCallback;
 
@@ -40,13 +40,13 @@ namespace Database
         virtual void * getLowLevelConnection(const uint32 index = 0) = 0;
         /** Set the low level object used for the index-th connection */
         virtual bool setLowLevelConnection(const uint32 index, void * connection) = 0;
-        /** Get the connection parameters 
-            @param index    The index of the connection to retrieve 
-            @param dbName   On output, set to the database name to connect to 
-            @param dbURL    On output, set to the database URL to connect to (can contain username:password part) 
+        /** Get the connection parameters
+            @param index    The index of the connection to retrieve
+            @param dbName   On output, set to the database name to connect to
+            @param dbURL    On output, set to the database URL to connect to (can contain username:password part)
             @return true on successful connection */
         virtual bool getDatabaseConnectionParameter(const uint32 index, String & dbName, String & dbURL) const = 0;
-        /** Create models on the database connections 
+        /** Create models on the database connections
             @param forceReinstall   Force reinstalling the database model
             @return true on successful model creation */
         virtual bool createModels(const bool forceReinstall = false) = 0;
@@ -66,7 +66,7 @@ namespace Database
         }
         /** Constructor */
         DatabaseConnection() {}
-        
+
         /** Get the error callback pointer */
         virtual ~DatabaseConnection() {}
     };
@@ -75,10 +75,10 @@ namespace Database
     struct BuildDatabaseConnection
     {
         /** Build a database connection */
-        virtual DatabaseConnection * buildDatabaseConnection() const = 0; 
+        virtual DatabaseConnection * buildDatabaseConnection() const = 0;
     };
 
-    /** This structure is provided so that each SQL based implementation 
+    /** This structure is provided so that each SQL based implementation
         implements its own method */
     struct SQLFormat
     {
@@ -97,14 +97,14 @@ namespace Database
             const int       privateIndex;
             /** Don't allow modifications here */
             const void *    privateData2;
-    
+
             Results() : privateData(0), privateIndex(-1), privateData2(0) {}
         };
 
         /** Here should escape the given String for the Database
             This is SQL back end dependent. */
         static String escapeString(const String & sStr, const char = escapeQuote, const uint32 dbConnIndex = 0);
-    
+
         /** Initialize the SQL library and connect to the server.
             Usually, dataBase and URL are used to build a connection URL to connect to the database.
             With some file based drivers, like SQLite, the algorithm to figure out which file is used is like this:
@@ -113,13 +113,13 @@ namespace Database
                If (URL) is a folder, then try to use a file called dataBase.db in this folder
                If (URL) is empty, try to use a file called dataBase
             @endverbatim
-            With classical server based approach, then URL is the URL to connect to, and dataBase is the database to 
+            With classical server based approach, then URL is the URL to connect to, and dataBase is the database to
             select (issuing "USE dataBase;" SQL command if asked to)
             @param dataBase         The database to use
             @param URL              The URL to try to connect to (please read the comment for the algorithm used in case of SQLite)
             @param User             The user to connect with
             @param Password         The password to emit when asked for credentials
-            @param Port             The connection port (the URL is passed directly to the database driver, and 
+            @param Port             The connection port (the URL is passed directly to the database driver, and
                                     some of them do not support port in the URL)
             @param selectDatabase   Select the database upon connection (if you don't do that, you have to do it manually before first use)
             @param dbIndex          The database index if using multiple databases
@@ -136,12 +136,12 @@ namespace Database
         static bool createDBUser(const String & databaseName, const String & User, const String & Password);
         /** Delete the given user. Must be called by a connection root. */
         static bool deleteDBUser(const String & User);
-        /** Send a query to the SQL server 
+        /** Send a query to the SQL server
             @return a pointer to the result object (NULL on error) */
         static const Results * sendQuery(const uint32 dbIndex, const String & sStr, const void * DBConnection = NULL);
         /** Returns the last inserted ID */
         static unsigned int getLastInsertedID(const uint32 dbIndex, const void * DBConnection = NULL);
-        /** Get the results of a previous query. 
+        /** Get the results of a previous query.
             rowIndex must never decrease between calls.
             If trying to test whether a row exists or not, you can pass an empty fieldName, and a default fieldIndex */
         static bool getResults(const Results *, Type::Var & res, const unsigned int rowIndex, const String & fieldName, const unsigned int fieldIndex = -1);
@@ -156,13 +156,13 @@ namespace Database
         static bool checkDatabaseExists(const uint32 dbIndex);
         /** Create the similar database as the model.
             @param dbIndex              The database index in the multiple database connection array (usually 0 if you only have a single database)
-            @param model                A pointer to the table model used for the database 
-            @param databaseName         If the driver requires to specify the database name before creation/testing then this is required 
+            @param model                A pointer to the table model used for the database
+            @param databaseName         If the driver requires to specify the database name before creation/testing then this is required
             @param forceReinstall       By default, this function checks if the database exists, and if the number of tables is the same as the model (so it's fast).
                                         If you need to recreate the table (for example if the model was updated) set this to true.
             @return true on success, false if the creation of the table failed, or if the connection to the database was not working. */
         static bool createDatabaseLikeModel(const uint32 dbIndex, Database::DatabaseDeclaration * model, const String & databaseName = "", const bool forceReinstall = false);
-        /** If you've declared your model with Macro::DeclaringTables::EndTableDeclarationRegister, then 
+        /** If you've declared your model with Macro::DeclaringTables::EndTableDeclarationRegister, then
             you can call this method to automatically create all the database schema at once. */
         static bool createModelsForAllConnections(const bool forceReinstall = false);
         /** Clean the current data from the given model */
@@ -176,14 +176,14 @@ namespace Database
 
         /** Create a new database connection */
         static void * createDatabaseConnection(const String & dataBaseName, const String & URL);
-        /** Destruct a created database connection. 
+        /** Destruct a created database connection.
             Do not use this to delete automatically generated connections. */
         static void destructCreatedDatabaseConnection(void *);
         /** Reset the current database connection by the one given */
         static bool resetDatabaseConnection(const uint32 dbIndex, void * newConnection);
         /** Set the error callback to be called upon database connection errors */
         static void setErrorCallback(DatabaseConnection::ClassErrorCallback & callback);
-        
+
         /** Start a transaction */
         static void startTransaction(const uint32 dbIndex);
         /** Commit current transaction */

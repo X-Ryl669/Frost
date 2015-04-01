@@ -104,7 +104,7 @@ namespace Encoding
             remainders[k++] = current % 85;
             current /= 85;
             remainders[k++] = current % 85;
-            
+
             if (j + k > outputLen) return false;
             output[j++] = enc85Lead[remainders[k-- - 1]];
             while (k > 0) output[j++] = enc85[remainders[k-- - 1]];
@@ -119,7 +119,7 @@ namespace Encoding
             remainders[k++] = current % 85;
             current /= 85;
             remainders[k++] = current % 85;
-            
+
             if (j + k > outputLen) return false;
             output[j++] = enc85Lead[remainders[k-- - 1]];
             while (k > 0) output[j++] = enc85[remainders[k-- - 1]];

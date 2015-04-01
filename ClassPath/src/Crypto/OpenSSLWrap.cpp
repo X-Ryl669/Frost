@@ -12,7 +12,7 @@
 
 namespace Crypto
 {
-#if (OPENSSL_VERSION_NUMBER < 0x10000000) 
+#if (OPENSSL_VERSION_NUMBER < 0x10000000)
     #ifdef _WIN32
         static HANDLE * lock_cs = 0;
     #else

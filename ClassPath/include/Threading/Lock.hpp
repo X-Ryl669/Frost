@@ -26,19 +26,19 @@ namespace Threading
     inline bool stillBefore(struct timeval * tOut);
 #endif
     /** The timeout to wait for */
-    enum TimeOut 
-    { 
-        InstantCheck = 0, 
+    enum TimeOut
+    {
+        InstantCheck = 0,
 #ifdef _WIN32
-        Infinite = INFINITE,  
+        Infinite = INFINITE,
 #else
         Infinite = 0xFFFFFFFF,
 #endif
     };
-    
 
-    /** This class implements inter-thread event objects 
-        
+
+    /** This class implements inter-thread event objects
+
         Events can be in 2 states (Set or Unset)
         State transitions are atomic
 
@@ -58,11 +58,11 @@ namespace Threading
         /** Should the event automatically reset ? */
         bool            manualReset;
 
-#ifdef _WIN32       
+#ifdef _WIN32
         inline bool _Wait(const TimeOut length) volatile{ return WaitForSingleObject(event, (DWORD)length) == WAIT_OBJECT_0; }
         inline bool _Reset() volatile                   { return ResetEvent(event) == TRUE; }
         inline bool _Set(void *) volatile           { return SetEvent(event) == TRUE; }
-        
+
 #elif defined (_POSIX)
         /** The event state */
         volatile bool   state;
@@ -83,7 +83,7 @@ namespace Threading
         bool _Set(void * arg) volatile;
 #endif
 
-    
+
     public:
         /** The event type */
         enum Type
@@ -91,7 +91,7 @@ namespace Threading
             ManualReset = 1, //!< The event needs to be reset by calling Reset() when Set()
             AutoReset   = 0, //!< The event automatically reset when a Wait succeed after a Set()
         };
-        
+
         /** The initial state */
         enum InitialState
         {
@@ -101,14 +101,14 @@ namespace Threading
 
 
         /** Build an event.
-            Typically, manualReset is used when you want to wait on multiple event at once 
+            Typically, manualReset is used when you want to wait on multiple event at once
             (so it's easier to say when you're reading processing event by calling Reset).
             For atomic / single thread unlock on Waiting, you must set manualReset to false.
-            @param name         The event name (only useful for debugging) 
+            @param name         The event name (only useful for debugging)
             @param manualReset  When true, the transition from Set to Unset requires calling Reset, else it's done automatically in a successful Wait
             @param initialState The event Set state when created */
         Event(const char * name = NULL, const Type type = ManualReset, const InitialState initialState = InitiallyFree)
-            : 
+            :
     #if (DEBUG==1)
             name(name),
     #endif
@@ -138,7 +138,7 @@ namespace Threading
 #ifdef _WIN32
         { if (event != NULL) CloseHandle(event); }
 #elif defined (_POSIX)
-        { 
+        {
             // Lock the mutex
             while (pthread_mutex_lock(&event) != 0) { sched_yield(); }
             while (pthread_cond_destroy(&condition) == EBUSY) { pthread_cond_broadcast(&condition); pthread_mutex_unlock(&event); sched_yield(); while(pthread_mutex_lock(&event) != 0) sched_yield();  }
@@ -151,7 +151,7 @@ namespace Threading
             vQueueDelete(xQueue);
         }
 #endif
-        /** Wait a given amount of time for this event to be set 
+        /** Wait a given amount of time for this event to be set
             @param length   Time to wait for (can be InstantCheck i.e. doesn't wait, or any number in ms or Infinite)
             @return if length = Infinite, only returns when event's state was set
                     else, return true on event set while waiting, false otherwise
@@ -165,8 +165,8 @@ namespace Threading
         inline bool Reset() volatile                                    { return _Reset();  }
     };
 
-    /** Common inter-thread locking class 
-        This will wrap platform specific mutexes 
+    /** Common inter-thread locking class
+        This will wrap platform specific mutexes
     */
     class MutexLock
     {
@@ -194,7 +194,7 @@ namespace Threading
 #endif
 
     public:
-        MutexLock(const char * name = NULL, const bool initialOwner = false)  
+        MutexLock(const char * name = NULL, const bool initialOwner = false)
     #if (DEBUG==1)
         :   name(name)
     #endif
@@ -204,7 +204,7 @@ namespace Threading
         #else
             :
         #endif
-            locked(initialOwner == TRUE) 
+            locked(initialOwner == TRUE)
     #endif
 #ifdef _WIN32
     #if ((DEBUG==1) || defined (MUTEX_DEBUG))
@@ -216,7 +216,7 @@ namespace Threading
         ~MutexLock() { if (mutex != NULL) { HMUTEX hMut = mutex; Acquire(); mutex = NULL; ReleaseMutex(hMut); CloseHandle(hMut); } }
 #else
         /* , mutex(0) */
-        { 
+        {
             pthread_mutex_init(&mutex, NULL); if (initialOwner) Acquire();
         }
 
@@ -226,7 +226,7 @@ namespace Threading
     #ifdef MUTEX_DEBUG
         #define Acquire()           dAcquire(__FILE__, __LINE__)
         inline bool dAcquire(const char * sFile, int iLine) volatile
-        { 
+        {
             bool bLocked = _Lock(Infinite);
             if ( bLocked && locked)
             {
@@ -236,8 +236,8 @@ namespace Threading
                 return true;
             }
 
-            if (bLocked) { locked = true; return true; } 
-            return false; 
+            if (bLocked) { locked = true; return true; }
+            return false;
         }
         inline bool Release() volatile  { if (locked) { locked = false; _Unlock(); return true; } return false; }
         /** Release the (acquired) lock from a interrupt service routine */
@@ -247,18 +247,18 @@ namespace Threading
             @return true on successful acquisition (no timeout by default), false on error
         */
         inline bool Acquire() volatile  { return _Lock(Infinite); }
-        /** Try to acquire the lock 
+        /** Try to acquire the lock
             @return true on successful acquisition (no timeout by default), false on error */
         inline bool TryAcquire(const TimeOut length) volatile { return _Lock(length); }
         /** Release the (acquired) lock or do nothing if unlocked */
         inline bool Release() volatile  { _Unlock(); return true; }
         /** Release the (acquired) lock from a interrupt service routine */
         inline bool Release(void * arg) volatile { _Unlock(arg); return true; }
-    #endif 
+    #endif
     };
 
 
-    /** Common inter-thread locking class 
+    /** Common inter-thread locking class
         This will wrap platform specific mutexes.
         @sa ScopedLock
     */
@@ -303,16 +303,16 @@ namespace Threading
         #else
             :
         #endif
-            locked(initialOwner == TRUE) 
+            locked(initialOwner == TRUE)
     #endif
 #ifdef _WIN32
-        // Check return type of InitializeCriticalSection in case it fails (no more memory available), 
+        // Check return type of InitializeCriticalSection in case it fails (no more memory available),
         // sleep a bit to let other process return some memory, and try again, this time with exception on error
         { InitializeSRWLock(&mutex); if (initialOwner) Acquire(); }
         ~FastLock() { }
 #else
         /* , mutex(0) */
-        { 
+        {
             pthread_mutex_init(&mutex, NULL); if (initialOwner) Acquire();
         }
 
@@ -322,7 +322,7 @@ namespace Threading
     #ifdef MUTEX_DEBUG
         #define Acquire()           dAcquire(__FILE__, __LINE__)
         inline bool dAcquire(const char * sFile, int iLine) volatile
-        { 
+        {
             bool bLocked = _Lock(Infinite);
             if ( bLocked && locked)
             {
@@ -332,10 +332,10 @@ namespace Threading
                 return true;
             }
 
-            if (bLocked) { locked = true; return true; } 
-            return false; 
+            if (bLocked) { locked = true; return true; }
+            return false;
         }
-        /** Try to acquire the lock 
+        /** Try to acquire the lock
             @return true on successful acquisition (no timeout by default), false on error */
         inline bool TryAcquire(const TimeOut length) volatile { return _Lock(length); }
         /** Release the (acquired) lock from a interrupt service routine */
@@ -344,12 +344,12 @@ namespace Threading
         inline bool Release(void * arg) volatile { Release(); return false; }
     #else
         /** Try to acquire the lock
-            @return true on successful acquisition (no timeout by default), false on error 
-            @warning only return false if the locking primitive is deleted, or on recursive locking. 
+            @return true on successful acquisition (no timeout by default), false on error
+            @warning only return false if the locking primitive is deleted, or on recursive locking.
             @warning If it ever return false, your application logic is broken.
         */
         inline bool Acquire() volatile   { return _Lock(Infinite); }
-        /** Try to acquire the lock 
+        /** Try to acquire the lock
             @return true on successful acquisition (no timeout by default), false on error */
         inline bool TryAcquire(const TimeOut length) volatile { return _Lock(length); }
         /** Release the (acquired) lock or do nothing if unlocked */
@@ -367,7 +367,7 @@ namespace Threading
     /** The classical scoped lock class */
     class ScopedLock
     {
-    private: 
+    private:
         volatile Lock & lock;
 
         /** Non mutable class */
@@ -382,7 +382,7 @@ namespace Threading
     /** The classical scoped unlock class */
     class ScopedUnlock
     {
-    private: 
+    private:
         volatile Lock & lock;
 
         /** Non mutable class */
@@ -399,16 +399,16 @@ namespace Threading
         This lock is used in case there is multiple reader but a single writer.
         When a reader read the protected structure, it takes the reader lock.
         Multiple reader can own the reader lock at the same time.
-        However, when the writer want to modify the structure, it will prevent 
-        the other readers from taking the locks, and thus ensure that no reader ever 
+        However, when the writer want to modify the structure, it will prevent
+        the other readers from taking the locks, and thus ensure that no reader ever
         read while a writing is in progress.
 
-        The behaviour is made so that, as soon as a writer wants to enter a lock, no 
+        The behaviour is made so that, as soon as a writer wants to enter a lock, no
         more reader can take the reader lock. This prevents writer starvation.
-    
+
         @warning The default maximum number of simultaneous reader is 2^32.
-        @warning Upgrading and downgrading from writer lock can be non-atomic, and as 
-                 such not thread safe. In most use, it's better to release your reader 
+        @warning Upgrading and downgrading from writer lock can be non-atomic, and as
+                 such not thread safe. In most use, it's better to release your reader
                  lock and take a writer lock.
 
         @sa ScopedReadLock, ScopedWriteLock, ScopedUpgradeLock.
@@ -430,14 +430,14 @@ namespace Threading
         volatile int currentReaderCount;
         /** The waiting reader count */
         volatile int waitingReaderCount;
-        
+
         // Construction and destruction
     public:
         /** Constructor */
 	    ReadWriteLock() : write(0), writerCount(0), read(0), currentReaderCount(0), waitingReaderCount(0) {}
-	    ~ReadWriteLock() 
-	    { 
-#ifdef MUTEX_DEBUG 
+	    ~ReadWriteLock()
+	    {
+#ifdef MUTEX_DEBUG
 	        if (write || read)
 	            MessageBoxA(NULL, "Destroying RW lock while taken!", sFile, 0);
 #endif
@@ -456,9 +456,9 @@ namespace Threading
         void downgradeFromWriter() volatile { ScopedLock scope(lock); writerRelease(true); }
         /** Upgrade reader lock to writer lock.
             @warning this method is not always thread safe. */
-        bool upgradeToWriter(const TimeOut timeout = Infinite) volatile { lock.Acquire(); return upgradeToWriterLockAndLeaveCS(timeout); } 
+        bool upgradeToWriter(const TimeOut timeout = Infinite) volatile { lock.Acquire(); return upgradeToWriterLockAndLeaveCS(timeout); }
 
-        // Helpers 
+        // Helpers
     protected:
 	    // Internal/Real implementation
 	    bool readerWait(const TimeOut timeout) volatile;
@@ -471,7 +471,7 @@ namespace Threading
     /** The classical scoped lock class for read write lock */
     class ScopedReadLock
     {
-    private: 
+    private:
         volatile ReadWriteLock & lock;
 
         /** Non mutable class */
@@ -486,7 +486,7 @@ namespace Threading
     /** Unlock the read lock (used to unlock a ReadWriteLock for a small section of code) */
     class ScopedReadUnlock
     {
-    private: 
+    private:
         volatile ReadWriteLock & lock;
         /** Non mutable class */
         ScopedReadUnlock & operator = (const ScopedReadUnlock & other);
@@ -500,7 +500,7 @@ namespace Threading
     /** The classical scoped lock class for write lock */
     class ScopedWriteLock
     {
-    private: 
+    private:
         volatile ReadWriteLock & lock;
         /** Non mutable class */
         ScopedWriteLock & operator = (const ScopedWriteLock & other);
@@ -510,13 +510,13 @@ namespace Threading
         /** Takes a reference on a writer of a ReadWriteLock to acquire it and release on scope's end */
         ScopedWriteLock(volatile ReadWriteLock & lock) : lock(lock) { lock.acquireWriter(); }
         ~ScopedWriteLock() { lock.releaseWriter(); }
-    };    
+    };
     /** This class release the read lock, and acquire a write lock.
-        Releasing and acquiring aren't done atomically (so another writer can take 
+        Releasing and acquiring aren't done atomically (so another writer can take
         the writer lock while upgrading, and you'll wait until it's done) */
     class ScopedUpgradeLock
     {
-    private: 
+    private:
         volatile ReadWriteLock & lock;
         /** Non mutable class */
         ScopedUpgradeLock & operator = (const ScopedUpgradeLock & other);
@@ -533,12 +533,12 @@ namespace Threading
         When one thread need to interrupt another thread, it has to signal it somehow.
         Then the other thread needs to tell when it's ready to be modified by the former thread.
         Once the former thread has finished its work, it just release the other thread to resume its loop.
-        
+
         Please notice that this still requires a Lock for protecting the data to be modified.
-        However, this is used when the data to be modified needs to be locked for long period of time by 
-        the thread, and where a classical "ScopedLock scope(lock)" protection would not work, since the 
-        external access will starve to get the lock. 
-        
+        However, this is used when the data to be modified needs to be locked for long period of time by
+        the thread, and where a classical "ScopedLock scope(lock)" protection would not work, since the
+        external access will starve to get the lock.
+
         @warning This only works when a single thread at a time needs to modify the other thread.
                  If you need concurrent multiple thread access, then you should use ReadWriteLock instead. */
     class PingPong
@@ -569,37 +569,37 @@ namespace Threading
             PingPong      sync;
             ImportantData data;
             Lock          lock;
-     
+
             // Interface external to the thread
         public:
-            void modifyData() 
-            { 
+            void modifyData()
+            {
                 ScopedPP scope(lock, this, sync);
-                data.changeSomething(); 
+                data.changeSomething();
             }
             void start() { createThread(); waitUntilStarted(); }
-            
+
             // Thread interface
         public:
-            uint32 runThread() 
-            { 
+            uint32 runThread()
+            {
                 started(); // Required by WithStartMarker
                 while(isRunning())
                 {
                     // Checkpoint here. Without this, it's almost impossible for the external access to get the lock
                     sync.checkHasToDo();
-                    
+
                     // Then perform some work on the data
                     ScopedLock scope(lock);
                     data.process();
                 }
             }
-            
-     
+
+
             Whatever() { }
             ~Whatever() { destroyThread(); }
         };
-        
+
         Whatever a;
         a.modifyData(); // This works, even if the thread is not started yet.
         a.start();
@@ -612,12 +612,12 @@ namespace Threading
         Lock & lock;
         /** The pingpong object for communication */
         PingPong & work;
-        
+
         // Public interface
     public:
         ScopedPP(Lock & lock, const WithStartMarker * ts, PingPong & work);
         ~ScopedPP() { work.doneWork(); lock.Release(); }
-    
+
         // Prevent copying
     private:
         ScopedPP & operator = (const ScopedPP & other);
@@ -626,11 +626,11 @@ namespace Threading
 #endif
 
     /** This template wraps a volatile object and give access to it while this object is alive.
-        This provides enormous advantages, as accessing the volatile object while 
+        This provides enormous advantages, as accessing the volatile object while
         protected will fail at compile time (and not runtime), so the binary is guaranteed to be
-        thread-access safe. 
+        thread-access safe.
 
-        This object however doesn't ensure any deadlock protection, so the only way to avoid 
+        This object however doesn't ensure any deadlock protection, so the only way to avoid
         deadlock is to lock the object is the same order in all threads.
 
         Typically, to write multithread safe classes, you'll write your class this way:
@@ -640,17 +640,17 @@ namespace Threading
             // Add this to your members
             Lock    lock;
 
-            // Your class interface 
-            void myMethod() const 
+            // Your class interface
+            void myMethod() const
             {
                 // This section must be serialized (no 2 threads can call this at the same time)
             }
-            // Another method 
+            // Another method
             void otherMethod() const
             {
                 // This section must be serialized too (no 2 threads can call this at the same time)
             }
-            
+
             // The multithreading part you can write
             inline void myMethod() const volatile { LockingObjPtr<Example>(*this, lock)->myMethod(); }
         }
@@ -660,7 +660,7 @@ namespace Threading
         {
             Example & obj;
             [...]
-            void runThread() 
+            void runThread()
             {
                 obj.myMethod(); // Will compile, calling "void myMethod() const;"
                 obj.otherMethod(); // ditto
@@ -670,9 +670,9 @@ namespace Threading
         {
             Example & obj;
             [...]
-            void runThread() 
+            void runThread()
             {
-                obj.myMethod(); // Will compile, also calling "void myMethod() const" so will likely corrupt obj 
+                obj.myMethod(); // Will compile, also calling "void myMethod() const" so will likely corrupt obj
                 obj.otherMethod(); // ditto
             }
         };
@@ -682,10 +682,10 @@ namespace Threading
         {
             volatile Example & obj; // Notice that volatile is added
             [...]
-            void runThread() 
+            void runThread()
             {
                 obj.myMethod(); // Will compile, calling "void myMethod() const volatile;"
-                obj.otherMethod();  // Compiler error here, telling you that you haven't 
+                obj.otherMethod();  // Compiler error here, telling you that you haven't
                                     // written a code for multithreaded access (via volatile)
             }
         };
@@ -693,12 +693,12 @@ namespace Threading
         {
             volatile Example & obj;
             [...]
-            void runThread() 
+            void runThread()
             {
-                obj.myMethod(); // Will compile, calling "void myMethod() const volatile;", so will block 
-                                // until Thread1 is done with the obj, so will never corrupt obj 
-                obj.otherMethod();  // Compiler error here, telling you that you haven't 
-                                    // written a code for multithreaded access (via volatile)    
+                obj.myMethod(); // Will compile, calling "void myMethod() const volatile;", so will block
+                                // until Thread1 is done with the obj, so will never corrupt obj
+                obj.otherMethod();  // Compiler error here, telling you that you haven't
+                                    // written a code for multithreaded access (via volatile)
             }
         };
         @endcode
@@ -711,9 +711,9 @@ namespace Threading
             // Add this to your members
             Lock    lock;
 
-            // Your class interface 
+            // Your class interface
             void myMethod() const;
-            // Another method 
+            // Another method
             void otherMethod() const;
 
             // No more dual interface for volatile
@@ -723,31 +723,31 @@ namespace Threading
         {
             volatile Example & example; // Notice that volatile is added
             [...]
-            void runThread() 
+            void runThread()
             {
                 LockingObjPtr<Example> obj(example, example.lock);
-                // While the obj is locked, no other thread can modify the object 
+                // While the obj is locked, no other thread can modify the object
                 obj.myMethod(); // Will compile, calling "void myMethod() const;"
-                obj.otherMethod();  
+                obj.otherMethod();
             }
         };
         class Thread2 : public Thread
         {
             volatile Example & example;
             [...]
-            void runThread() 
+            void runThread()
             {
                 if (something)
                 {
                     LockingObjPtr<Example> obj(example, example.lock);
-                    obj.myMethod(); // Will compile, calling "void myMethod() const volatile;", so will block 
-                                    // until Thread1 is done with the obj, so will never corrupt obj 
+                    obj.myMethod(); // Will compile, calling "void myMethod() const volatile;", so will block
+                                    // until Thread1 is done with the obj, so will never corrupt obj
                 }
-                obj.otherMethod();  // Compiler error here, telling you that you haven't 
+                obj.otherMethod();  // Compiler error here, telling you that you haven't
                                     // written a code for multithreaded access (via volatile)
                                     // This would have been unsafely compiled without volatile declaration
             }
-        };        
+        };
         @endcode
     */
     template <class T>
@@ -760,9 +760,9 @@ namespace Threading
             // Pointer behavior
             T& operator*()          { return *pObj_; }
             T* operator->()         { return pObj_;  }
-        
+
         private:
-            // The protected object pointer   
+            // The protected object pointer
             T*              pObj_;
             // The lock itself
             Lock*           pMtx_;
@@ -773,11 +773,11 @@ namespace Threading
     };
 
     /** This template wraps a volatile object and give access to it while this object is alive.
-        This provides enormous advantages, as accessing the volatile object while 
+        This provides enormous advantages, as accessing the volatile object while
         protected will fail at compile time (and not runtime), so the binary is guaranteed to be
-        thread-access safe. 
+        thread-access safe.
 
-        This object however doesn't ensure any deadlock protection, so the only way to avoid 
+        This object however doesn't ensure any deadlock protection, so the only way to avoid
         deadlock is to lock the object is the same order in all threads.
 
         @sa LockingPtr
@@ -792,9 +792,9 @@ namespace Threading
             // Pointer behavior
             T& operator*()          { return *pObj_; }
             T* operator->()         { return pObj_;  }
-        
+
         private:
-            // The protected object pointer   
+            // The protected object pointer
             T*              pObj_;
             // The lock itself
             Lock*           pMtx_;
@@ -806,11 +806,11 @@ namespace Threading
 
 
     /** This template wraps a volatile object and give access to it while this object is alive.
-        This provides enormous advantages, as accessing the volatile object while 
+        This provides enormous advantages, as accessing the volatile object while
         protected will fail at compile time (and not runtime), so the binary is guaranteed to be
-        thread-access safe. 
+        thread-access safe.
 
-        This object however doesn't ensure any deadlock protection, so the only way to avoid 
+        This object however doesn't ensure any deadlock protection, so the only way to avoid
         deadlock is to lock the object is the same order in all threads.
 
         @sa LockingPtr
@@ -820,18 +820,18 @@ namespace Threading
     {
         public:
             // Constructor
-            LockingConstObjPtr(const volatile  T& obj, 
-                const volatile Lock& mtx) 
-                : pObj_(const_cast<const T*>(&obj)), 
-                pMtx_(const_cast<Lock*>(&mtx))  
+            LockingConstObjPtr(const volatile  T& obj,
+                const volatile Lock& mtx)
+                : pObj_(const_cast<const T*>(&obj)),
+                pMtx_(const_cast<Lock*>(&mtx))
             { pMtx_->Acquire(); }
             ~LockingConstObjPtr()           { pMtx_->Release(); }
             // Pointer behavior
             const T& operator*()        { return *pObj_; }
             const T* operator->()       { return pObj_;  }
-        
+
         private:
-            // The protected object pointer   
+            // The protected object pointer
             const T*                pObj_;
             // The lock itself
             Lock*                   pMtx_;
@@ -841,30 +841,30 @@ namespace Threading
             LockingConstObjPtr& operator=(const LockingConstObjPtr&);
     };
 
-    /** Simply warp a Plain Old Data type in a class so that compiler based 
+    /** Simply warp a Plain Old Data type in a class so that compiler based
         volatile protection works on them too.
-        On POD types, volatile simply ensure that no reading nor writing 
-        optimization takes place : 
+        On POD types, volatile simply ensure that no reading nor writing
+        optimization takes place :
         @code
             int a = 0; // global variable
             while (!a) sleep();  // The compiler will likely optimize this code to while(1) sleep();
-            printf("Could only get here if it was volatile\n"); 
+            printf("Could only get here if it was volatile\n");
             // "a" can be set to a hardware register (at link time), or modified
             // by another thread
             // So the compiler doesn't prevent another thread to modify "a"
         @endcode
 
         However replacing "int" in the previous code with ThreadProtected<int>
-        will stop compilation on "a" reading and writing, so the code will only 
+        will stop compilation on "a" reading and writing, so the code will only
         compile iif modified to :
         @code
             Lock sharedLock;
-            volatile ThreadProtectedLong a = 0; 
+            volatile ThreadProtectedLong a = 0;
             // while (!a) sleep(); Compile error here, can't read a while unlocked
 
             // This is correct
-            while (!LockingObjPtr<ThreadProtectedLong>(a, sharedLock)) sleep(); 
-            printf("Can only get here if volatile\n"); 
+            while (!LockingObjPtr<ThreadProtectedLong>(a, sharedLock)) sleep();
+            printf("Can only get here if volatile\n");
             // Similarly, writing should be done like this (with scope change):
             { LockingObjPtr<ThreadProtectedLong> pA(a, sharedLock); *pA = 3; }
         @endcode
@@ -898,7 +898,7 @@ namespace Threading
     protected:
         volatile T & shared;
 
-        ~SharedData() { } 
+        ~SharedData() { }
         SharedData(T & rData) : shared(rData) {}
     };
 
@@ -907,22 +907,22 @@ namespace Threading
     {
     private:
         SharedData<uint32>(const SharedData<uint32> & other);
-        SharedData<uint32> operator = (const SharedData<uint32> & other);  
+        SharedData<uint32> operator = (const SharedData<uint32> & other);
     // No instancing allowed
     protected:
         volatile uint32 & shared;
 #if defined(_POSIX) && (HAS_ATOMIC_BUILTIN != 1)
         static pthread_mutex_t    sxMutex;
 #endif
-        SharedData(uint32 & rData) : shared(rData) 
+        SharedData(uint32 & rData) : shared(rData)
         {}
-        ~SharedData() { } 
+        ~SharedData() { }
     };
 
     /** Atomic write to the given reference.
         Use like a plain old integer.
         @code
-        // One thread must define the object 
+        // One thread must define the object
         uint32 sharedInt = 0;
         // Other thread simply declare a SharedDataWriter instead of "uint32 &"
         SharedDataWriter sdw(sharedInt);
@@ -934,13 +934,13 @@ namespace Threading
     {
     private:
         SharedDataWriter(const SharedDataWriter & other);
-        SharedDataWriter operator = (const SharedDataWriter & other);  
+        SharedDataWriter operator = (const SharedDataWriter & other);
     public:
         SharedDataWriter(uint32 & rData) : SharedData<uint32>(rData) {}
         SharedDataWriter(volatile uint32 & rData) : SharedData<uint32>(const_cast<uint32&>(rData)) {}
 
         // Uses atomic store to set the value
-        inline SharedDataWriter & operator = (const uint32 data) 
+        inline SharedDataWriter & operator = (const uint32 data)
 #ifdef _WIN32
         { InterlockedExchange((LONG*)&shared, (LONG)data); return *this; }
 #elif defined(_POSIX)
@@ -953,7 +953,7 @@ namespace Threading
     #endif
         { _enter; shared = data; _leave; return *this; }
 #else
-        #define _enter volatile tBoolean intsOff = MAP_IntMasterDisable(); 
+        #define _enter volatile tBoolean intsOff = MAP_IntMasterDisable();
         #define _leave if(!intsOff) MAP_IntMasterEnable()
 
         { _enter; shared = data; _leave; return *this; }
@@ -964,7 +964,7 @@ namespace Threading
     /** Atomic read the given reference.
         Use like a plain old integer.
         @code
-        // One thread must define the object 
+        // One thread must define the object
         uint32 sharedInt = 0;
         // Other thread simply declare a SharedDataReader instead of "uint32 &"
         SharedDataReader sdr(sharedInt);
@@ -976,7 +976,7 @@ namespace Threading
     {
     private:
         SharedDataReader(const SharedDataReader & other);
-        SharedDataReader operator = (const SharedDataReader & other);  
+        SharedDataReader operator = (const SharedDataReader & other);
     public:
         SharedDataReader(uint32 & rData) : SharedData<uint32>(rData) {}
         SharedDataReader(volatile uint32 & rData) : SharedData<uint32>(const_cast<uint32&>(rData)) {}
@@ -993,7 +993,7 @@ namespace Threading
     /** Atomic read or write the given reference.
         Use like a plain old integer.
         @code
-        // One thread must define the object 
+        // One thread must define the object
         uint32 sharedInt = 0;
         // Other thread simply declare a SharedDataReader instead of "uint32 &"
         SharedDataReaderWriter sdrw(sharedInt);
@@ -1007,14 +1007,14 @@ namespace Threading
     {
     private:
         SharedDataReaderWriter(const SharedDataReaderWriter & other);
-        SharedDataReaderWriter operator = (const SharedDataReaderWriter & other);  
+        SharedDataReaderWriter operator = (const SharedDataReaderWriter & other);
     public:
         SharedDataReaderWriter(uint32 & rData) : SharedData<uint32>(rData) {}
         SharedDataReaderWriter(volatile uint32 & rData) : SharedData<uint32>(const_cast<uint32&>(rData)) {}
 
 #ifdef _WIN32
         // Uses atomic store to set the value
-        inline SharedDataReaderWriter & operator = (const uint32 data) 
+        inline SharedDataReaderWriter & operator = (const uint32 data)
         { InterlockedExchange((LONG*)&shared, (LONG)data); return *this; }
         // Uses atomic read to read the value
         inline operator uint32 () { return shared; }
@@ -1028,7 +1028,7 @@ namespace Threading
         inline SharedDataReaderWriter & operator --(int)    { InterlockedDecrement((LONG*)&shared); return *this; }
 #else
         // Uses atomic store to set the value
-        inline SharedDataReaderWriter & operator = (const uint32 data) 
+        inline SharedDataReaderWriter & operator = (const uint32 data)
         { _enter; shared = data; _leave; return *this; }
         // Uses atomic read to get the value
         inline operator uint32 () {  uint32 lVal = 0; _enter; lVal = shared; _leave; return lVal; }
@@ -1117,8 +1117,8 @@ namespace Threading
                 }
                 return false;
             @endcode
-            
-            It's typically used like this: 
+
+            It's typically used like this:
             @code
                 while (!atomic.compareAndSet(newValue, comparand)) comparand = atomic.read();
             @endcode
@@ -1128,7 +1128,7 @@ namespace Threading
         */
         inline bool compareAndSet(const T & newValue, T comparand, const bool weak) { return obj.compare_exchange_weak(comparand, newValue); }
         /** CAS with update of comparand if it fails.
-            This is used to avoid ABA problem. 
+            This is used to avoid ABA problem.
             Perform this operation atomically:
             @code
                 if (read() == comparand)
@@ -1139,7 +1139,7 @@ namespace Threading
                 comparand = read();
                 return false;
             @endcode
-            
+
             It's typically used like this:
             @code
                 while (!atomic.compareAndSet(newValue, comparand));
@@ -1157,8 +1157,8 @@ namespace Threading
                 }
                 return false;
             @endcode
-            
-            It's typically used like this: 
+
+            It's typically used like this:
             @code
                 while (!atomic.compareAndSet(newValue, comparand)) comparand = atomic.read();
             @endcode
@@ -1167,7 +1167,7 @@ namespace Threading
         */
         inline bool compareAndSet(const T & newValue, T comparand) { return obj.compare_exchange_strong(comparand, newValue); }
         /** CAS with update of comparand if it fails.
-            This is used to avoid ABA problem. 
+            This is used to avoid ABA problem.
             Perform this operation atomically:
             @code
                 if (read() == comparand)
@@ -1184,7 +1184,7 @@ namespace Threading
         // Construction and destruction
     public:
         /** Constructor */
-        inline Atomic(const T value = 0) : obj(value) 
+        inline Atomic(const T value = 0) : obj(value)
         {
         }
         /** Atomic copy constructor */
@@ -1206,7 +1206,7 @@ namespace Threading
         // Not defined as it has no sense to use post increment and atomic variables
         T operator-- (int);
         // Not defined as it has no sense to use post increment and atomic variables
-        T operator++ (int); 
+        T operator++ (int);
     };
 #else
     /** @internal The internal virtual table function that's selected in the atomic class to avoid runtime cost based on choosing the right function */
@@ -1452,8 +1452,8 @@ namespace Threading
                 }
                 return false;
             @endcode
-            
-            It's typically used like this: 
+
+            It's typically used like this:
             @code
                 while (!atomic.compareAndSet(newValue, comparand)) comparand = atomic.read();
             @endcode
@@ -1464,7 +1464,7 @@ namespace Threading
         // Construction and destruction
     public:
         /** Constructor */
-        inline Atomic(const T value = 0) : obj(value) 
+        inline Atomic(const T value = 0) : obj(value)
         {
             // Atomic operations don't work on object smaller than 32 bits, and not larger than 64 bits (at least currently)
             CompileTimeAssert(sizeof(obj) == 4 || sizeof(obj) == 8);
@@ -1488,7 +1488,7 @@ namespace Threading
         // Not defined as it has no sense to use post increment and atomic variables
         T operator-- (int);
         // Not defined as it has no sense to use post increment and atomic variables
-        T operator++ (int); 
+        T operator++ (int);
     };
 #endif
 

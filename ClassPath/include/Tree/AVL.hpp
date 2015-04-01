@@ -11,7 +11,7 @@
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4251)
-#endif 
+#endif
 
 #ifdef _MSC_VER
 #pragma warning(disable: 4786)
@@ -20,10 +20,10 @@
 /** The Tree namespace holds the classes for tree manipulation */
 namespace Tree
 {
-    /** AVL implementation is here. 
+    /** AVL implementation is here.
         AVL is an implementation of auto balanced binary tree, providing O(log N) access to sparse nodes.
         You might prefer HashTable for some algorithm (hash provides O(1) access but consume more memory).
-        AVL tree are very convenient if you need to store comparable data (key => data with key being sortable), 
+        AVL tree are very convenient if you need to store comparable data (key => data with key being sortable),
         and when keys are very sparse distributed, but the tree is dense.
         Please refer to Tree class */
     namespace AVL
@@ -50,19 +50,19 @@ namespace Tree
             enum Balance { LeftTreeIsHeavier = -1, Balanced = 0, RightTreeIsHeavier = 1, Forgotten = 256 };
         };
 
-        template <typename T, typename KeyType, typename DeleterT = NoDeletion<T, KeyType> > 
+        template <typename T, typename KeyType, typename DeleterT = NoDeletion<T, KeyType> >
         struct Node : public AllNodes
         {
         // The direction
             enum { Left = 0, Right = 1 };
-        
+
         // Interface
             /** Get the left node */
-            inline Node*& left() { return child[Left]; } 
+            inline Node*& left() { return child[Left]; }
             /** Get the right node */
             inline Node*& right() { return child[Right]; }
             /** Get the left node */
-            inline const Node*& left() const { return child[Left]; } 
+            inline const Node*& left() const { return child[Left]; }
             /** Get the right node */
             inline const Node*& right() const { return child[Right]; }
 
@@ -82,7 +82,7 @@ namespace Tree
             static inline const Balance balanceFromInverseCompare(const Comparator::CompareType comp) { return comp != Comparator::Greater ? RightTreeIsHeavier : LeftTreeIsHeavier; }
             /** Get the balanced factor from the given compare result, by respecting all the case */
             static inline const Balance strictBalanceFromCompare(const Comparator::CompareType comp) { return comp == Comparator::Greater ? RightTreeIsHeavier : (comp == Comparator::Equal ? Balanced : LeftTreeIsHeavier); }
- 
+
             /** Call this to avoid deleting the data of this node */
             inline void Forget() { balance = Forgotten; }
         // Constructor
@@ -106,9 +106,9 @@ namespace Tree
 
 
         /** This iterator is a facility to avoid recursive algorithm.
-            It use a stack internally, so it consume some heap memory, but it gives you the exact Tree 
+            It use a stack internally, so it consume some heap memory, but it gives you the exact Tree
             representation in memory. */
-        template <typename T, typename KeyType, typename DeleterT = NoDeletion<T, KeyType> > 
+        template <typename T, typename KeyType, typename DeleterT = NoDeletion<T, KeyType> >
         class Iterator
         {
         public:
@@ -127,7 +127,7 @@ namespace Tree
             }
 
             /** Copy constructor */
-            inline Iterator( const Iterator& iter ) : node(iter.node), nodes(iter.nodes) {}             
+            inline Iterator( const Iterator& iter ) : node(iter.node), nodes(iter.nodes) {}
 
             // Operators
         public:
@@ -136,13 +136,13 @@ namespace Tree
             /** Access the pointed object */
             inline const T& operator *() const      { return  node->data; }
             /** Access the pointed object */
-//          inline T* operator ->()                 { return node->data; } 
+//          inline T* operator ->()                 { return node->data; }
             /** Access the pointed object */
-//          inline const T* operator ->() const     { return node->data; } 
+//          inline const T* operator ->() const     { return node->data; }
 
             /** Change the pointed object */
             inline void Mutate(const T & newData)   { node->data = newData; }
-            
+
             /** Move to the next node */
             inline Iterator& operator ++() const
             {   if (nodes.getSize())
@@ -168,29 +168,29 @@ namespace Tree
             /** Check validity for this iterator */
             inline bool isValid() const { return node != 0; }
 
-            /** Get left iterator 
+            /** Get left iterator
                 @return valid iterator if valid, ie to be checked with isValid() */
             inline Iterator getLeftIterator() const { return Iterator( node != 0 ? node->left() : 0 ); }
-            /** Get right iterator 
+            /** Get right iterator
                 @return valid iterator if valid, ie to be checked with isValid() */
             inline Iterator getRightIterator() const { return Iterator( node != 0 ? node->right() : 0 ); }
-            /** Get parent iterator 
+            /** Get parent iterator
                 @return valid iterator if valid, ie to be checked with isValid() */
             inline Iterator getParentIterator() const { return Iterator( node != 0 ? node->rootNode : 0 ); }
             /** Check if this iterator node is a final node */
             inline bool isTerminal() const { return node != 0 && node->left() == 0 && node->right() == 0; }
-            /** Return the node key 
+            /** Return the node key
                 @return a pointer on the key for this node if valid, or 0 else */
-            inline const KeyType * getKey() const { if (node) return &node->key; return 0; } 
+            inline const KeyType * getKey() const { if (node) return &node->key; return 0; }
 
         private:
             /** The FIFO stack of next nodes */
             mutable Stack::PlainOldData::FIFO< NodeT* >   nodes;
         };
 
-        /** This iterator is a facility to avoid recursive algorithm 
+        /** This iterator is a facility to avoid recursive algorithm
             Prefer using this iterator, as it consume less memory. */
-        template <typename T, typename KeyType, typename DeleterT = NoDeletion<T, KeyType> > 
+        template <typename T, typename KeyType, typename DeleterT = NoDeletion<T, KeyType> >
         class SortedIterator
         {
         public:
@@ -207,7 +207,7 @@ namespace Tree
             /** Constructor based for searching (doesn't walk down) */
             inline SortedIterator( FromSearch value, NodeT* _node = 0) : node(_node) { }
             /** Copy constructor */
-            inline SortedIterator( const SortedIterator& iter ) : node(iter.node) {}             
+            inline SortedIterator( const SortedIterator& iter ) : node(iter.node) {}
 
             // The helpers method
         private:
@@ -217,7 +217,7 @@ namespace Tree
                 while(node && node->right())
                     node = node->right();
                 return node;
-            } 
+            }
             /** Move to the node of the minimum value */
             inline static NodeT * maxNode(NodeT * node)
             {
@@ -233,7 +233,7 @@ namespace Tree
 
                 if (node->left())
                 {
-                    // If current node has a left child, the next higher node is the 
+                    // If current node has a left child, the next higher node is the
                     // node with lowest key beneath the left child.
                     node = minNode(node->left());
                 }
@@ -255,7 +255,7 @@ namespace Tree
                     node = node ? node->rootNode : 0;
                 }
                 return true;
-            }            
+            }
             /** Go to the previous node, in the sort order */
             inline bool Decrement() const
             {
@@ -264,7 +264,7 @@ namespace Tree
 
                 if (node->right())
                 {
-                    // If current node has a right child, the next higher node is the 
+                    // If current node has a right child, the next higher node is the
                     // node with lowest key beneath the right child.
                     node = maxNode(node->right());
                 }
@@ -286,8 +286,8 @@ namespace Tree
                     node = node ? node->rootNode : 0;
                 }
                 return true;
-            }  
-            
+            }
+
             // Operators
         public:
             /** Access the pointed object */
@@ -295,16 +295,16 @@ namespace Tree
             /** Access the pointed object */
             inline const T& operator *() const      { return  node->data; }
             /** Access the pointed object */
-//          inline T* operator ->()                 { return node->data; } 
+//          inline T* operator ->()                 { return node->data; }
             /** Access the pointed object */
-//          inline const T* operator ->() const     { return node->data; } 
+//          inline const T* operator ->() const     { return node->data; }
 
             /** Change the pointed object */
             inline void Mutate(const T & newData)   { node->data = newData; }
-            
+
             /** Move to the next node */
             inline SortedIterator& operator ++() const
-            {   
+            {
                 Increment();
                 return *const_cast<SortedIterator*>( this );
             }
@@ -313,7 +313,7 @@ namespace Tree
             inline SortedIterator operator ++(int) const                  { SortedIterator tmp(*this); ++(*this); return tmp; }
             /** Move to the previous node */
             inline SortedIterator& operator --() const
-            {   
+            {
                 Decrement();
                 return *const_cast<SortedIterator*>( this );
             }
@@ -331,20 +331,20 @@ namespace Tree
             /** Check validity for this iterator */
             inline bool isValid() const { return node != 0; }
 
-            /** Get left iterator 
+            /** Get left iterator
                 @return valid iterator if valid, ie to be checked with isValid() */
             inline SortedIterator getLeftIterator() const { return SortedIterator( node != 0 ? node->left() : 0 ); }
-            /** Get right iterator 
+            /** Get right iterator
                 @return valid iterator if valid, ie to be checked with isValid() */
             inline SortedIterator getRightIterator() const { return SortedIterator( node != 0 ? node->right() : 0 ); }
-            /** Get parent iterator 
+            /** Get parent iterator
                 @return valid iterator if valid, ie to be checked with isValid() */
             inline SortedIterator getParentIterator() const { return SortedIterator( node != 0 ? node->rootNode : 0 ); }
             /** Check if this iterator node is a final node */
             inline bool isTerminal() const { return node != 0 && node->left() == 0 && node->right() == 0; }
-            /** Return the node key 
+            /** Return the node key
                 @return a pointer on the key for this node if valid, or 0 else */
-            inline const KeyType * getKey() const { if (node) return &node->key; return 0; } 
+            inline const KeyType * getKey() const { if (node) return &node->key; return 0; }
 
 
         };
@@ -352,11 +352,11 @@ namespace Tree
 
 
         /** The Tree class with a configurable compare policy.
-            
+
             This class is very simply to use (despite the "seemingly complex" declaration).
             An AVL tree is a tree that allow you to access a data from a key very efficiently.
             <br>
-            For example, if you need to build a reverse dictionary of phone number to name, you'll 
+            For example, if you need to build a reverse dictionary of phone number to name, you'll
             define a :
             @code
             typedef String Name;
@@ -368,11 +368,11 @@ namespace Tree
             and the tree must store the entities in memory, the phone number being a virtual class:
             @code
             // If PhoneNumber doesn't provide a < operator and a == operator, you must write a Comparator
-            struct PhoneNumber; 
+            struct PhoneNumber;
             struct Entity; // Not constructible
             typedef AVL::Tree<Entity *, PhoneNumber, Comparator::DefaultComparator, AVL::PointerDeletion<Entity *, PhoneNumber> > ReverseDictionaryT;
             @endcode
-              
+
             Then, using the tree is very simple:
             @code
             // From the example above
@@ -382,13 +382,13 @@ namespace Tree
             reverseDict.insertObject(entity, PhoneNumber("+334324T5"));
             // Ok, let's search for this object
             ReverseDictionaryT::IterT iter = reverseDict.searchFor(PhoneNumber("+334324T5"));
-            if (iter.isValid()) 
+            if (iter.isValid())
             {
                 Entity * ent = *iter;
                 // Do what you want to entity
             }
             // Let's say you want to print a list of the directory (the list will be sorted if you use a SortedIterT)
-            ReverseDictionaryT::SortedIterT iter = reverseDict.getFirstSortedIterator(); // or reverseDict[0] 
+            ReverseDictionaryT::SortedIterT iter = reverseDict.getFirstSortedIterator(); // or reverseDict[0]
             while (iter.isValid())
             {
                 Entity * ent = *iter;
@@ -401,13 +401,13 @@ namespace Tree
             reverseDict.Delete(PhoneNumber("+334324T5")); // Or, if you already had an iterator from a previous search: reverseDict.Delete(iter)
             // Please notice that the previous call will actually delete the entity for the key +334324T5, because the policy is to PointerDeletion
             // If you had to store a key to array, that need delete[] call, you'll like use ArrayDeletion etc...
- 
+
             // As usual with other containers, you have a getSize() method, and a Clear() method
             @endcode
         */
-        template < typename T, typename KeyType, class Policy = Comparator::DefaultComparator, typename DeleterT = NoDeletion<T, KeyType> > 
+        template < typename T, typename KeyType, class Policy = Comparator::DefaultComparator, typename DeleterT = NoDeletion<T, KeyType> >
         class Tree
-        {   
+        {
             // Members
         private:
             typedef Node<T, KeyType, DeleterT>                  NodeT;
@@ -422,7 +422,7 @@ namespace Tree
         private:
             /** Possible result of a tree operation */
             enum OperationResult { Ok = 1, NeedReBalancing = 0, Invalid = -1 };
-            
+
         protected:
             /** Used for insertion */
             enum { NoRelativeParent =  0, };
@@ -433,7 +433,7 @@ namespace Tree
             typedef Iterator<T, KeyType, DeleterT>              IterT;
             /** Used when iterating in a sorted way */
             typedef SortedIterator<T, KeyType, DeleterT>        SortedIterT;
-            
+
             /** Insert an object in the tree with its key. The tree takes ownership of data
                 This method use an iterative algorithm, so it support very large trees
 
@@ -446,7 +446,7 @@ namespace Tree
                 size++; return true;
             }
 
-            /** Delete an object from the tree. Data itself is deleted. 
+            /** Delete an object from the tree. Data itself is deleted.
                 Iterators held on this tree are invalidated
                 @return false if not found */
             inline bool Delete( KeyType key )
@@ -454,11 +454,11 @@ namespace Tree
                 return deleteInTree(&root, key) != Invalid;
             }
 
-            /** Delete an object from the tree. Data itself is deleted. 
+            /** Delete an object from the tree. Data itself is deleted.
                 @return false if not found */
             inline bool Delete( const IterT & iter )
             {
-                // Check invariant 
+                // Check invariant
                 if(!iter.isValid()) return false;
 
                 // If we are working with the root node, then handle the case correctly
@@ -467,7 +467,7 @@ namespace Tree
                     return deleteInTree(&root, iter.node->key) != Invalid;
                 }
                 // Else perform the search from the root itself
-                else 
+                else
                 {
                     // We need to walk up the tree until we find a parent whose balance is Balanced
                     NodeT * current = iter.node->rootNode->rootNode;
@@ -477,7 +477,7 @@ namespace Tree
                     }
                     // Not found, so call the other algorithm to sort this out
                     if (!current || !current->rootNode) return deleteInTree(&root, iter.node->key) != Invalid;
-                    
+
                     // Need to find the right root node address then
                     NodeT ** newRoot = current->rootNode->left() == current ? &current->rootNode->left() : &current->rootNode->right();
                     return deleteInTree(newRoot, iter.node->key) != Invalid;
@@ -485,9 +485,9 @@ namespace Tree
             }
 
 
-            /** Forget a key (this doesn't delete the object) 
+            /** Forget a key (this doesn't delete the object)
                 @return false if not found */
-            inline bool Forget( KeyType key ) 
+            inline bool Forget( KeyType key )
             {
                 return deleteInTree(&root, key, false) != Invalid;
             }
@@ -499,7 +499,7 @@ namespace Tree
                 root = 0; size = 0;
             }
 
-            /** Check this tree correctness 
+            /** Check this tree correctness
                 @warning This method is recursive, so for (very) large tree, please avoid using it */
             inline bool checkTree()
             {
@@ -509,9 +509,9 @@ namespace Tree
             {
                 if (!node) return true;
                 CompareT        key(node->key);
-                if (node->left() && node->left()->rootNode != node && key.Compare(node->left()->key) != Comparator::Less) 
-                    return false; 
-                if (node->right() && node->right()->rootNode != node && key.Compare(node->left()->key) != Comparator::Greater) 
+                if (node->left() && node->left()->rootNode != node && key.Compare(node->left()->key) != Comparator::Less)
+                    return false;
+                if (node->right() && node->right()->rootNode != node && key.Compare(node->left()->key) != Comparator::Greater)
                     return false;
                 if (!node->right() && !node->left())
                 {
@@ -533,14 +533,14 @@ namespace Tree
             Tree() : root(0), size(0) {}
             /** Destructor */
             virtual ~Tree() { Clear(); }
-            
+
             // Helpers functions
         private:
-            /** Simple rotate the node 
-                A 2-point rotation looks like this, where B is the root where the rotation must happen, and E or below is where the new node was inserted. 
+            /** Simple rotate the node
+                A 2-point rotation looks like this, where B is the root where the rotation must happen, and E or below is where the new node was inserted.
                 @verbatim
                      B                       D
-                    / \         ==>         / \ 
+                    / \         ==>         / \
                    A   D                   B   E
                       / \                 / \
                      C   E               A   C
@@ -558,7 +558,7 @@ namespace Tree
                     E = D->right();
 
                     *parent = D;
-                
+
                     D->left(B);
                     B->right(C);
                 } else
@@ -568,7 +568,7 @@ namespace Tree
                     E = D->left();
 
                     *parent = D;
-                
+
                     D->right(B);
                     B->left(C);
                 }
@@ -581,20 +581,20 @@ namespace Tree
                 return E;
             }
 
-            /** Double rotation for the given node 
-                The 3-point rotation looks like this, where B is the top of the path needing rotation, and the insertion point 
+            /** Double rotation for the given node
+                The 3-point rotation looks like this, where B is the top of the path needing rotation, and the insertion point
                 is D, or at-or-below one for C and E, depending on the value of "third".
 
                 @verbatim
                      B                        D
-                    / \         ==>         /   \ 
+                    / \         ==>         /   \
                    A   F                   B     F
                       / \                 / \   / \
                      D   G               A   C E   G
                     / \
                    C   E
                 @endverbatim
-                
+
 
             */
             NodeT * rotate3(NodeT ** parent, typename CompareT::Result result, AllNodes::Balance third)
@@ -611,7 +611,7 @@ namespace Tree
                     E = D->right();
 
                     *parent = D;
-                
+
                     D->left(B);
                     D->right(F);
                     B->right(C);
@@ -624,7 +624,7 @@ namespace Tree
                     E = D->left();
 
                     *parent = D;
-                
+
                     D->right(B);
                     D->left(F);
                     B->left(C);
@@ -634,25 +634,25 @@ namespace Tree
                 // Fix the parent nodes
                 if (F) F->rootNode = D;
                 if (C) C->rootNode = B;
-                if (E) E->rootNode = F; 
+                if (E) E->rootNode = F;
                 B->rootNode = D;
                 D->rootNode = Bparent;
 
                 D->balance = B->balance = F->balance = AllNodes::Balanced;
 
                 if (third == AllNodes::Balanced) return 0;
-                else if (third == D->balanceFromCompare(result)) 
+                else if (third == D->balanceFromCompare(result))
                 {
-                    /* E holds the insertion so B is unbalanced */ 
+                    /* E holds the insertion so B is unbalanced */
                     B->balance = B->balanceFromInverseCompare(result);
                     return E;
-                } else 
+                } else
                 {
                     /* C holds the insertion so F is unbalanced */
                     F->balance = F->balanceFromCompare(result);
                     return C;
                 }
-            }            
+            }
 
             /** Rebalance after an insertion */
             OperationResult rebalancePath(NodeT* current, CompareT & keyToCheck)
@@ -676,7 +676,7 @@ namespace Tree
                 if (current->balance != AllNodes::Balanced)
                 {
                     first = keyToCheck.Compare(current->key);
-                    NodeT * next = current->fromCompare(first); 
+                    NodeT * next = current->fromCompare(first);
                     if (!next) return Invalid;
                     second = keyToCheck.Compare(next->key);
                     bool biggerFirst = first == Comparator::Greater;
@@ -732,11 +732,11 @@ namespace Tree
 
                 return rebalanceAfterInsert(balancer, keyToCheck);
             }
-            
+
             static inline void SwapAndDelete(NodeT ** targetParent, NodeT ** parent, typename CompareT::Result result, const bool shouldDeleteNode)
             {
                 bool same = targetParent == parent;
-                
+
                 NodeT * newTarget = *targetParent;
                 NodeT * current = *parent;
 
@@ -745,7 +745,7 @@ namespace Tree
                 int currentOnLeft = -1;
                 if (current->rootNode) currentOnLeft = current->rootNode->left() == current;
                 *parent = current->fromInverseCompare(result);
-                
+
                 current->left(newTarget->left());
                 current->right(newTarget->right());
                 current->balance = newTarget->balance;
@@ -760,7 +760,7 @@ namespace Tree
                 current->rootNode = rootNode;
                 if (current->left()) current->left()->rootNode = current;
                 if (current->right()) current->right()->rootNode = current;
-                
+
                 if (same && *parent) (*parent)->rootNode = rootNode;
                 if (!shouldDeleteNode && newTarget) newTarget->Forget();
 
@@ -788,7 +788,7 @@ namespace Tree
                         NodeT * invertNext = current->fromInverseCompare(compareResult);
                         typename CompareT::Result invertResult = compareResult == Comparator::Greater ? Comparator::Less : Comparator::Greater;
                         if (invertNext->balance == current->balanceFromCompare(compareResult))
-                        {   
+                        {
                             NodeT * nextInvertNext = invertNext->fromCompare(compareResult);
                             rotate3(parent, invertResult, nextInvertNext->balance);
                         } else if (invertNext->balance == AllNodes::Balanced)
@@ -804,11 +804,11 @@ namespace Tree
 
                     parent = &current->fromCompare(compareResult);
                 }
-                
+
                 return targetParent;
             }
 
-            /** Delete a object with the matching key in the tree 
+            /** Delete a object with the matching key in the tree
                 This method is iterative
             */
             OperationResult deleteInTree( NodeT** parent, KeyType key, const bool callDeleter = true )
@@ -849,10 +849,10 @@ namespace Tree
 
                 targetParent = rebalanceAfterDelete(balanced, keyToFind, targetParent);
                 SwapAndDelete(targetParent, parent, compareResult, callDeleter);
-                
+
                 --size;
                 return Ok;
-            }           
+            }
 
 
             /** Delete the entire tree */
@@ -881,7 +881,7 @@ namespace Tree
                 // Else check if the root node is the left node of the root node, and return the left node
                 else if (node->rootNode == node->rootNode->rootNode->left())    return &node->rootNode->rootNode->left();
                 // Else it is the right node
-                return &node->rootNode->rootNode->right();              
+                return &node->rootNode->rootNode->right();
             }
 
 
@@ -890,15 +890,15 @@ namespace Tree
         public:
             /** Get tree height (or size) */
             inline uint32 getSize() const { return (uint32)size; }
-            
+
             /** Check if the tree is empty */
             inline bool isEmpty() const { return root == 0; }
-            
+
             /** Get iterator on first object */
             inline IterT getFirstIterator() { return IterT(root); }
             /** Get iterator on first object */
             inline const IterT getFirstIterator() const { return IterT(root); }
-            
+
             /** Get iterator on last object */
             inline IterT getLastIterator() { return IterT(0); }
             /** Get iterator on last object */
@@ -908,15 +908,15 @@ namespace Tree
             inline SortedIterT getFirstSortedIterator() { return SortedIterT(root, true); }
             /** Get iterator on first object */
             inline const SortedIterT getFirstSortedIterator() const { return SortedIterT(root, true); }
-            
+
             /** Get iterator on last object */
             inline SortedIterT getLastSortedIterator() { return SortedIterT(root, false); }
             /** Get iterator on last object */
             inline const SortedIterT getLastSortedIterator() const { return SortedIterT(root, false); }
 
-            
+
             /** Get the data at i-th position, in the key sort order
-                @return an iterator that should be checked with isValid() 
+                @return an iterator that should be checked with isValid()
                 @warning This method is very, very slow as every node is accessed from one head to i-th position */
             inline const IterT getIterAt(const uint32 index) const
             {
@@ -924,12 +924,12 @@ namespace Tree
                 // Faster to select by the end of list
                 IterT iter(root);
                 // This loop is based on the ++ operator of the iter
-                for (uint32 i = 0; i < index; i++, ++iter); 
+                for (uint32 i = 0; i < index; i++, ++iter);
                 return iter;
             }
 
             /** Get the data at i-th position, in the key sort order
-                @return an iterator that should be checked with isValid() 
+                @return an iterator that should be checked with isValid()
                 @warning This method is very, very slow as every node is accessed from one head to i-th position */
             inline const SortedIterT operator [] (const uint32 index) const
             {
@@ -939,19 +939,19 @@ namespace Tree
                 {
                     SortedIterT iter(root, false);
                     // This loop is based on the -- operator of the iter
-                    for (uint32 i = size - 1; i > index; i--, --iter); 
+                    for (uint32 i = size - 1; i > index; i--, --iter);
                     return iter;
                 }
                 else
                 {
                     SortedIterT iter(root, true);
                     // This loop is based on the ++ operator of the iter
-                    for (uint32 i = 0; i < index; i++, ++iter); 
+                    for (uint32 i = 0; i < index; i++, ++iter);
                     return iter;
                 }
             }
 
-            
+
             /** Search for the given key in the tree
                 @return an iterator that should be checked with isValid() */
             inline IterT searchFor(KeyType key) const
@@ -971,7 +971,7 @@ namespace Tree
                     else // Less
                     {   node = node->right();   }
                 }
-                return IterT(best != 0 ? best : 0);               
+                return IterT(best != 0 ? best : 0);
             }
             /** Search for the given key in the tree
                 @return an iterator that should be checked with isValid() */
@@ -995,13 +995,13 @@ namespace Tree
                 NodeT * resultNode =  best != 0 ? best : 0;
                 typename SortedIterT::FromSearch searchNode;
                 SortedIterT iter(searchNode, resultNode);
-                return iter;               
+                return iter;
             }
-            
+
         };
 
         /** Simple struct used to simplify type definitions */
-        template < typename T, typename KeyType, class Policy = Comparator::DefaultComparator> 
+        template < typename T, typename KeyType, class Policy = Comparator::DefaultComparator>
         struct PointerTree
         {
             /** The tree definition for a pointer based Tree storage */
@@ -1009,7 +1009,7 @@ namespace Tree
         };
 
         /** Simple struct used to simplify type definitions */
-        template < typename T, typename KeyType, class Policy = Comparator::DefaultComparator> 
+        template < typename T, typename KeyType, class Policy = Comparator::DefaultComparator>
         struct ArrayTree
         {
             /** The tree definition for a pointer based Tree storage */
@@ -1022,4 +1022,4 @@ namespace Tree
 #pragma warning(pop)
 #endif
 
-#endif  
+#endif

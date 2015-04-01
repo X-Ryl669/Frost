@@ -5,7 +5,7 @@
 typedef void (*PThreadVoid)(void*);
 #endif
 
-#if defined(HasExtendedLock) 
+#if defined(HasExtendedLock)
 // We need asserts
 #include "../../include/Utils/Assert.hpp"
 bool Threading::ReadWriteLock::acquireReader(const Threading::TimeOut timeout) volatile
@@ -34,7 +34,7 @@ bool Threading::ReadWriteLock::acquireReader(const Threading::TimeOut timeout) v
             Assert(false);
             return false;
         }
-    
+
     }
 }
 
@@ -66,8 +66,8 @@ bool Threading::ReadWriteLock::readerWait(const Threading::TimeOut timeout) vola
 	bool canRead = false;
 	++waitingReaderCount;
 	if (!read) read = new Event(NULL, Event::ManualReset, Event::InitiallyFree);
-	
-	if(timeout == Infinite) 
+
+	if(timeout == Infinite)
 	{
 		do
 		{
@@ -86,7 +86,7 @@ bool Threading::ReadWriteLock::readerWait(const Threading::TimeOut timeout) vola
 		lock.Release();
 		clock_t beginTime = clock();
 		int     consumedTime = 0;
-        
+
 		while(1)
 		{
 			canRead = read->Wait((TimeOut)(timeout - consumedTime));
@@ -124,9 +124,9 @@ bool Threading::ReadWriteLock::readerWait(const Threading::TimeOut timeout) vola
 	{
 	    delete read; read = 0;
 	}
-	return canRead;	    
+	return canRead;
 }
-void Threading::ReadWriteLock::readerRelease() volatile 
+void Threading::ReadWriteLock::readerRelease() volatile
 {
 	int readerCount = --currentReaderCount;
 	Assert(0 <= readerCount);
@@ -143,7 +143,7 @@ bool Threading::ReadWriteLock::writerWaitAndLeaveCSIfSuccess(const Threading::Ti
     if (!write) write = new Event(NULL, Event::AutoReset, Event::InitiallyFree);
 	lock.Release();
 
-	bool canWrite = write->Wait(timeout); 
+	bool canWrite = write->Wait(timeout);
 	if(!canWrite)
 	{
 		// Undo what we changed after timeout
@@ -151,7 +151,7 @@ bool Threading::ReadWriteLock::writerWaitAndLeaveCSIfSuccess(const Threading::Ti
 		if(--writerCount == 0)
 		{
 		    delete write; write = 0;
-		    
+
 			if(currentReaderCount == 0)
 			{
 				// Although it was timeout, it's still safe to be writer now
@@ -166,7 +166,7 @@ bool Threading::ReadWriteLock::writerWaitAndLeaveCSIfSuccess(const Threading::Ti
 		}
 	}
 	return canWrite;
-}	    
+}
 bool Threading::ReadWriteLock::upgradeToWriterLockAndLeaveCS(const Threading::TimeOut timeout) volatile
 {
 	Assert(currentReaderCount > 0);
@@ -206,7 +206,7 @@ bool Threading::ReadWriteLock::upgradeToWriterLockAndLeaveCS(const Threading::Ti
 	}
 
 	return canWrite;
-}	    
+}
 void Threading::ReadWriteLock::writerRelease(const bool downgrade) volatile
 {
 	Assert(0 == currentReaderCount);
@@ -236,7 +236,7 @@ Threading::ScopedPP::ScopedPP(Lock & lock, const WithStartMarker * ts, PingPong 
 
 
 #ifndef _WIN32
-bool Threading::stillBefore(struct timeval * tOut) 
+bool Threading::stillBefore(struct timeval * tOut)
 {
     struct timeval now;
     gettimeofday(&now, NULL);
@@ -244,7 +244,7 @@ bool Threading::stillBefore(struct timeval * tOut)
 }
 
 bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
-{ 
+{
   #ifndef _POSIX
     bool isOkay = false;
     // compute time delay
@@ -252,8 +252,8 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
     portBASE_TYPE  result;
     unsigned portLONG ulVar = 0;
 
-    // The value in the queue must be removed 
-    if (!manualReset) 
+    // The value in the queue must be removed
+    if (!manualReset)
     {
         // The queue is automatically freed
         return xQueueReceive(xQueue, &ulVar, tickDelay) == pdTRUE;
@@ -262,7 +262,7 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
     return xQueuePeek(xQueue, &ulVar, tickDelay) == pdTRUE;
   #else
     bool isOkay = false;
-    if (rcxTO == Infinite) 
+    if (rcxTO == Infinite)
     {
         bool bState = false;
         // Install clean up handlers
@@ -271,7 +271,7 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
         if (mutexLockSuccess == 0)
         {
             bState = state;
-            if (bState) 
+            if (bState)
             {
                 // Is it in auto reset mode ?
                 if (!manualReset) state = false;
@@ -281,7 +281,7 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
                 // The variable is not set, so wait state changing
                 while (!bState)
                 {
-                    // pthread_cond_wait release the mxEvent mutex and 
+                    // pthread_cond_wait release the mxEvent mutex and
                     // lock the condition atomically
                     // Because if any other thread wants to modify the state
                     // it has to lock the mutex, the change will be protected then
@@ -313,7 +313,7 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
         if (retValue == 0)
         {
             isOkay = state;
-            // Is it in auto reset mode ? 
+            // Is it in auto reset mode ?
             if (state && !manualReset) state = false;
 
         } //else return false; // No more needed with cleanup handlers
@@ -333,7 +333,7 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
         { tOut.tv_sec ++; tOut.tv_usec -= 1000000;  }
         abstime.tv_sec = tOut.tv_sec;
         abstime.tv_nsec = tOut.tv_usec * 1000;
-        
+
         // First try to lock the mutex
         // Sadly, we must poll here
 
@@ -351,7 +351,7 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
         if (mutexLockSuccess == 0)
         {   // We now have the mutex, so check the state
             bool bState = state;
-            if (bState) 
+            if (bState)
             {
                 // Is it in auto reset mode ?
                 if (!manualReset) state = false;
@@ -364,12 +364,12 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
                     retval = EINTR;
                     while (retval == EINTR) retval = pthread_cond_timedwait((pthread_cond_t*)&condition, (HMUTEX*)&event, &abstime);
 
-                    if (retval != 0) //== ETIMEDOUT) 
+                    if (retval != 0) //== ETIMEDOUT)
                     {   // No change in the specified time, so release the mutex and return
                         break;
                     }
 
-                    // A thread could have reset a unset state, thus causing condition 
+                    // A thread could have reset a unset state, thus causing condition
                     // broadcasting. We have to make sure the state is good now
                     bState = state;
                 }
@@ -388,8 +388,8 @@ bool Threading::Event::_Wait(const TimeOut & rcxTO) volatile
   #endif
 }
 
-bool Threading::Event::_Reset() volatile           
-{ 
+bool Threading::Event::_Reset() volatile
+{
   #ifndef _POSIX
     unsigned portLONG ulVar = 0;
     // Instant wait of the state but only one value in the queue
@@ -413,8 +413,8 @@ bool Threading::Event::_Reset() volatile
   #endif
 }
 
-bool Threading::Event::_Set(void * arg) volatile                 
-{   
+bool Threading::Event::_Set(void * arg) volatile
+{
   #ifndef _POSIX
     unsigned portLONG ulVar = 1;
     portBASE_TYPE result = arg ? xQueueSendFromISR(xQueue, ( void * ) &ulVar, (signed portBASE_TYPE *)arg) : xQueueSend( xQueue, ( void * ) &ulVar, 0);
@@ -442,7 +442,7 @@ bool Threading::MutexLock::_Lock(const TimeOut & rcxTO) volatile
 {
     if (rcxTO == Infinite)
     {
-        // Either pthread_mutex_lock return EINVAL (not initialized), and then it is not going to change 
+        // Either pthread_mutex_lock return EINVAL (not initialized), and then it is not going to change
         // as we are the initializer (simply returns false here)
         return pthread_mutex_lock((HMUTEX*)&mutex) == 0;
     }
@@ -458,7 +458,7 @@ bool Threading::MutexLock::_Lock(const TimeOut & rcxTO) volatile
         tOut.tv_usec += (uint32)rcxTO * 1000;
         if (tOut.tv_usec > 1000000)
         { tOut.tv_sec ++; tOut.tv_usec -= 1000000;  }
-        
+
         // First try to lock the mutex
         // Sadly, we must poll here
         int retval = -1;
@@ -480,7 +480,7 @@ void Threading::MutexLock::_Unlock(void * arg) volatile
 {
   #ifndef _POSIX
     if (arg) pthread_mutex_unlock_isr((HMUTEX*)&mutex, arg);
-    else 
+    else
   #endif
     pthread_mutex_unlock((HMUTEX*)&mutex);
 }
@@ -490,7 +490,7 @@ bool Threading::FastLock::_Lock(const TimeOut & rcxTO) volatile
 {
     if (rcxTO == Infinite)
     {
-        // Either pthread_mutex_lock return EINVAL (not initialized), and then it is not going to change 
+        // Either pthread_mutex_lock return EINVAL (not initialized), and then it is not going to change
         // as we are the initializer (simply returns false here)
         return pthread_mutex_lock((HMUTEX*)&mutex) == 0;
     }
@@ -506,7 +506,7 @@ bool Threading::FastLock::_Lock(const TimeOut & rcxTO) volatile
         tOut.tv_usec += (uint32)rcxTO * 1000;
         if (tOut.tv_usec > 1000000)
         { tOut.tv_sec ++; tOut.tv_usec -= 1000000;  }
-        
+
         // First try to lock the mutex
         // Sadly, we must poll here
         int retval = -1;
@@ -529,14 +529,14 @@ void Threading::FastLock::_Unlock(void * arg) volatile
 {
   #ifndef _POSIX
     if (arg) pthread_mutex_unlock_isr((HMUTEX*)&mutex, arg);
-    else 
+    else
   #endif
     pthread_mutex_unlock((HMUTEX*)&mutex);
 }
 
   #if defined(_POSIX) && !defined(HAS_ATOMIC_BUILTIN)
 HMUTEX Threading::SharedData<uint32>::sxMutex = PTHREAD_MUTEX_INITIALIZER;
-  #endif 
+  #endif
 
   #if defined(NO_ATOMIC_BUILTIN64) && (HAS_STD_ATOMIC != 1)
     #if defined(_POSIX)

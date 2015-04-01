@@ -81,7 +81,7 @@ namespace Database
         };
         /** Condition that usually rewrite the selection.
             These conditions narrow the selection (for example 'SELECT MAX(column)' or 'SELECT COUNT(column)').
-            Please notice that the selection change is aliased on the column name, so you'll have a the column 
+            Please notice that the selection change is aliased on the column name, so you'll have a the column
             acting like the condition (like in 'SELECT COUNT(id) as id') */
         struct NoAry : public Condition
         {
@@ -104,7 +104,7 @@ namespace Database
             }
             virtual Condition * clone() const { return new Max(*this);  }
         };
-        /** Get the unique Minimum of the given field 
+        /** Get the unique Minimum of the given field
             The field itself must be sortable, and the minimum is aliased on the field itself.
             This usually produce "SELECT MIN(field) AS field" */
         struct Min : public NoAry
@@ -122,7 +122,7 @@ namespace Database
         /** Get the unique number of item with the given field
             The count itself is returned as a the field (so you'll find the count value in the field, instead of the initial field value).
             This usually produce "SELECT COUNT(field) AS field"
-            @warning Beware that the field type might interfer with the result, for example if a column is of type 'Blob', then the 
+            @warning Beware that the field type might interfer with the result, for example if a column is of type 'Blob', then the
                      aliasing will be interpreted as a binary blob. If it bothers you, check the Field structure */
         struct Count : public NoAry
         {
@@ -138,7 +138,7 @@ namespace Database
         };
         /** Get a specific field declaration.
             This appends a fieldName on the select query, like this "SELECT previousColumn, fieldName".
-            This is used if you need to specify your own selection rule that's not interpreted by this system, 
+            This is used if you need to specify your own selection rule that's not interpreted by this system,
             like 'SELECT DATETIME(timeCol, "unixepoch")' when fieldName is 'DATETIME(timeCol, "unixepoch")'.
             Beware that this is unsafe, as no checking is done by this engine. */
         struct Field : public NoAry
@@ -164,7 +164,7 @@ namespace Database
                 return true;
             }
             virtual Condition * clone() const { return new Distinct(*this);  }
-        };        
+        };
         /** Group results by the given field.
             This appends a "GROUP BY fieldName" to your query. */
         struct GroupBy : public NoAry
@@ -180,7 +180,7 @@ namespace Database
         /** Applied a final constraint on the returned result.
             This appends a "HAVING fieldName" to your query.
             @warning The fieldName here is not interpreted, nor filtered, so it's clearly unsafe to use with user generated data.
-            
+
             @todo Improve this code to really use a Unary or Binary condition */
         struct Having : public NoAry
         {
@@ -250,8 +250,8 @@ namespace Database
             }
             virtual String getConstraintOperator() const = 0;
             Unary(const Var & _var) : requiredValue(_var){}
-            
-            // Proxy for using table's field directly 
+
+            // Proxy for using table's field directly
             template <class Type, int position>
             Unary(const WriteMonitored<Type, position>  & _var) : requiredValue(_var.asVariant()) {}
 
@@ -280,7 +280,7 @@ namespace Database
             Limit(const Var & _count, const Var & _offset) : offset(_offset), count(_count) {}
             // Proxy for using table's field directly
             template <class Type, int position, class Type2, int position2>
-            Limit(const WriteMonitored<Type, position>  & _count, const WriteMonitored<Type2, position2> & _offset) 
+            Limit(const WriteMonitored<Type, position>  & _count, const WriteMonitored<Type2, position2> & _offset)
                 : offset(_offset.asVariant()), count(_count.asVariant()) {}
 
             virtual bool update(const Var & _count) { count = _count; return true; }
@@ -292,7 +292,7 @@ namespace Database
             virtual bool update(const Var & _count, const Var & _offset) { count = _count; offset = _offset; return true; }
             // Proxy for using table's field directly
             template <class Type, int position, class Type2, int position2>
-            bool update(const WriteMonitored<Type, position>  & _count, const WriteMonitored<Type2, position2> & _offset) 
+            bool update(const WriteMonitored<Type, position>  & _count, const WriteMonitored<Type2, position2> & _offset)
             { count = _count.asVariant(); offset = _offset.asVariant(); return true; }
 
             virtual bool isNoAry() const  { return true; }
@@ -322,7 +322,7 @@ namespace Database
             }
             virtual Condition * clone() const { return new OrderBy(*this);  }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             OrderBy(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
@@ -334,7 +334,7 @@ namespace Database
         {
             Equal(const Var & _var) : Unary(_var) { }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             Equal(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
@@ -347,7 +347,7 @@ namespace Database
         {
             NotInSet(const Var & _var) : Unary(_var) { }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             NotInSet(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
@@ -361,7 +361,7 @@ namespace Database
             Constraint<Color> color(ID, Condition::Field()).And(Constraint<Color>(ID, Condition::Greater(34)));
             Constraint<Car> cars(IDColor, Condition::InSet(color.createSubConstraintText()));
             // Generates: SELECT * from Car WHERE IDColor IN (SELECT ID FROM Color WHERE ID > 34)
-            
+
             With macros, the code would read as
             BuildConstraint(Color, aaa, ID, _C::Field());
             BuildConstraint(Color, aab, ID, _C::Greater(34));
@@ -371,7 +371,7 @@ namespace Database
         {
             InSet(const Var & _var) : Unary(_var) { }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             InSet(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
@@ -384,20 +384,20 @@ namespace Database
         {
             BitAnd(const Var & _var) : Unary(_var) {    }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             BitAnd(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
             String getConstraintOperator() const { return String(" & "); }
             virtual Condition * clone() const { return new BitAnd(*this);   }
         };
-        /** Get all the result where a field match binary OR operator. 
+        /** Get all the result where a field match binary OR operator.
             This appends "field | val" to the SQL "WHERE" clause. */
         struct BitOr : public Unary
         {
             BitOr(const Var & _var) : Unary(_var) { }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             BitOr(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
@@ -410,33 +410,33 @@ namespace Database
         {
             BitXor(const Var & _var) : Unary(_var) {    }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             BitXor(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
             String getConstraintOperator() const { return String(" ^ "); }
             virtual Condition * clone() const { return new BitXor(*this);   }
         };
-        /** Get all the result where a field is like the given value. 
+        /** Get all the result where a field is like the given value.
             This appends "field LIKE val" to the SQL "WHERE" clause. */
         struct Like : public Unary
         {
             Like(const Var & _var) : Unary(_var) {  }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             Like(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
             String getConstraintOperator() const { return String(" LIKE "); }
             virtual Condition * clone() const { return new Like(*this); }
         };
-        /** Get all the result where a field is less than the given value. 
-            This appends "field < val" to the SQL "WHERE" clause. */        
+        /** Get all the result where a field is less than the given value.
+            This appends "field < val" to the SQL "WHERE" clause. */
         struct Less : public Unary
         {
             Less(const Var & _var) : Unary(_var) {  }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             Less(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
@@ -449,7 +449,7 @@ namespace Database
         {
             LessOrEqual(const Var & _var) : Unary(_var) {   }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             LessOrEqual(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
@@ -462,20 +462,20 @@ namespace Database
         {
             Greater(const Var & _var) : Unary(_var) {   }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             Greater(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
             String getConstraintOperator() const { return String(" > "); }
             virtual Condition * clone() const { return new Greater(*this);  }
         };
-        /** Get all the result where a field is greater or equal than the given value. 
+        /** Get all the result where a field is greater or equal than the given value.
             This appends "field >= val" to the SQL "WHERE" clause. */
         struct GreaterOrEqual : public Unary
         {
             GreaterOrEqual(const Var & _var) : Unary(_var) {    }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             GreaterOrEqual(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
@@ -488,7 +488,7 @@ namespace Database
         {
             NotEqual(const Var & _var) : Unary(_var) {  }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             NotEqual(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
@@ -501,7 +501,7 @@ namespace Database
         {
             NotLike(const Var & _var) : Unary(_var) {   }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position>
             NotLike(const WriteMonitored<Type, position>  & t) : Unary(t) {}
 
@@ -540,9 +540,9 @@ namespace Database
             virtual String getConstraintOperator() const = 0;
             Binary(const Var & _var1, const Var & _var2) : value1(_var1), value2(_var2) {}
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position, class Type2, int position2>
-            Binary(const WriteMonitored<Type, position>  & _var1, const WriteMonitored<Type2, position2> & _var2) 
+            Binary(const WriteMonitored<Type, position>  & _var1, const WriteMonitored<Type2, position2> & _var2)
                 : value1(_var1.asVariant()), value2(_var2.asVariant()) {}
 
             virtual bool update(const Var & a) { value1 = a; return true; }
@@ -557,7 +557,7 @@ namespace Database
         {
             Between(const Var & _var1, const Var & _var2) : Binary(_var1, _var2) {  }
 
-            // Proxy for using table's field directly 
+            // Proxy for using table's field directly
             template <class Type, int position, class Type2, int position2>
             Between(const WriteMonitored<Type, position>  & _var1, const WriteMonitored<Type2, position2> & _var2) : Binary(_var1, _var2) {}
 
@@ -622,10 +622,10 @@ namespace Database
         Of course, you can combine constraints to further reduce the result set, by doing something like this:
         @code
         Constraint<Color>(Value, Condition::Less(21)).And(Constraint<Color>(Value, Condition::Greater(45)))
-        or 
+        or
         Constraint<Color>(Value, Condition::Less(21)).Or(Constraint<Color>(Value, Condition::Greater(45)))
         @endcode
-        
+
         @warning    Usually, some people do "SELECT * FROM table" (with no limit on the result pool).
                     With a Constraint, this proves difficult because, well:<br>
                     -# This request can exhaust memory (if the database is larger thant the available memory), there is no way to know beforehand the size of the result pool
@@ -651,7 +651,7 @@ namespace Database
             return *this;
         }
 
-        /** Chain constraints in a OR like manner 
+        /** Chain constraints in a OR like manner
             This does not modify the passed parameter unlike the And method */
         Constraint & OrConst(const Constraint & t)
         {
@@ -804,16 +804,16 @@ namespace Database
         /** Create the count constraint text */
         UnescapedString createCountText() const
         {
-            
+
             UnescapedString initialConstraintText = createConstraintText();
             if (!initialConstraintText) return String("");
-            
+
             String sBase = ", (SELECT COUNT(*) FROM (";
             sBase += initialConstraintText;
             sBase += ")) AS xZ_X_Count_T823 FROM";
             return initialConstraintText.upToFirst("FROM") + sBase + initialConstraintText.fromFirst("FROM");
-        }        
-        
+        }
+
         /** Create the subconstraint text */
         UnescapedString createSubConstraintText() const
         {
@@ -860,11 +860,11 @@ namespace Database
         /** You can use constraint by writing the code as C++ code. If you work outside Database namespace, this can be troublesome.
             There are 2 macros that simplifies the code and provides a compile-time safety check instead of runtime (so invalid SQL request doesn't compile,
             instead of doing unwanted side-effects).
-            
+
             If you need to combine constraints, check the BuildConstraint macro.
             Take care that Constraints are using move semantics (a copy of a constraint take tranfers ownership of the initial constraint to the copy).
             This is faster in 99% of the case, since you avoid allocations, but it can bite if you reuse your constraint in different context, and chain them.
-            If you need to keep a Constraint intact for re-use, you might want to use the clone() method. 
+            If you need to keep a Constraint intact for re-use, you might want to use the clone() method.
         */
         namespace UsingConstraints
         {
@@ -889,7 +889,7 @@ namespace Database
                 // or
                 Database::Pool<MyTable> pool = Database::find(firstConstraint.Or(secondConstraint)); // SELECT * FROM MyTable WHERE ID > 34 OR Name LIKE "John*"
                 @endcode
-                
+
                 @param X        The table structure
                 @param Name     The name of the instance created in the current scope
                 @param Field    The field to constrain
@@ -915,7 +915,7 @@ namespace Database
                 Database::Pool<MyTable> pool = Database::find(firstConstraint.Or(AnonConstraint(MyTable, Name, _C::Like("John*")))
                                                                              .And(AnonConstraint(MyTable, Age, _C::Less("45")))); // SELECT * FROM MyTable WHERE (ID > 34 OR Name LIKE "John*") AND Age < 45
                 @endcode
-                
+
                 @param X        The table structure
                 @param Field    The field to constrain
                 @param Cond     The constraint's condition. */
@@ -991,7 +991,7 @@ namespace Database
         String base = t.createCountText();
         if (!base.getLength()) return Pool<T>(0);
         base += ";";
-        
+
         // The query retrieve results
         const SQLFormat::Results * res = SQLFormat::sendQuery(T::__DBIndex__, base);
         Var countT;

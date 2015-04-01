@@ -145,7 +145,7 @@ namespace Crypto
     public:
         /** Get the configured block size */
         virtual BlockSize getBlockSize() const { return (BlockSize)blockSize; }
-    
+
         /** Set the key from the given buffer
             @param key  The 128/192/256-bit user-key to use.
             @param keyLength The length of the key in uint8

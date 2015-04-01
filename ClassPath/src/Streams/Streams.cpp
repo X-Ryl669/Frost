@@ -97,7 +97,7 @@ namespace Stream
     {
         if (!buffer) return (uint64)-1;
         // Check for very large read
-        if (_size > 0xFFFFFFFF) 
+        if (_size > 0xFFFFFFFF)
         {
             uint64 totalSize = 0;
             while (_size > 0xFFFFFFFF)
@@ -115,14 +115,14 @@ namespace Stream
         if (!memoryBlock.Extract((uint8*)buffer, size)) return (uint64)-1;
         if (size >= _size) return size;
         uint64 outSize = size;
-        
+
         // Now we need to refill the memory block while reading it
         uint8 * newBuffer = new uint8[blockSize];
         while (outSize < _size)
         {
             uint32 realBlock = (uint32)inputStream.read(newBuffer, blockSize);
             if (realBlock == (uint32)-1) { delete[] newBuffer; return (uint64)-1; }
-        
+
             if (!memoryBlock.rebuildFromBase64(newBuffer, realBlock)) { delete[] newBuffer; return (uint64)-1; }
             size = min((uint32)(_size - outSize), memoryBlock.getSize());
             memoryBlock.Extract((uint8*)buffer + outSize, size);
@@ -130,9 +130,9 @@ namespace Stream
             if (realBlock < blockSize) break;
         }
         delete[] newBuffer;
-        return outSize;        
+        return outSize;
     }
-    
+
     // Move the stream position forward of the given amount
     bool Base64InputStream::goForward(const uint64 skipAmount)
     {
@@ -144,14 +144,14 @@ namespace Stream
             delete[] buffer;
             return true;
         }
-        
+
         uint64 amountToSkipInBase64EncodedData = convertSize(skipAmount);
         if (!inputStream.goForward(amountToSkipInBase64EncodedData)) return false;
         // Need to empty the memory block, and skip the input stream accordingly to the position we want
         memoryBlock.stripTo(0);
         return true;
     }
-    
+
     uint64 Base64OutputStream::write(const void * const _buffer, const uint64 _size) throw()
     {
         if (memoryBlock.getSize() + _size < (uint64)blockSize)
@@ -160,7 +160,7 @@ namespace Stream
             memoryBlock.Append((uint8*)_buffer, (uint32)_size);
             return _size;
         }
-        
+
         // Let's process the encoding in blocks
         uint64 processedSize = 0;
         while (processedSize < _size)
@@ -174,12 +174,12 @@ namespace Stream
             if (!convertedBlock) return (uint64)-1;
 
             uint64 outputSize = outputStream.write(convertedBlock->getBuffer(), convertedBlock->getSize());
-            if (outputSize == (uint64)-1) 
+            if (outputSize == (uint64)-1)
             {
                 memoryBlock.stripTo(0);
                 return outputSize;
             }
-            if (outputSize != convertedBlock->getSize()) 
+            if (outputSize != convertedBlock->getSize())
             {
                 // Need to extract the current memory block consumed size
                 uint64 consumedSize = unconvertSize(outputSize);
@@ -187,7 +187,7 @@ namespace Stream
                 return consumedSize;
             }
             memoryBlock.stripTo(0);
-            processedSize += currentBlockSize;   
+            processedSize += currentBlockSize;
         }
         return (uint64)processedSize;
     }
@@ -196,7 +196,7 @@ namespace Stream
         Utils::ScopePtr<Utils::MemoryBlock> convertedBlock = memoryBlock.toBase64();
         if (!convertedBlock) return false;
         // We don't care about the result here since we can't do any thing if it fails
-        return outputStream.write(convertedBlock->getBuffer(), convertedBlock->getSize()) == convertedBlock->getSize();  
+        return outputStream.write(convertedBlock->getBuffer(), convertedBlock->getSize()) == convertedBlock->getSize();
     }
 #endif
 
@@ -360,7 +360,7 @@ namespace Stream
         pos = (uint16)size;
         return pos;
     }
-    
+
     AESOutputStream::AESOutputStream(OutputStream & os, const String & keyInHex, const String & IVInHex) : outputStream(os), tempPos(0), keySize(0)
     {
         memset(buffer, 0, sizeof(buffer));
@@ -464,7 +464,7 @@ namespace Stream
             outputStream.write(buffer, tempPos); // Please note that we have cut the last part, here
         }
     }
-    
+
 #endif
 
     OutputStringStream::OutputStringStream(String & _content) : content(_content), position(0) {}
@@ -557,7 +557,7 @@ namespace Stream
         int written = ((File::BaseStream*)stream)->write((const char*)buffer, (int)min((uint64)INT_MAX, size));
         if (written < 0) return (uint64)written;
         ((File::BaseStream*)stream)->flush();
-        fileSize = max(curPos + written, fileSize); 
+        fileSize = max(curPos + written, fileSize);
         return written;
     }
 
@@ -570,7 +570,7 @@ namespace Stream
 
         const MappableStream * ms = is.getMappable();
         if (ms) return os.write(ms->getBuffer(), total) == total;
-        
+
         uint8 buffer[4096];
         uint64 data = is.read(buffer, min(total, (uint64)4096)); // This works because if fullSize() returns -1 (size not known), it's seens as (uint64)-1, ie the biggest number possible
         while(data == 4096)
@@ -599,7 +599,7 @@ namespace Stream
             if (os.write(&ms->getBuffer()[current], total - current, true) != (total - current)) return false;
             return callback.copiedData(total, total);
         }
-        
+
         uint8 buffer[4096];
         uint64 data = is.read(buffer, min(total, (uint64)4096));
         while(data == 4096)
@@ -614,10 +614,10 @@ namespace Stream
     }
 
     // The clone stream function
-    InputStream * cloneStream(const InputStream & is)    
+    InputStream * cloneStream(const InputStream & is)
     {
-        // If you try to clone a large input stream, it's not the method to use, 
-        // since this function buffers the whole stream. You likely have to redesign the code logic so it 
+        // If you try to clone a large input stream, it's not the method to use,
+        // since this function buffers the whole stream. You likely have to redesign the code logic so it
         // doesn't involve creating such large memory buffers.
         Assert(is.fullSize() < 64000000);
         uint64 currentPos = is.currentPosition();
@@ -628,24 +628,24 @@ namespace Stream
         const_cast<InputStream &>(is).setPosition(currentPos);
         return new Stream::MemoryBlockStream(buffer, is.fullSize(), true);
     }
-    
+
     /** @internal */
     inline int asHex(char ch) { return ch >= '0' && ch <= '9' ? (ch - '0') : (ch >= 'a' && ch <= 'f' ? (ch - 'a' + 10) : (ch >= 'A' && ch <= 'F' ? (ch - 'A' + 10) : 0)); }
 
-    Strings::FastString readString(const InputStream & is, const Strings::FastString & stop) 
+    Strings::FastString readString(const InputStream & is, const Strings::FastString & stop)
     {
-        char ch = 0; 
-        Strings::FastString out; 
+        char ch = 0;
+        Strings::FastString out;
         if (!stop) while (is.read(&ch, 1) == 1 && ch) out += ch;
         else while (is.read(&ch, 1) == 1 && stop.Find(ch) == -1) out += ch;
         return out;
     }
-    
+
     Strings::FastString readHexNumber(const InputStream & is, const Strings::FastString & stop)
     {
-        char ch[3] = { 0, 0, 0 }; 
-        Strings::FastString out; 
-        if (!stop) 
+        char ch[3] = { 0, 0, 0 };
+        Strings::FastString out;
+        if (!stop)
         {
             while (1)
             {
@@ -658,12 +658,12 @@ namespace Stream
             }
         }
         else
-        { 
+        {
             while (1)
             {
                 if (is.read(&ch[0], 1) != 1) return out;
-                if (stop.Find(ch[0]) != -1) return out; // Stop character found 
-                if (is.read(&ch[1], 1) != 1 || stop.Find(ch[1]) != -1) 
+                if (stop.Find(ch[0]) != -1) return out; // Stop character found
+                if (is.read(&ch[1], 1) != 1 || stop.Find(ch[1]) != -1)
                 {
                     out += (char)(asHex(ch[0]) << 4);
                     return out;
@@ -672,5 +672,5 @@ namespace Stream
             }
         }
     }
-    
+
 }

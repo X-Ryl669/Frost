@@ -43,7 +43,7 @@ namespace Logger
 
         // Compound
 
-        AllFlags    =   0xFFFFFFFF,         
+        AllFlags    =   0xFFFFFFFF,
     };
 
 
@@ -58,7 +58,7 @@ namespace Logger
         virtual void gotMessage(const char * message, const unsigned int flags) = 0;
         /** Required virtual destructor */
         virtual ~OutputSink() {};
-        
+
         /** Define the log mask while creating */
         OutputSink(const unsigned int logMask) : logMask(logMask) {}
     };
@@ -79,7 +79,7 @@ namespace Logger
                     dbg_printf("%s\n", (const char*)message);
                 #elif defined(_WIN32)
                     OutputDebugStringA((const char*)message);
-                    OutputDebugStringA("\n");      
+                    OutputDebugStringA("\n");
                 #else
                     fprintf(stdout, "%s\n", (const char*)message);
                 #endif
@@ -87,7 +87,7 @@ namespace Logger
         }
         ConsoleSink(const unsigned int logMask) : OutputSink(logMask) {}
     };
-    
+
 #if defined(_WIN32) || defined(_POSIX)
     /** The Tee sink */
     struct TeeSink : public OutputSink
@@ -140,12 +140,12 @@ namespace Logger
             if (logMask & flags)
             {
                 Threading::ScopedLock scope(lock);
-                fprintf(stderr, "%s\n", (const char*)message);      
+                fprintf(stderr, "%s\n", (const char*)message);
             }
         }
         ErrorConsoleSink(unsigned int logMask) : OutputSink(logMask) {}
     };
-    
+
 #if defined(_WIN32) || defined(_POSIX)
     /** The output sink to a file */
     struct FileOutputSink : public OutputSink
@@ -154,21 +154,21 @@ namespace Logger
     private:
         FILE *          file;
         Threading::Lock lock;
-    
+
         // OutputSink interface
     public:
         virtual void gotMessage(const char * message, const unsigned int flags);
         FileOutputSink(unsigned int logMask, const Strings::FastString & fileName, const bool appendToFile = true) : OutputSink(logMask), file(fopen(fileName, appendToFile ? "ab" : "wb")) {}
         ~FileOutputSink() { Threading::ScopedLock scope(lock); if (file) fclose(file); file = 0; }
     };
-    
+
     /** Structured output sink */
     struct StructuredFileOutputSink : public OutputSink
     {
         // Members
     private:
         Threading::Lock lock;
-    
+
         // Used to rotate the log
         Strings::FastString baseFileName;
         int  breakSize;
@@ -191,12 +191,12 @@ namespace Logger
         virtual void gotMessage(const char * message, const unsigned int flags);
         /** Build a structured output sink for file.
             @param logMask      The log mask to filter logs
-            @param fileName     The file to log into. The name is used as a base name which is rotated 
+            @param fileName     The file to log into. The name is used as a base name which is rotated
                                 every breakSize bytes are output.
-                                Typically, for a log called "test.log", the rotated files will be called 
+                                Typically, for a log called "test.log", the rotated files will be called
                                 "test.0.log" then "test.1.log" then "test.0.log" (and not "test.log").
                                 The initial log file ("test.log"), if already above the breakSize is erased.
-            @param appendToFile If true, the specified log file is open for appending, else it's erased. 
+            @param appendToFile If true, the specified log file is open for appending, else it's erased.
                                 If the log file is already bigger than the breakSize, it's erased whatever the state of this flag
             @param breakSize    The number of byte allowed to fit in the log file. */
         StructuredFileOutputSink(unsigned int logMask, const Strings::FastString & fileName, const bool appendToFile = true, const int breakSize = 2*1024*1024);
@@ -204,18 +204,18 @@ namespace Logger
     };
 #endif // Files
 #endif // Win32 & Linux
-    
+
     /** Set the sink to use */
     extern void setDefaultSink(OutputSink * newSink);
     /** Get a reference on the currently selected default sink */
     extern OutputSink & getDefaultSink();
 
     /** This is the main function for logging any information to the selected sink
-        You'll use it like any other printf like function. 
+        You'll use it like any other printf like function.
         @param flags    Any combination of the Logger::Flags value (the sink will check its own mask against these flags to allow logging or not)
         @param format   The printf like format */
     void log(const unsigned int flags, const char * format, ...);
-/*    
+/*
     static void dlog(const char * file, const int line, const unsigned int flags, const char * format, ...)
     {
         char buffer[2048];
@@ -230,7 +230,7 @@ namespace Logger
         OutputDebugStringA("\r\n");
 #endif
     }
-    
+
 #if _MSC_VER <= 1200
     #define log Logger::rlog
 #else

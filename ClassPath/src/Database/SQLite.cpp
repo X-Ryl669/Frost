@@ -18,7 +18,7 @@
         #define MONOTHREAD_APPLICATION
     #endif
 #else
-    #ifndef _REENTRANT 
+    #ifndef _REENTRANT
         #define MONOTHREAD_APPLICATION
     #endif
 #endif
@@ -35,7 +35,7 @@ namespace Database
             Logger::log(Logger::Error | Logger::Database, "DB ERROR(%d,%s): %s", index, errorType[(int)error], (const char*)message);
         }
     } defaultErrorCallback;
- 
+
     DatabaseConnection::ClassErrorCallback * DatabaseConnection::errorCallback = &defaultErrorCallback;
     const char SQLFormat::escapeQuote = 0;
     const BuildDatabaseConnection * SQLFormat::builder = 0;
@@ -43,9 +43,9 @@ namespace Database
 
     /** The basic system for handling database connections is made this way:
            A static Builder instance (child of BuildDatabaseConnection) (likely SimpleBuilder for SQLite), will create a DatabaseConnection instance.
-           The DatabaseConnection (likely SingleDatabaseConnection or MultipleDatabaseConnection) contains an array of underlying low-level connection objects 
+           The DatabaseConnection (likely SingleDatabaseConnection or MultipleDatabaseConnection) contains an array of underlying low-level connection objects
            (typically sqlite3 *, mysqlclient *, etc...), one for each database specified in the model.
-     
+
         Unless disabled at compile time by macro, each thread owns a unique DatabaseConnection instance (stored in TLS). */
 
 
@@ -57,7 +57,7 @@ namespace Database
         String    URL;
 
         /** Get the low level object used for the index-th connection */
-        virtual void * getLowLevelConnection(const uint32 index = 0) 
+        virtual void * getLowLevelConnection(const uint32 index = 0)
         {
             if (index) return 0;
             return instance;
@@ -71,21 +71,21 @@ namespace Database
             return true;
         }
 
-        /** Get the connection parameters 
-            @param index    The index of the connection to retrieve 
-            @param dbName   On output, set to the database name to connect to 
-            @param dbURL    On output, set to the database URL to connect to (can contain username:password part) 
+        /** Get the connection parameters
+            @param index    The index of the connection to retrieve
+            @param dbName   On output, set to the database name to connect to
+            @param dbURL    On output, set to the database URL to connect to (can contain username:password part)
             @return true on successful connection */
-        virtual bool getDatabaseConnectionParameter(const uint32 index, String & dbName, String & dbURL) const 
+        virtual bool getDatabaseConnectionParameter(const uint32 index, String & dbName, String & dbURL) const
         {
             if (index) return false;
             dbName = databaseName;
             dbURL = URL;
             return true;
         }
-        /** Create models on the database connections 
+        /** Create models on the database connections
             @return true on successful model creation */
-        virtual bool createModels(const bool forceReinstall = false) 
+        virtual bool createModels(const bool forceReinstall = false)
         {
             return SQLFormat::createDatabaseLikeModel(0, getDatabaseRegistry().getDeclaration(databaseName), databaseName);
         }
@@ -103,26 +103,26 @@ namespace Database
     };
 
     SimpleBuilder & getSimpleBuilder() { static SimpleBuilder simpleBuilder; return simpleBuilder; }
-    
+
     // This is used for TLS, each new thread will call this when first used
     DatabaseConnection * constructConnection(Threading::Thread::LocalVariable::Key, DatabaseConnection *) { return SQLFormat::builder ? SQLFormat::builder->buildDatabaseConnection() : 0; }
     void destructConnection(DatabaseConnection * conn) { delete conn; }
     static Threading::Thread::LocalVariable::Key & getTLSKey() { static Threading::Thread::LocalVariable::Key key = 0; return key; }
     static Threading::Thread::LocalVariable * getTLSVariable() { return Threading::Thread::getLocalVariable(getTLSKey()); }
-    
-    
+
+
     // The thread local storage
     void * getSQLiteConnection(uint32 dbIndex)
     {
         // If the builder doesn't exist, construct the default one
-        if (!SQLFormat::builder) 
+        if (!SQLFormat::builder)
         {
-            SQLFormat::builder = &getSimpleBuilder(); 
+            SQLFormat::builder = &getSimpleBuilder();
         }
 
         // The first time we call this, it'll return a null connection, so we can act accordingly
         Threading::Thread::LocalVariable * databaseConnection = getTLSVariable();
-        if (!databaseConnection) 
+        if (!databaseConnection)
         {
             // Ok, build a local variable for all threads, with a new connection for the first one.
             DatabaseConnection * connection = SQLFormat::builder->buildDatabaseConnection();
@@ -134,11 +134,11 @@ namespace Database
         // Specific signal to unregister the local variable key for all thread,
         // but you should now use deleteSQLiteConnection instead.
         Assert(dbIndex != (uint32)-1);
-        
+
         // Ok, get the connection object.
         GetLocalVariable(DatabaseConnection, connection, getTLSKey());
         void * conn = connection ? connection->getLowLevelConnection(dbIndex) : 0;
-        if (conn == 0) 
+        if (conn == 0)
         {
             // If the low level object is not valid, let's create one.
             String dbName, dbURL;
@@ -146,29 +146,29 @@ namespace Database
             conn = SQLFormat::createDatabaseConnection(dbName, dbURL);
             connection->setLowLevelConnection(dbIndex, conn);
         }
-        return conn; 
+        return conn;
     }
     // Delete the database connection
     bool deleteSQLiteConnection(uint32 index)
     {
         // You are supposed to delete already existing connections.
         if (!SQLFormat::builder) return false;
-        
+
         // You are supposed to delete already existing connections.
         Threading::Thread::LocalVariable * databaseConnection = getTLSVariable();
         if (!databaseConnection) return false;
-        
+
         // Specific signal to unregister the local variable key for all thread.
         // It doesn't destruct the connection, you have to do it by your own before calling this.
         if (index == (uint32)-1) { Threading::Thread::removeLocalVariable(getTLSKey()); return true; }
-        
+
         // Ok, get the connection object.
         GetLocalVariable(DatabaseConnection, connection, getTLSKey());
         if (!connection) return false;
         return connection->setLowLevelConnection(index, 0);
     }
-    
-    // Change the default connection builder 
+
+    // Change the default connection builder
     void SQLFormat::useDatabaseConnectionBuilder(BuildDatabaseConnection * _builder)
     {
         SQLFormat::builder = _builder;
@@ -221,21 +221,21 @@ namespace Database
             // If we are in busy mode, it's a deadlock
             Platform::breakUnderDebugger();
 #endif
-        } 
+        }
     }
 
     /** The default implementation  */
-    String SQLFormat::escapeString(const String & sStr, const char embrace, const uint32 dbIndex) 
-    { 
+    String SQLFormat::escapeString(const String & sStr, const char embrace, const uint32 dbIndex)
+    {
         char * escapedStr = sqlite3_mprintf("%q", (const char *)sStr);
         if (escapedStr == NULL) return "";
         String ret = escapedStr;
         sqlite3_free(escapedStr);
-   
-        if (embrace) 
+
+        if (embrace)
             ret = String(embrace) + ret + String(embrace);
 
-        return ret; 
+        return ret;
     }
 
 
@@ -246,7 +246,7 @@ namespace Database
     {
         return ::Database::getLastError((sqlite3*)getSQLiteConnection(dbIndex));
     }
-    
+
     void signalError(const uint32 index, const void * DBConnection = NULL, const char * sql = NULL)
     {
         GetLocalVariable(DatabaseConnection, connection, getTLSKey());
@@ -258,7 +258,7 @@ namespace Database
                 DatabaseConnection::notifyError("Error with invalid database connection");
             return;
         }
-        
+
         sqlite3 * conn = (sqlite3*)(DBConnection ? DBConnection : connection->getLowLevelConnection(index));
         connection->notifyError(index, DatabaseConnection::ClassErrorCallback::BadQuery, String::Print("%s : %s", sql ? sql : "", sqlite3_errmsg(conn)));
     }
@@ -279,26 +279,26 @@ namespace Database
             delete pRet;
             return 0;
         }
-        
+
         // Store the request handle and the count, if provided
         pRet->privateData = pStmt;
 
         return pRet;
     }
-    
+
     const SQLFormat::Results * SQLFormat::sendQuery(const uint32 dbConnection, const String & sStr, const void * DBConnection)
-    {   
+    {
         Logger::log(Logger::Database, "%s [" PF_LLD "]", (const char *)(sStr), (int64)Threading::Thread::getCurrentThreadID());
 
         if (!DBConnection) DBConnection = getSQLiteConnection(dbConnection);
-            
+
         const SQLFormat::Results * pRet = sendQueryInternal(DBConnection, sStr);
         if (!pRet)
         {
             checkBusyDatabase((sqlite3*)DBConnection);
             signalError(dbConnection, DBConnection, (const char *)sStr);
         }
-        
+
         return pRet;
     }
 
@@ -317,7 +317,7 @@ namespace Database
     /** Initialize the SQL library and connect to the server (return true on success) */
     bool SQLFormat::initialize(const String & dataBase, const String & URL, const String & User, const String & Password, const unsigned short Port, const bool selectDatabase, const uint32 dbIndex)
     {
-        getSimpleBuilder().databaseName = dataBase; 
+        getSimpleBuilder().databaseName = dataBase;
         getSimpleBuilder().URL = URL;
         return true;
     }
@@ -334,7 +334,7 @@ namespace Database
     }
 
 
-    // Serialize a blob 
+    // Serialize a blob
     void SQLFormat::serializeBlob(const Database::Blob * inner, String & output)
     {
         unsigned int length = inner->innerData.getLength();
@@ -342,7 +342,7 @@ namespace Database
         char * _out = output.Alloc(finalLength);
         if (!_out) return;
         char * out = &_out[output.getLength()];
-        const unsigned char * in = (const unsigned char*)inner->innerData; 
+        const unsigned char * in = (const unsigned char*)inner->innerData;
         out[0] = 'X'; out[1] = '\'';
         static const uint16 * const hex = (const uint16 * const)(
         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
@@ -359,7 +359,7 @@ namespace Database
         out[length * 2 + 2] = '\'';
         output.releaseLock(finalLength);
     }
-    // Unserialize a blob 
+    // Unserialize a blob
     void SQLFormat::unserializeBlob(Database::Blob * blob, const String & input)
     {
         // Useless in our implementation, but set anyway
@@ -431,8 +431,8 @@ namespace Database
         if (text && text[0] != 0) ret = (String)text;
         return true;
     }
-        
-    /** Get the results of a previous query 
+
+    /** Get the results of a previous query
         rowIndex must never decrease between calls */
     bool SQLFormat::getResults(const SQLFormat::Results * res, Type::Var & ret, const unsigned int rowIndex, const String & fieldName, const unsigned int fieldIndex)
     {
@@ -441,7 +441,7 @@ namespace Database
         // the request handle
         sqlite3_stmt * pStmt = (sqlite3_stmt *)res->privateData;
         // Don't allow index decrease between calls
-        if (res->privateIndex > (int)rowIndex) 
+        if (res->privateIndex > (int)rowIndex)
             return false;
 
         // Check if we need to increase the row index to be on the right row
@@ -454,16 +454,16 @@ namespace Database
                     return false;
             }
         }
-        
+
         // Check for empty iteration testing
         if (fieldIndex == (unsigned int)-1 && !fieldName)
             return true;
 
         // Get an array of all current field in the result
         unsigned int fieldCount = sqlite3_column_count(pStmt);
-        if (fieldCount == 0) 
+        if (fieldCount == 0)
             return false;
-    
+
         // Now find the requested field name
         unsigned int index = 0;
         if (fieldIndex < fieldCount)
@@ -477,7 +477,7 @@ namespace Database
         {
             String columnName = sqlite3_column_name(pStmt, index);
             if (fieldName == columnName)
-                return extractStatement(pStmt, ret, index);                
+                return extractStatement(pStmt, ret, index);
         }
 
         return false;
@@ -488,9 +488,9 @@ namespace Database
     /** Clean the result object */
     void SQLFormat::cleanResults(const SQLFormat::Results * res)
     {
-        if (res == NULL) 
+        if (res == NULL)
             return;
-    
+
         int currentCount = 0;
         // the request handle
 
@@ -524,7 +524,7 @@ namespace Database
     {
         // Check argument
         if (model == NULL) return false;
-            
+
         void * DBConnection = getSQLiteConnection(dbIndex);
         if (!DBConnection) return false;
 
@@ -533,12 +533,12 @@ namespace Database
         if (!forceReinstall)
         {
             res = sendQuery(dbIndex, "SELECT COUNT(*) AS count FROM sqlite_master");
-            if (res != NULL) 
+            if (res != NULL)
             {
                 Var ret = 0;
                 bool hadTables = getResults(res, ret, 0, "count", 0);
                 cleanResults(res);
-                if (hadTables && ret.like((int*)0)) // If we have something in the master table, and if the tables count exist 
+                if (hadTables && ret.like((int*)0)) // If we have something in the master table, and if the tables count exist
                     return true;
             }
         }
@@ -576,7 +576,7 @@ namespace Database
             create += tableName;
             create += " (\n";
             unsigned int j = 0;
-        
+
             for (; j < td->fieldCount; j++)
             {
                 const FieldDescription * field = td->getAbstractFieldDescription(j);
@@ -626,17 +626,17 @@ namespace Database
 
                 create += ",\n";
             }
-        
-            create.rightTrim("\n,"); 
-        
+
+            create.rightTrim("\n,");
+
             create += ") ";
             create += ";";
 
             res = sendQueryInternal(DBConnection, create, &error);
             cleanResults(res);
             if (error.getLength()) return false;
-        
-            
+
+
             // Create indexes if any required.
             if (indexes)
             {
@@ -652,7 +652,7 @@ namespace Database
         // Create new connection here, as you aren't supposed to do this while the database is running
         DatabaseConnection * conn = SQLFormat::builder->buildDatabaseConnection();
         bool ret = false;
-        if (conn) 
+        if (conn)
         {
             // Allow creating files here
             creatingDatabase = true;
@@ -717,9 +717,9 @@ namespace Database
 
     bool SQLFormat::checkDatabaseExists(const uint32 dbIndex)
     {
-        if (!SQLFormat::builder) 
+        if (!SQLFormat::builder)
             SQLFormat::builder = &getSimpleBuilder();
-            
+
         // On MySQL it would have been SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = "dbName"
 
         // The first time we call this, it'll return a null connection, so we can act accordingly
@@ -728,14 +728,14 @@ namespace Database
         connection->getDatabaseConnectionParameter(dbIndex, dbName, dbURL);
         String fullPath = constructFilePath(dbName, dbURL);
         if (!File::Info(fullPath).doesExist()) return false;
-        
+
         // Then check if all the tables in the models exists in the given file
         DatabaseDeclaration * model = getDatabaseRegistry().getDeclaration(dbName);
         if (!model) return false; // Likely the model is empty or non existant, it does not match this file
-        
+
         void * DBConnection = getSQLiteConnection(dbIndex);
         if (DBConnection == NULL) return false; // Not a SQLite3 connection
-        
+
         // Create the tables now
         uint32 tableCount = model->getTableCount();
         if(tableCount)
@@ -744,7 +744,7 @@ namespace Database
             // Then select all the tables in the database
             const Results * res = sendQueryInternal(DBConnection, "SELECT tbl_name FROM sqlite_master WHERE type = 'table';");
             if (!res) return false; // Not table found or error on the database
-            
+
             Strings::StringArray tables;
             Type::Var ret;
             unsigned int i = 0;
@@ -754,15 +754,15 @@ namespace Database
                 i++;
             }
             cleanResults(res);
-            
+
             // It does not match the model
             if (i < tableCount) return false;
-            
+
             for (unsigned int i = 0; i < tableCount; i++)
             {
                 const AbstractTableDescription * td = model->findTable(i);
                 if (!td) return false;
-                
+
                 if (tables.indexOf(td->tableName) == tables.getSize())
                     return false;
             }
@@ -784,8 +784,8 @@ namespace Database
         if(!dataBaseName.getLength() && !URL.getLength()) return 0;
 
         // the good path for the file of the database
-        String fullPath = constructFilePath(dataBaseName, URL);            
-        if(sqlite3_open((const char *)fullPath, &newConnection) != SQLITE_OK) 
+        String fullPath = constructFilePath(dataBaseName, URL);
+        if(sqlite3_open((const char *)fullPath, &newConnection) != SQLITE_OK)
         {
             DatabaseConnection::notifyError("Error in createDatabaseConnection: " + fullPath);
             return 0;
@@ -796,15 +796,15 @@ namespace Database
 
     void SQLFormat::destructCreatedDatabaseConnection(void * DBConnection)
     {
-        if (DBConnection != 0) 
+        if (DBConnection != 0)
             sqlite3_close((sqlite3 *)(DBConnection));
     }
-    
-    
+
+
     bool SQLFormat::resetDatabaseConnection(const uint32 dbIndex, void * newConnection)
     {
         GetLocalVariable(DatabaseConnection, connection, getTLSKey());
-        if (connection) 
+        if (connection)
         {
             connection->setLowLevelConnection(dbIndex, newConnection);
             return true;
@@ -819,15 +819,15 @@ namespace Database
 
 
     void SQLFormat::startTransaction(const uint32 dbIndex)
-    { 
+    {
         cleanResults(sendQuery(dbIndex, "BEGIN IMMEDIATE;"));
     }
     void SQLFormat::commitTransaction(const uint32 dbIndex)
-    { 
+    {
         cleanResults(sendQuery(dbIndex, "COMMIT;"));
     }
     void SQLFormat::rollbackTransaction(const uint32 dbIndex)
-    { 
+    {
         cleanResults(sendQuery(dbIndex, "ROLLBACK;"));
     }
 }

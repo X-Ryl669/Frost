@@ -19,7 +19,7 @@
 #if _MSC_VER <= 1300
     extern "C" int __cdecl _fseeki64(FILE *, __int64, int);
     extern "C" __int64 __cdecl _ftelli64(FILE *);
-#endif 
+#endif
 
 #elif defined(_POSIX)
 #include <sys/types.h>
@@ -175,7 +175,7 @@ namespace File
         return utime(getFullPath(), &utim) == 0;
 #endif
     }
-    
+
     // Copy the file to the given path.
     bool Info::copyTo(const String & destination) const
     {
@@ -195,7 +195,7 @@ namespace File
             return CopyFileW(from.getData(), to.getData(), FALSE) == TRUE;
         }
         // Create the parent directory now
-        if (!destParent.makeDir(true)) return false; 
+        if (!destParent.makeDir(true)) return false;
         Strings::ReadOnlyUnicodeString to = Strings::convert(destination);
         return CopyFileW(from.getData(), to.getData(), FALSE) == TRUE;
 #elif defined(_POSIX)
@@ -215,7 +215,7 @@ namespace File
         radv.ra_offset = 0;
         radv.ra_count = size;
         fcntl(srcFd, F_RDADVISE, &radv);
-        
+
         // Just tell that the source file is not going to be read multiple time and not seeked.
         fcntl( srcFd, F_NOCACHE, 1 );
         fcntl( srcFd, F_RDAHEAD, 1 );
@@ -246,7 +246,7 @@ namespace File
                 if (!destParent.makeDir(true)) return false;
                 // Finally try again to open the destination
                 destFd.Mutate(open(destination, O_WRONLY | O_TRUNC | O_CREAT, status.st_mode));
-                if (destFd < 0) return false; 
+                if (destFd < 0) return false;
             }
         }
 
@@ -593,12 +593,12 @@ namespace File
         return true;
 #endif
     }
-    
+
     // Get the number of contained files/items inside this item.
     uint32 Info::getEntriesCount() const
     {
         if (!isDir() || isLink()) return 1; // We don't follow link in this function
-        
+
 #ifdef _WIN32
         // On directories, under windows, it's not possible to get the file count without iterating it, so let's do it
         WIN32_FIND_DATAW data = {0};
@@ -617,7 +617,7 @@ namespace File
 #elif defined(_POSIX)
         DIR * finder = opendir(getFullPath());
         if (finder == 0) return 0;
-        
+
         uint32 count = 0;
         // Then read the directory
         while (readdir(finder) != NULL)
@@ -631,7 +631,7 @@ namespace File
         return count - 2;
 #endif
     }
-            
+
 
     // Get the complete content as a String.
     String Info::getContent() const
@@ -708,7 +708,7 @@ namespace File
 #endif
         return false;
     }
-    
+
     // Get the metadata information as an opaque buffer.
     String Info::getMetaData() const
     {
@@ -721,9 +721,9 @@ namespace File
 #elif defined(_POSIX)
         struct stat status = {0};
         if (lstat(getFullPath(), &status) != 0) return "";
-        
+
         if (type != Regular && type != Link && type != Directory && type != Device) return ""; // We don't support metadata saving for FIFO or socket
-        
+
         // Save symbolic link specially
         if (S_ISLNK(status.st_mode))
         {
@@ -731,10 +731,10 @@ namespace File
             ssize_t linkSize = readlink(getFullPath(), buffer, ArrSz(buffer));
             if (linkSize <= 0) return ""; // Can't read this symbolic link, so we can't save it in metadata
             buffer[linkSize] = 0;
-            
+
             return String::Print("PS%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX/%s", (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime, buffer);
         }
-        
+
         // Save device node specially
         if (S_ISCHR(status.st_mode) || S_ISBLK(status.st_mode))
         {
@@ -760,7 +760,7 @@ namespace File
         uint64 creatTime = (uint64)metadata.splitUpTo("/").parseInt(16);
         uint64 writeTime = (uint64)metadata.splitUpTo("/").parseInt(16);
         uint64 accesTime = (uint64)metadata.splitUpTo("/").parseInt(16);
-        
+
         // Update the time and attribute
         Strings::ReadOnlyUnicodeString fileName = Strings::convert(getFullPath());
         HANDLE hFile = NULL;
@@ -772,7 +772,7 @@ namespace File
         {
             hFile = CreateFileW(fileName.getData(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL );
         }
-        
+
         if (hFile == INVALID_HANDLE_VALUE) return false;
         // Create the file
         FILETIME creat, acces, writ;
@@ -780,8 +780,8 @@ namespace File
         li.QuadPart = creatTime; creat.dwLowDateTime = li.LowPart; creat.dwHighDateTime = li.HighPart;
         li.QuadPart = accesTime; acces.dwLowDateTime = li.LowPart; acces.dwHighDateTime = li.HighPart;
         li.QuadPart = writeTime; writ.dwLowDateTime = li.LowPart; writ.dwHighDateTime = li.HighPart;
-        
-        
+
+
         SetFileTime(hFile, &creat, &acces, &writ);
         CloseHandle(hFile);
         SetFileAttributesW(fileName.getData(), attribute);
@@ -797,7 +797,7 @@ namespace File
         String otherData = metadata.fromFirst("/").fromFirst("/");
         String hardlinkHash = metadata.midString(0, metadata.getLength() - otherData.getLength() - 1);
         // For now, we can't restore hardlinks, since we don't know the other part to link with
-        
+
         // Let's extract everything else
         struct stat status = {0};
         status.st_mode  = (uint32)otherData.splitUpTo("/").parseInt(16);
@@ -821,7 +821,7 @@ namespace File
                 char buffer[1024] = {0}; memset(buffer, 0, ArrSz(buffer));
                 ssize_t linkSize = readlink(getFullPath(), buffer, ArrSz(buffer));
                 if (linkSize <= 0) return false; // It's a link, but we can't read it, probably permission error, so let's abort now.
-                
+
                 // Compare the link name with the stored version
                 if (otherData != buffer) return false; // Not the same link, don't overwrite it
             } else
@@ -869,7 +869,7 @@ namespace File
         }
 
 
-        
+
         // Set the owner now too
         if (lchown(getFullPath(), status.st_uid, status.st_gid) != 0) return false; // Permission error ?
         // Change the mode too (if required)
@@ -879,7 +879,7 @@ namespace File
             // and this operation is not supported on all unices.
             // So try to deal smartly
             // For example, on Linux, all symlink are 0777 anyway, so avoid calling lchmod which is not supported in that platform.
-            // On BSD, this should still work as expected 
+            // On BSD, this should still work as expected
             struct stat currentStat = {0};
             if (lstat(getFullPath(), &currentStat) == 0 && currentStat.st_mode != status.st_mode && lchmod(getFullPath(), status.st_mode) != 0) return false;
         } else if (chmod(getFullPath(), status.st_mode) != 0) return false;
@@ -887,7 +887,7 @@ namespace File
         struct timeval fix[2];
         fix[0].tv_sec = status.st_atime; fix[1].tv_sec = status.st_mtime;
         fix[0].tv_usec = fix[1].tv_usec = 0;
-        
+
         if (lutimes(getFullPath(), fix) != 0) return false; // Permission error ?
 #else
         return false;
@@ -906,7 +906,7 @@ namespace File
         uint64 creatTime = (uint64)metadata.splitUpTo("/").parseInt(16);
         uint64 writeTime = (uint64)metadata.splitUpTo("/").parseInt(16);
         uint64 accesTime = (uint64)metadata.splitUpTo("/").parseInt(16);
-        
+
 
 
         // Create the file
@@ -915,28 +915,28 @@ namespace File
         li.QuadPart = creatTime; creat.dwLowDateTime = li.LowPart; creat.dwHighDateTime = li.HighPart;
         li.QuadPart = accesTime; acces.dwLowDateTime = li.LowPart; acces.dwHighDateTime = li.HighPart;
         li.QuadPart = writeTime; writ.dwLowDateTime = li.LowPart; writ.dwHighDateTime = li.HighPart;
-        
+
         creation = Time::convert(creat);
         lastAccess = Time::convert(acces);
         modification = Time::convert(writ);
         type = Info::Regular;
         convertAttributes(attribute, permission, type, owner, group);
-        
+
 #elif defined(_POSIX)
         if (!metadata || metadata[0] != 'P') return false; // Can't restore non-posix metadata here. Sorry
-        
+
         // Need to split the metadata array
         bool isSymLink = metadata[1] == 'S';
         // bool isDevNode = metadata[1] == 'T';
         // bool isCharDev = metadata[2] == 'H';
-        
+
         // We don't care about the dev/inode number itself, since we can't restore it.
         // However, we are interested in matching hardlinks so let's extract this.
         metadata.leftTrim("PSTHL");
         String otherData = metadata.fromFirst("/").fromFirst("/");
         String hardlinkHash = metadata.midString(0, metadata.getLength() - otherData.getLength() - 1);
         // For now, we can't restore hardlinks, since we don't know the other part to link with
-        
+
         // Let's extract everything else
         struct stat status = {0};
         status.st_mode = (uint32)otherData.splitUpTo("/").parseInt(16);
@@ -947,7 +947,7 @@ namespace File
         status.st_ctime = (uint64)otherData.splitUpTo("/").parseInt(16);
         status.st_mtime = (uint64)otherData.splitUpTo("/").parseInt(16);
         status.st_atime = (uint64)otherData.splitUpTo("/").parseInt(16);
-     
+
         owner = (uint32)status.st_uid;
         group = (uint32)status.st_gid;
         permission = (uint32)status.st_mode & 0777;
@@ -968,8 +968,8 @@ namespace File
 #endif
         return true;
     }
-    
-    
+
+
     inline String makeLegibleSize(uint64 size)
     {
         const char * suffix[] = { "B", "KB", "MB", "GB", "TB", "PB", "EB" };
@@ -977,7 +977,7 @@ namespace File
         while (size / 1024) { suffixPos++; lastReminder = size % 1024; size /= 1024; }
         return String::Print("%lld.%d%s", size, (lastReminder * 10 / 1024), suffix[suffixPos]);
     }
-    
+
     inline String getOwnerGroupTxt(uint32 owner, uint32 group)
     {
 #ifdef _WIN32
@@ -999,7 +999,7 @@ namespace File
 #endif
         return String::Print("%u:%u", owner, group);
     }
-    
+
     inline String makePerm(uint32 mode)
     {
         static const char *rwx[] = {"---", "--x", "-w-", "-wx", "r--", "r-x", "rw-", "rwx"};
@@ -1018,7 +1018,7 @@ namespace File
         bits[10] = '\0';
         return bits;
     }
-        
+
     // Print the metadata information to something understandable.
     String File::Info::printMetaData(String metadata)
     {
@@ -1026,39 +1026,39 @@ namespace File
         // TODO Handle symlinks
         // Check if the given metadata is good
         if (!metadata || metadata[0] != 'W') return "<NW>";
-        
+
         uint64 mdSize = (uint64)metadata.splitUpTo("/").midString(1, 17).parseInt(16);
         DWORD  attribute = (DWORD)metadata.splitUpTo("/").parseInt(16);
         uint64 creatTime = (uint64)metadata.splitUpTo("/").parseInt(16);
         uint64 writeTime = (uint64)metadata.splitUpTo("/").parseInt(16);
         uint64 accesTime = (uint64)metadata.splitUpTo("/").parseInt(16);
-        
+
 
 
         // Create the file
         FILETIME writ;
         LARGE_INTEGER li;
         li.QuadPart = writeTime; writ.dwLowDateTime = li.LowPart; writ.dwHighDateTime = li.HighPart;
-        
+
         Type typ = Info::Regular;
         uint32 perm = 0, own = 0, grp = 0;
         convertAttributes(attribute, perm, typ, own, grp);
-        
+
         return (typ == Info::Regular ? "-" : "d") + makePerm(perm) + getOwnerGroupTxt(own, grp).alignedTo(19, -1) + " " + makeLegibleSize(mdSize).alignedTo(7,1) + " " + Time::toLocal(Time::Time(Time::convert(writ))).toDate(true);
-        
+
 #elif defined(_POSIX)
         if (!metadata || metadata[0] != 'P') return "<NP>"; // Can't restore non-posix metadata here. Sorry
-        
-        
-        
-        
+
+
+
+
         // We don't care about the dev/inode number itself, since we can't restore it.
         // However, we are interested in matching hardlinks so let's extract this.
         metadata.leftTrim("PSTHL");
         String otherData = metadata.fromFirst("/").fromFirst("/");
         String hardlinkHash = metadata.midString(0, metadata.getLength() - otherData.getLength() - 1);
         // For now, we can't restore hardlinks, since we don't know the other part to link with
-        
+
         // Let's extract everything else
         struct stat status = {0};
         status.st_mode = (uint32)otherData.splitUpTo("/").parseInt(16);
@@ -1069,8 +1069,8 @@ namespace File
         status.st_ctime = (uint64)otherData.splitUpTo("/").parseInt(16);
         status.st_mtime = (uint64)otherData.splitUpTo("/").parseInt(16);
         status.st_atime = (uint64)otherData.splitUpTo("/").parseInt(16);
-        
-        
+
+
         String typeOfFile = "-";
         switch (status.st_mode & S_IFMT)
         {
@@ -1083,17 +1083,17 @@ namespace File
         default: break;
         }
         return typeOfFile + makePerm(status.st_mode & 0xFFFF) + getOwnerGroupTxt(status.st_uid, status.st_gid).alignedTo(19, -1) + " " + makeLegibleSize(status.st_size).alignedTo(7, 1) + " " + Time::Time(status.st_mtime, 0).toDate(true);
-     
+
 #endif
         return "<NA>";
     }
-    
+
     // Check if the given metadata match the current file.
     bool Info::hasSimilarMetadata(String metadata, const Comparand checkMask, const String * override) const
     {
         File::Info useless, tmp;
         if (checkMask == All) return metadata == (override ? *override : getMetaData());
-        
+
         if (!useless.analyzeMetaData(metadata)) return false;
         if (override)
         {
@@ -1114,7 +1114,7 @@ namespace File
         }
         return false;
     }
-    
+
     // Get the real path to the file (resolve the links and directory stack stuff)
     String Info::getRealFullPath() const
     {
@@ -1122,13 +1122,13 @@ namespace File
         Strings::ReadOnlyUnicodeString fileName = Strings::convert(getFullPath());
         wchar_t * fullPath = _wfullpath(NULL, fileName.getData(), 0);
         if (fullPath == NULL) return "";
-        
+
         // Convert to UTF-8 again
         Strings::ReadOnlyUnicodeString unicodePath(fullPath);
         String finalFullPath = Strings::convert(unicodePath);
         free(fullPath);
         return finalFullPath;
-        
+
 #elif defined(_POSIX)
         char * fullPath = realpath(getFullPath(), NULL);
         if (fullPath == NULL) return "";
@@ -1170,7 +1170,7 @@ namespace File
 #endif
         return false;
     }
-    
+
 
     // Get a stream from this file.
     BaseStream * Info::getStream(const bool blocking, const bool forceReadOnly, const bool overwrite) const
@@ -1211,7 +1211,7 @@ namespace File
             }
         }
         buildNameAndPath(fullPath);
-        
+
 #elif defined(_POSIX)
         wordexp_t p;
         if (expandVar && wordexp( (const char*)fullPath, &p, 0 ) == 0)
@@ -1272,7 +1272,7 @@ namespace File
         return info.restatFile();
 #endif
     }
-    
+
 #if defined(_POSIX)
     inline Info::Type convertDirType(uint8 dirType)
     {
@@ -1320,7 +1320,7 @@ namespace File
         struct dirent * ent = readdir(finder);
         if (ent == NULL) { closedir(finder); finder = 0; return false; }
 
-        
+
         // Ok, need to stat the file name then
         info.name = ent->d_name;
         info.path = path.normalizedPath(Platform::Separator, false);;
@@ -1445,7 +1445,7 @@ namespace File
                     // If output stack is absolute, we don't kill it
                     #ifdef _WIN32
                     if (outputStack.midString(1, outputStack.getLength()) != ":")
-                    #else 
+                    #else
                     if (outputStack != PathSeparator)
                     #endif
                         outputStack = "";
@@ -1572,7 +1572,7 @@ namespace File
         HANDLE hEnum = NULL;
         DWORD dwResult = WNetOpenEnumW( RESOURCE_CONNECTED, RESOURCETYPE_ANY, 0, NULL, &hEnum );
         if (dwResult != NO_ERROR) { FreeLibrary(hMod); return false; }
-        
+
         do
         {
             DWORD cbBuffer = 16384;
@@ -1592,7 +1592,7 @@ namespace File
             }
             GlobalFree( (HGLOBAL) lpnrDrv );
         } while( dwResult != ERROR_NO_MORE_ITEMS );
-        
+
         bool ret = WNetCloseEnum(hEnum) == NO_ERROR;
         FreeLibrary(hMod);
         return ret;
@@ -1604,7 +1604,7 @@ namespace File
 #ifdef _WIN32
         // Disable popup asking to insert a CD or a disk
         UINT previousErrorMode = SetErrorMode(SEM_FAILCRITICALERRORS);
-        // If the function succeeds, the return value is a bitmask representing the currently available disk drives. Bit position 0 
+        // If the function succeeds, the return value is a bitmask representing the currently available disk drives. Bit position 0
         // (the least-significant bit) is drive A, bit position 1 is drive B, bit position 2 is drive C, and so on.
         DWORD dwID = GetLogicalDrives();
         for(uint32 i = 0; i < 26; i++)
@@ -1649,7 +1649,7 @@ namespace File
             // Check if the access will not be denied
             if (access(path, R_OK | X_OK) == 0)
             {
-                if (paths.appendIfNotPresent(path) == (paths.getSize() - 1) && remoteNames) 
+                if (paths.appendIfNotPresent(path) == (paths.getSize() - 1) && remoteNames)
                     remoteNames->Append(remote);
             }
 
@@ -1804,7 +1804,7 @@ namespace File
         return true;
     }
 
-    // Check if the stream is finished. 
+    // Check if the stream is finished.
     bool Stream::endOfStream() const
     {
         return feof(file) != 0;
@@ -2095,8 +2095,8 @@ namespace File
 #endif
         return true;
     }
-    
-    // Check if the stream is finished. 
+
+    // Check if the stream is finished.
     bool AsyncStream::endOfStream() const
     {
         return getPosition() == getSize();

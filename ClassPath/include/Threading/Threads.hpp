@@ -20,13 +20,13 @@
 /** Classes that provides multithreading functionality.
     You'll find the abstract class Threading::Thread to implement a safe thread.
     There's also the Threading::WithStartMarker that let you wait until the thread is started.
-    If you need to run some code asynchronously, you'll have to use Threading::AsyncExecution. 
-    
+    If you need to run some code asynchronously, you'll have to use Threading::AsyncExecution.
+
     There's also the multiple lock system, like:
-    - Threading::Lock (based on Futex or Critical section), 
+    - Threading::Lock (based on Futex or Critical section),
     - Threading::Event (useful to signal a condition atomically)
     - Threading::ReadWriteLock (multiple reader can access a reader-locked section, but only one write is allowed to enter a writer locked section)
-    - Threading::SharedDataWriter / Threading::SharedDataReader / Threading::SharedDataReaderWriter are used to implement atomic operations on integers 
+    - Threading::SharedDataWriter / Threading::SharedDataReader / Threading::SharedDataReaderWriter are used to implement atomic operations on integers
     - Threading::LockingObjPtr et al, are used to automatically lock an object on access transparently (à la serialize in Java) */
 namespace Threading
 {
@@ -55,10 +55,10 @@ namespace Threading
         and overload the RunThread pure virtual method.
 
 
-        It is not safe to call DestroyThread from the thread's RunThread 
+        It is not safe to call DestroyThread from the thread's RunThread
         method. Doing so could result in deadlocking.
-        
-        The proper way to stop the thread from RunThread is to return from 
+
+        The proper way to stop the thread from RunThread is to return from
         the method (this also ensure correct stack and object destruction).
 
         It is safe to call isRunning from any thread, including inside
@@ -80,9 +80,9 @@ namespace Threading
         /** The thread local storage information */
         struct LocalVariable
         {
-#ifdef _WIN32 
+#ifdef _WIN32
             typedef DWORD Key;
-#else 
+#else
             typedef pthread_key_t Key;
 #endif
 
@@ -94,14 +94,14 @@ namespace Threading
             virtual Strings::FastString getName() const = 0;
             /** Get the current key */
             virtual const Key getKey() const = 0;
-            
+
             LocalVariable * next;
-            
+
             LocalVariable() : next(0) {}
             // Linked list destruction is not a good idea here
             virtual ~LocalVariable() { /* if (next) next->destruct(); next = 0; */ }
         };
-        
+
         /** The templated version of such variable */
         template <class T>
         class LocalVariableImpl : public LocalVariable
@@ -114,45 +114,45 @@ namespace Threading
             typedef void (*DestructFunc) (T * currentGet);
             ConstructFunc   constructFunc;
             DestructFunc    destructFunc;
-            
+
             // Helper functions
-            T * get() 
-            { 
-#ifdef _WIN32 
+            T * get()
+            {
+#ifdef _WIN32
                 return (T*)TlsGetValue(key);
-#else 
+#else
                 return (T*)pthread_getspecific(key);
 #endif
             }
-            
+
             void set(T * value)
             {
-#ifdef _WIN32 
+#ifdef _WIN32
                 TlsSetValue(key, (LPVOID)value);
-#else 
+#else
                 pthread_setspecific(key, (void *)value);
 #endif
             }
-            
+
             static void defaultDestructWithDelete(T * val) { delete val; }
-            
+
         public:
-            inline operator T*  () 
-            { 
-                T* ret = get(); 
+            inline operator T*  ()
+            {
+                T* ret = get();
                 if (!ret) { construct(); return get(); }
                 return ret;
             }
-            
-            LocalVariableImpl & operator = (T * other) 
+
+            LocalVariableImpl & operator = (T * other)
             {
                 if (other == this) return *this;
-                
-                delete get(); 
+
+                delete get();
                 set(other);
                 return *this;
             }
-            
+
             virtual void destruct() { (*destructFunc)(get()); set(0); }
             virtual void construct() { set((*constructFunc)(key, get())); }
             Strings::FastString getName() const
@@ -161,16 +161,16 @@ namespace Threading
                 return Strings::FastString::Print("Thread Local Variable of type %s and key " PF_LLD , (const char*)finalType, (int64)key);
             }
             const Key getKey() const { return key; }
-            
-            
-            LocalVariableImpl(const Key key, ConstructFunc cons, DestructFunc des = &defaultDestructWithDelete) : key(key), constructFunc(cons), destructFunc(des) 
+
+
+            LocalVariableImpl(const Key key, ConstructFunc cons, DestructFunc des = &defaultDestructWithDelete) : key(key), constructFunc(cons), destructFunc(des)
             {}
-            LocalVariableImpl(const Key key, T * val, ConstructFunc cons, DestructFunc des = &defaultDestructWithDelete) : key(key), constructFunc(cons), destructFunc(des) 
+            LocalVariableImpl(const Key key, T * val, ConstructFunc cons, DestructFunc des = &defaultDestructWithDelete) : key(key), constructFunc(cons), destructFunc(des)
             { set(val); }
-            
+
             ~LocalVariableImpl() { destruct(); }
         };
-        
+
         /** This is used to keep a list of the local variable that are used in our thread
             This is global to all threads.
             Beware that this is not an optimized list, as the number of TLS variable is limited anyway. */
@@ -181,21 +181,21 @@ namespace Threading
             LocalVariable * first;
             /** The global lock */
             FastLock        lock;
-            
+
             /** Get the last variable */
             inline LocalVariable * last() { LocalVariable * cur = first; while (cur && cur->next) cur = cur->next; return cur; }
             /** Count the number of variable */
             inline size_t getSize() { ScopedLock scope(lock); size_t size = 0; LocalVariable * cur = first; while (cur) { cur = cur->next; size ++; } return size; }
             /** Log the remaining local variable on the logger */
             static bool logExistingVariable(LocalVariable * var);
-            
+
             // Interface
         public:
-            /** Add a local variable to the list 
-                @param localVariable  A local variable that's owned by our class 
+            /** Add a local variable to the list
+                @param localVariable  A local variable that's owned by our class
                 @return false if the number of thread local variable is too high for this system */
             bool addVariable(LocalVariable * localVariable);
-            /** Add a local variable to the list 
+            /** Add a local variable to the list
                 @param value    A pointer on a new allocated variable that will be used for this thread's local version once created (it's owned by this thread)
                 @param consFunc A pointer to a function that will be called in other thread to construct such a variable when accessed for the first time
                 @param desFunc  A pointer to a function that will be called in other thread to destruct such a variable when leaving the thread */
@@ -212,33 +212,33 @@ namespace Threading
                 // Then append such a variable
                 return addVariable(new LocalVariableImpl<T>(newKey, value, consFunc, desFunc)) ? newKey : 0;
             }
-            
+
             /** Remove a variable from the list.
-                Beware that all other thread must be stopped before doing this else it'll failed whenever a thread try to access the removed variable 
+                Beware that all other thread must be stopped before doing this else it'll failed whenever a thread try to access the removed variable
                 @warning This has nothing to do with deleting the thread local version of the variable which is done automatically when thread exits */
             void removeVariable(LocalVariable::Key key);
-            
-            /** Enumerate the variables.  
+
+            /** Enumerate the variables.
                 @param func     A pointer on a bool function(LocalVariable * var) function
                 @warning You can't add/remove a variable in the same thread which is enumerating, since the list is locked during enumeration */
             inline bool enumerateVariables(bool (*func)(LocalVariable *)) { ScopedLock scope(lock); LocalVariable * cur = first; while (cur) { if (!(*func)(cur)) return false; cur = cur->next; } return true; }
-            
-            
-            /** Find a local variable by key, and return it. 
+
+
+            /** Find a local variable by key, and return it.
                 @return 0 on error or not found */
             LocalVariable * findByKey(LocalVariable::Key key) { ScopedLock scope(lock); LocalVariable * cur = first; while (cur) { if (cur->getKey() == key) return cur; cur = cur->next; } return 0; }
-            
+
             LocalVariableList() : first(0) {}
-            ~LocalVariableList() 
-            { 
+            ~LocalVariableList()
+            {
                 // Called when the static object is destructed, expected after the main program is stopped.
                 enumerateVariables(logExistingVariable);
-                while (first) { removeVariable(first->getKey()); } 
+                while (first) { removeVariable(first->getKey()); }
             }
         };
 #define GetLocalVariable(X, Y, key) X * Y = 0; { Threading::Thread::LocalVariableImpl<X>* tmpVar = dynamic_cast< Threading::Thread::LocalVariableImpl<X>* >(Threading::Thread::getLocalVariable(key)); Y = tmpVar ? tmpVar->operator X*() : 0; }
-        
-        
+
+
         static LocalVariableList & getLocalVariableList();
 #endif
 
@@ -251,7 +251,7 @@ namespace Threading
             virtual void threadLeaving(Thread * leavingThread) = 0;
             virtual ~Leaving() {}
         };
-    
+
         // Members
     protected:
         // Those members here must not be used outside this object
@@ -269,14 +269,14 @@ namespace Threading
 #endif
         /** The thread leaving callback, if provided */
         Leaving *               leaving;
-    
-        // Give no access to child classes 
+
+        // Give no access to child classes
     private:
         /** The run condition */
-        volatile RunCondition   run; 
+        volatile RunCondition   run;
         /** This thread lock */
         mutable  Lock           lock;
-        
+
 
         // Interface
     public:
@@ -290,11 +290,11 @@ namespace Threading
         virtual uint32 runThread() = 0;
         /** Is the thread running ? (this is thread safe, as it locks the object) */
         bool isRunning() const;
-        
+
 #ifdef _WIN32
         /** The run thread hook */
         static DWORD RunThread(LPVOID pVoid);
-#else 
+#else
         /** The run thread hook */
         static void* RunThread(void* pVoid);
 
@@ -306,10 +306,10 @@ namespace Threading
 #ifdef _POSIX
         /** Stop the thread, get its stack and resume (Linux only) */
         Strings::FastString getStack();
-    
+
         /** Install the dump stack handler for main thread */
         static void installMainThreadHandler();
-        
+
         /** @cond Private
             Stack only stuff */
     private:
@@ -397,14 +397,14 @@ namespace Threading
         virtual ~Thread();
     };
 
-    /** Simply add an event to make sure the thread is started before destroying it. 
+    /** Simply add an event to make sure the thread is started before destroying it.
         Usage is very simple:
-        @code 
-            // Add WithStartMarker to base class list 
+        @code
+            // Add WithStartMarker to base class list
             class MyClass : public Thread, public WithStartedMarker
             {
             [...]
-                uint32 RunThread() 
+                uint32 RunThread()
                 {   // Add Started() call to tell any waiter we have started
                     started()
                     // [...]
@@ -418,7 +418,7 @@ namespace Threading
             //  [...]
         @endcode
     */
-    class WithStartMarker 
+    class WithStartMarker
     {
         // The private member
     private:
@@ -436,13 +436,13 @@ namespace Threading
     public:
         /** Default constructor */
         WithStartMarker(const char * name = NULL) : start(name, Event::ManualReset) {}
-        
+
         /** Allow ScopedPP to access us directly */
         friend struct ScopedPP;
     };
 
     /** A simple scheduling thread.
-        This is used to trigger predefined actions when the given delay is elapsed 
+        This is used to trigger predefined actions when the given delay is elapsed
         @warning An asynchronous thread is very hard to get right (deadlock / livelock), so please avoid using this unless you are used to this.
         @warning The callback is called in the asynchronous thread context. You can't cancel a scheduling inside the callback's code.
         @code
@@ -455,7 +455,7 @@ namespace Threading
             async.schedule(delay);
             // You can also unschedule something
             async.cancelScheduling();
-        @endcode 
+        @endcode
         @sa Callback::delayExpired */
     class AsyncExecution : public Thread, public WithStartMarker
     {
@@ -465,11 +465,11 @@ namespace Threading
             @sa AsyncExecution */
         struct Callback
         {
-            /** The method that is called back 
-                @return true if you want to be scheduled again with the same delay or false for one shot 
+            /** The method that is called back
+                @return true if you want to be scheduled again with the same delay or false for one shot
                 @warning The method is not volatile here. This means that the call shouldn't take any lock.
-                
-                If you can't insure that there there is no lock taken, then your code must call 
+
+                If you can't insure that there there is no lock taken, then your code must call
                 cancelScheduling at the very beginning of your destructor, like this:
                 @code
                     struct MyClass : public AsyncExecution::Callback
@@ -477,19 +477,19 @@ namespace Threading
                         AsyncExecution             asyncObj;
                         Lock                       lock;
                     [...]
-                        void delayExpired() 
-                        { 
-                            // Call whatever locking method 
+                        void delayExpired()
+                        {
+                            // Call whatever locking method
                             lock.Acquire();
                             lock.Release();
                         }
-                    
-                        // Make sure that destruction code doesn't do any creation or locking whatsoever due 
+
+                        // Make sure that destruction code doesn't do any creation or locking whatsoever due
                         // to async callback being triggered.
-                        // This should be done before any other code is called in the destructor, 
-                        // to prevent corrupted object state when calling the asynchronous method 
-                        virtual ~MyClass() 
-                        { 
+                        // This should be done before any other code is called in the destructor,
+                        // to prevent corrupted object state when calling the asynchronous method
+                        virtual ~MyClass()
+                        {
                             // If the callback is being processed, the object is still valid here
                             asyncObj.cancelScheduling(); // This waits until the asynchronous callback is finished anyway
                             [...] // Here you can take your locks, this won't deadlock, or worst, crash.
@@ -505,7 +505,7 @@ namespace Threading
                             //     delete[] array;
                             //     array = 0; // This is useless when multithreading
                             // } // The async callback now could use array here, and crash
-                            // asyncObj.cancelScheduling(); 
+                            // asyncObj.cancelScheduling();
                         }
                     };
                 @endcode */
@@ -522,8 +522,8 @@ namespace Threading
         Callback &  callback;
 
         // Interface
-    public:    
-        /** Schedule an asynchronous call. 
+    public:
+        /** Schedule an asynchronous call.
             @warning If there is already a call scheduled, it's canceled, and a new one is started */
         bool schedule(const uint32 millisecond)
         {
@@ -531,7 +531,7 @@ namespace Threading
             writer = millisecond;
             // Stop the thread if it is already running
             if (isRunning()) { cancelScheduling(); }
-            if (!createThread() || !waitUntilStarted()) return false;   
+            if (!createThread() || !waitUntilStarted()) return false;
             return true;
         }
         /** Cancel a programmed schedule.
@@ -539,7 +539,7 @@ namespace Threading
         inline void cancelScheduling() { destroyThread(); }
 
         // Thread interface
-    private: 
+    private:
         /** Run the thread */
         virtual uint32 runThread()
         {
@@ -547,7 +547,7 @@ namespace Threading
             SharedDataReader reader(delay);
             while (isRunning())
             {
-                // Allow fast closing 
+                // Allow fast closing
                 uint32 delay = reader;
                 while (isRunning() && delay > 100)
                 {
@@ -559,22 +559,22 @@ namespace Threading
             }
             return 0;
         }
-        
+
         // Construction
     public:
         /** Default construction */
         AsyncExecution(Callback & callback) : Thread("AsyncExec"), WithStartMarker("AsyncExM"), delay(0), callback(callback) {}
     };
-    
+
     /** A Job thread.
         This is used to trigger the same code asynchronously and/or synchronously.
-        Typically, you'll construct this object giving it the instance of the class to run, 
+        Typically, you'll construct this object giving it the instance of the class to run,
         and a pointer to a method of this class.
-        Unless you run the method synchronously, you should keep a pointer on the instance of 
+        Unless you run the method synchronously, you should keep a pointer on the instance of
         this object, until the method completed
-        
+
         @param Obj  The class to use for instance
-     
+
         Example code:
         @code
             struct MyObj {
@@ -583,19 +583,19 @@ namespace Threading
                 // Step by step version (this is optional, return false when done)
                 bool longProcessStep(int step);
             };
-     
+
             MyObj a;
-            
+
             JobThread<MyObj> job(a, &MyObj::longProcess); // Or longProcessStep for the step by step version
-     
+
             job.runJob(true); // Run synchronously
             Assert(job.isFinished()); // Should always be the case when running synchronously
-            
+
             job.runJob(); // Run asynchrounously
             while (!job.isFinished() && !cancelPressed) displayProgressBar();
-            
+
             if (cancelPressed) job.cancel(); // Beware, this will likely leak, since it's a brutal cancelling
-            
+
             // If you need to run with progress feedback, then your process should have a int (*) (int) signature, that gives progress.
             // Then, job.cancel() will clean nicely, and you can get feedback with:
             printf("Job process so far: %g %%\n", job.progress() * 100.0 / 134); // 134 is the number of steps expected in MyObj's progress in this example
@@ -609,7 +609,7 @@ namespace Threading
         typedef void (Obj::*OneShot)();
         /** Pointer to a step by step method */
         typedef bool (Obj::*Step)(uint32);
-        
+
         /** The object's instance */
         Obj   & instance;
         /** The pointer to method wrapper */
@@ -619,7 +619,7 @@ namespace Threading
         mutable Event done, cancelEvent;
         /** The job progress */
         uint32  progressIndex;
-        
+
         // Implementation
         virtual uint32 runThread()
         {
@@ -629,7 +629,7 @@ namespace Threading
         }
         // Helper to avoid repeating tedious code
         bool runIntern(uint32 prog) { if (oneShot) { (instance.*oneShot)(); return false; } return (instance.*step)(prog); }
-        
+
         // Interface
     public:
         /** Run the job synchronously or not */
@@ -640,13 +640,13 @@ namespace Threading
             if (synchronously) { while (runIntern(progressIndex++)) {} done.Set(); }
             else createThread();
         }
-        
+
         /** Check if the job has finished */
         bool isFinished() const { return done.Wait((TimeOut)InstantCheck); }
-        
+
         /** Check the progress so far */
         uint32 progress() const { return progressIndex; } // Read 32 bits are atomic on most platform
-        
+
         /** Cancel the thread */
         bool cancelJob(const TimeOut timeoutMs = Infinite)
         {
@@ -654,7 +654,7 @@ namespace Threading
             if (oneShot && !done.Wait((TimeOut)InstantCheck)) return destroyThread(true);
             return done.Wait((TimeOut)timeoutMs);
         }
-        
+
         /** Construction with one shot method with this signature: void Obj::method() */
         JobThread(Obj & instance, OneShot shot, const char * name = NULL) : instance(instance), oneShot(shot), step(0), done(name, Event::ManualReset, Event::InitiallySet), cancelEvent(name, Event::AutoReset), progressIndex(0) {}
         /** Construction with step by step method with this signature: bool Obj::step(int progress) */

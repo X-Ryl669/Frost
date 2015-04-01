@@ -44,8 +44,8 @@ CFLAGS += -O2
 endif
 
 ifeq ($(CONFIG),Debug)
-CXXFLAGS += -g -O0
-CFLAGS += -g -O0
+CXXFLAGS += -g -O0 -DDEBUG=1
+CFLAGS += -g -O0 -DDEBUG=1
 endif
 
 
