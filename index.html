@@ -251,9 +251,9 @@ Yet, the backup should be as small as possible, encrypted and indexed.
 <li>Deduplication (required for the feature below)</li>
 <li>Snapshot mode (no full/iterative backup, each backup is consistent)</li>
 <li>No dependency (except OpenSSL for cryptography, SQLite3 for embedded database)</li>
+<li>Support for multiple compression type with pluggable filtering for best algorithm selection</li>
 <li>in v2: Data parity computation for fixing any byte corruption</li>
 <li>in v2: Support multiple file transfer protocol (currently using FUSE)</li>
-<li>in v2: Support for multiple compression type with pluggable filtering for best algorithm selection (DONE)</li>
 <li>in v2: FUSE mountable of any backup version</li> 
 </ul>
 <label for="tab4" style="text-decoration : underline; cursor: hand;">Show me how to use it.</label>
@@ -360,7 +360,7 @@ the hash for the data. Storing this file on the remote server gives any attacker
 <li><em>The backup set.</em> These files are encrypted and compressed <em>multichunks</em>. They store individual "chunks" from each file being backed up, resulting 
 from the deduplication process. From a usual point of view, it's like an archive, that's split in pseudo fixed size segments. 
 Loosing them means loosing (part of) your backup set.<br/>
-<em>They are named "Base85EncodingOfMultchunkHash.#" on the filesystem. You can set their folder location with the --remote option.</em>
+<em>They are named "Base16EncodingOfMultchunkHash.#" on the filesystem. You can set their folder location with the --remote option.</em>
 </li>
 </ol>
 
@@ -394,6 +394,11 @@ $ mount [...]</pre>
 <pre>$ Frost --restore /path/to/restore/to #revision# --remote /mnt/remote</pre>
 <p>To backup with a file containing per-line exclusion rules:</p>
 <pre>$ Frost --backup /path/to/backup --remote /mnt/remote --exclude exclusion.list</pre>
+<p>To skip compressing already compressed data (like JPG, MP3, etc):</p>
+<pre>$ Frost --backup /path/to/backup --remote /mnt/remote --entropy 0.965</pre>
+<p>To compute your data entropy level so you can decide which threshold to use for compressing data:</p>
+<pre>$ tar -cf shouldCompress.tar /path/to/compressibleFiles; tar -cf shouldNotCompress.tar /path/to/notCompressibleFiles</pre>
+<pre>$ Frost --test entropy shouldCompress.tar 2>&1 | grep '>>>'; Frost --test entropy shouldNotCompress.tar 2>&1 | grep '>>>';</pre>
 <br/><br/>
 <label for="tab5" style="text-decoration : underline; cursor: hand;">Ok, let me try this.</label>
 
