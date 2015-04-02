@@ -312,6 +312,13 @@ namespace Frost
             return true;
         }
 
+        static String getFilterArgument(CompressorToUse actualComp)
+        {
+            if (actualComp == Default) actualComp = compressor;
+            const char * compressorName[] = { "none", "zLib", "BSC" };
+            return String::Print("%d:%s:AES_CTR", File::MultiChunk::MaximumSize, compressorName[actualComp]);
+        }
+
         bool closeMultiChunk(const String & backupTo, File::MultiChunk & multiChunk, uint64 multiChunkID, uint64 * totalOutSize, ProgressCallback & callback, uint64 & previousMultiChunkID, CompressorToUse actualComp)
         {
             bool worthTelling = multiChunk.getSize() > 2*1024*1024;
@@ -371,7 +378,6 @@ namespace Frost
             if (worthTelling && !callback.progressed(ProgressCallback::Backup, TRANS("Multichunk closed"), 0, 0, 0, 0, ProgressCallback::KeepLine))
                 return false;
 
-            const char * compressorName[] = { "none", "zLib", "BSC" };
             DatabaseModel::MultiChunk dbMChunk;
             if (previousMultiChunkID)
             {
@@ -381,7 +387,7 @@ namespace Frost
                 {   // Same multichunk, so let's modify it (remove the previous file)
                     File::Info(backupTo + dbMChunk.Path).remove();
                     // Update it
-                    dbMChunk.FilterArgument = String::Print("%d:%s:AES_CTR", File::MultiChunk::MaximumSize, compressorName[compressor]);
+                    dbMChunk.FilterArgument = getFilterArgument(actualComp);
                     dbMChunk.Path = multiChunkHash + ".#";
                     dbMChunk.ID = Database::Index::WantNewIndex;
                     previousMultiChunkID = 0;
@@ -393,7 +399,7 @@ namespace Frost
             // Create the chunk in the database now
             dbMChunk.ChunkListID = multiChunkID;
             dbMChunk.FilterListID = 3;
-            dbMChunk.FilterArgument = String::Print("%d:%s:AES_CTR", File::MultiChunk::MaximumSize, compressorName[compressor]);
+            dbMChunk.FilterArgument = getFilterArgument(actualComp);
             dbMChunk.Path = multiChunkHash + ".#";
             dbMChunk.ID = Database::Index::WantNewIndex;
 
@@ -958,9 +964,9 @@ namespace Frost
         uint64 totalOutSize;
 
         File::TTTDChunker chunker;
-        File::MultiChunk  multiChunk;
-        uint64            multiChunkListID;
-        uint64            previousMCID;
+        File::MultiChunk  compMultiChunk, encMultiChunk;
+        uint64            compMultiChunkListID, encMultiChunkListID;
+        uint64            compPreviousMCID, encPreviousMCID;
 
         PathIDMapT           prevFilesInDir;
         String               prevParentFolder;
@@ -1169,10 +1175,17 @@ namespace Frost
                         else
                         {
                             // The chunk does not exist, so let's append to the current multichunk, and create an entry for it
+
+                            // We need to figure out where this chunk should go
+                            double entropy = compMultiChunk.getChunkEntropy(&temporaryChunk);
+                            File::MultiChunk & multiChunk = entropy <= Helpers::entropyThreshold ? compMultiChunk : encMultiChunk;
+                            uint64 & multiChunkListID = entropy <= Helpers::entropyThreshold ? compMultiChunkListID : encMultiChunkListID;
+                            uint64 & previousMCID = entropy <= Helpers::entropyThreshold ? compPreviousMCID : encPreviousMCID;
+
                             if (!multiChunk.canFit(temporaryChunk.size))
                             {
                                 // Close this multichunk, and apply filters
-                                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize, callback, previousMCID))
+                                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize, callback, previousMCID, entropy <= Helpers::entropyThreshold ? Helpers::Default : Helpers::None))
                                     return false;
                                 // Allocate a new chunk list
                                 multiChunkListID = 0;
@@ -1180,8 +1193,8 @@ namespace Frost
                             // Append to the current multichunk
                             size_t offsetInMC = multiChunk.getSize();
                             uint8 * chunkBuffer = multiChunk.getNextChunkData(temporaryChunk.size, temporaryChunk.checksum);
-                            if (!chunkBuffer)
-                                return false;
+                            if (!chunkBuffer) return false;
+
                             memcpy(chunkBuffer, temporaryChunk.data, temporaryChunk.size);
 
                             // Then add to the chunk list
@@ -1240,16 +1253,11 @@ namespace Frost
             return callback.progressed(ProgressCallback::Backup, info.name, 0, 0, seen, total, ProgressCallback::FlushLine);
         }
 
-        /** Finish the current multichunk, as it's the end of the backup process */
-        bool finishMultiChunk()
+        /** Accessible wrapper from outside to finish the multichunks */
+        bool finishMultiChunks()
         {
-            // Check if we started a multichunk (need to close it in that case)
-            if (multiChunk.getSize())
-            {
-                Assert(multiChunkListID);
-                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize, callback, previousMCID))
-                    return false;
-            }
+            if (!finishMultiChunk(compMultiChunk, compMultiChunkListID, compPreviousMCID, Helpers::Default)) return false;
+            if (!finishMultiChunk(encMultiChunk, encMultiChunkListID, encPreviousMCID, Helpers::None)) return false;
 
             // Marks the currently missing item as deleted in database
             PathIDMapT::IterT iter = prevFilesInDir.getFirstIterator();
@@ -1272,10 +1280,19 @@ namespace Frost
             {
                 Frost::backupWorked = true;
                 // If we were appending to a multichunk, remove the previous multichunk
-                if (previousMCID)
+                if (compPreviousMCID)
                 {
                     DatabaseModel::MultiChunk mc;
-                    mc.ID = previousMCID;
+                    mc.ID = compPreviousMCID;
+                    // Remove the file from the disk first
+                    File::Info(backupTo + mc.Path).remove();
+                    // Then from the database too
+                    mc.Delete();
+                }
+                if (encPreviousMCID)
+                {
+                    DatabaseModel::MultiChunk mc;
+                    mc.ID = encPreviousMCID;
                     // Remove the file from the disk first
                     File::Info(backupTo + mc.Path).remove();
                     // Then from the database too
@@ -1285,34 +1302,58 @@ namespace Frost
             return callback.progressed(ProgressCallback::Backup, TRANS("Done"), 0, 0, 0, 0, ProgressCallback::FlushLine);
         }
 
+        /** Finish the current multichunk, as it's the end of the backup process */
+        bool finishMultiChunk(File::MultiChunk & multiChunk, uint64 & multiChunkListID, uint64 & previousMCID, const Helpers::CompressorToUse comp)
+        {
+            // Check if we started a multichunk (need to close it in that case)
+            if (multiChunk.getSize())
+            {
+                Assert(multiChunkListID);
+                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize, callback, previousMCID, comp))
+                    return false;
+            }
+            return true;
+        }
+
+        /** Reopen an existing multichunk */
+        void reopenMultichunk(Helpers::CompressorToUse comp, File::MultiChunk & multiChunk, uint64 & multiChunkListID, uint64 & previousMCID)
+        {
+            String compFilterArg = Helpers::getFilterArgument(comp);
+
+            // First reopen multichunk
+            RowIterT lastMC = (Select("*").Max("ID", "MaxID").From("MultiChunk").Where("FilterArgument") == compFilterArg);
+            if (lastMC)
+            {
+                File::Info lastMultichunk(backupTo + lastMC["Path"]);
+                // If the multichunk exists and is not filled at more than 80% of the maximum allowed size
+                if (lastMultichunk.doesExist() && (lastMultichunk.size * 100) < (File::MultiChunk::MaximumSize * 80))
+                {
+                    // Reopen the previous multichunk. How is it done ?
+                    // First, we load it in our multichunk
+                    String error = Helpers::readMultichunk(backupTo + lastMC["Path"], lastMC["FilterArgument"], multiChunk, callback);
+                    if (!error)
+                    {
+                         // Ok, it worked, let's continue as expected (in our destructor, we'll remove the references to the previous multichunk.
+                         // This way, we will not loose any data in case backup failed
+                         multiChunkListID = (uint64)(int64)lastMC["ChunkListID"];
+                         previousMCID = (uint64)(int64)lastMC["ID"];
+                    }
+                }
+            }
+        }
+
+
         BackupFile(ProgressCallback & callback, const String & backupTo, const unsigned int revID, const String & rootFolder, PurgeStrategy strategy)
             : callback(callback), backupTo(backupTo),
               folderToBackup(rootFolder.normalizedPath(Platform::Separator, true)), revID(revID), seen(0), total(1),
               fileCount(0), dirCount(0), totalInSize(0), totalOutSize(0),
-              multiChunkListID(0), previousMCID(0), prevParentFolder("*")
+              compMultiChunkListID(0), encMultiChunkListID(0), compPreviousMCID(0), encPreviousMCID(0), prevParentFolder("*")
         {
             if (strategy == Slow)
             {
-                // Need to reopen last multichunk if it makes any sense
-                RowIterT lastMC = Select("*").Max("ID", "MaxID").From("MultiChunk");
-                if (lastMC)
-                {
-                    File::Info lastMultichunk(backupTo + lastMC["Path"]);
-                    // If the multichunk exists and is not filled at more than 80% of the maximum allowed size
-                    if (lastMultichunk.doesExist() && (lastMultichunk.size * 100) < (File::MultiChunk::MaximumSize * 80))
-                    {
-                        // Reopen the previous multichunk. How is it done ?
-                        // First, we load it in our multichunk
-                        String error = Helpers::readMultichunk(backupTo + lastMC["Path"], lastMC["FilterArgument"], multiChunk, callback);
-                        if (!error)
-                        {
-                             // Ok, it worked, let's continue as expected (in our destructor, we'll remove the references to the previous multichunk.
-                             // This way, we will not loose any data in case backup failed
-                             multiChunkListID = (uint64)(int64)lastMC["ChunkListID"];
-                             previousMCID = (uint64)(int64)lastMC["ID"];
-                        }
-                    }
-                }
+                // Need to reopen last multichunks if it makes any sense
+                reopenMultichunk(Helpers::Default, compMultiChunk, compMultiChunkListID, compPreviousMCID);
+                reopenMultichunk(Helpers::None, encMultiChunk, encMultiChunkListID, encPreviousMCID);
             }
         }
     };
@@ -1483,7 +1524,7 @@ namespace Frost
         if (File::Scanner::scanFolderGeneric(folderToBackup, ".", items, iterator, false))
             return TRANS("Can't scan the backup folder");
 
-        if (!processor.finishMultiChunk())
+        if (!processor.finishMultiChunks())
             return TRANS("Can't close the last multichunk");
 
         return "";
@@ -1701,7 +1742,7 @@ namespace Frost
             // Then delete the orphans chunks from database
 
             // Show some log
-            const Select reallyOrphans = Select("ID").From("Chunk").Where("ID").In(Select("ChunkID").From("ChunkList").Where("ID").In(orphansMC.Refine("ChunkListID")));
+            const Select reallyOrphans = Select("ID").From("Chunk").Where("ID").In(Select("ChunkID").From("ChunkList").Where("ID").In(Select("ChunkListID").From("OrphansMultiChunk")));
             int reallyOrphansCount = reallyOrphans.getCount();
             if (!callback.progressed(ProgressCallback::Purge, TRANS("... deleting really orphans chunks ..."), 0, 0, reallyOrphansCount, allChunks, ProgressCallback::FlushLine))
                 return TRANS("Error with output");
@@ -1742,7 +1783,10 @@ namespace Frost
 
                 int finalOrphanChunks = orphanChunks.getCount();
                 if (!finalOrphanChunks)
-                    return TRANS("No more orphan chunks to purge");
+                {
+                    WARN_CB(ProgressCallback::Purge, "", TRANS("No more orphan chunks to purge"));
+                    return "";
+                }
                 if (!callback.progressed(ProgressCallback::Purge, TRANS("... found remaining orphans chunks ..."), 0, 0, finalOrphanChunks, allChunks, ProgressCallback::FlushLine))
                     return TRANS("Error with output");
 
@@ -2973,12 +3017,22 @@ int main(int argc, char ** argv)
 
     // This also works for tests, so test it before entering any tests
     if (checkOption(options, "compression") == EXIT_SUCCESS) return EXIT_SUCCESS;
+    if (checkOption(options, "entropy") == EXIT_SUCCESS) return EXIT_SUCCESS;
     // Check for bsc selection
     if (optionsMap["compression"] && *optionsMap["compression"] == "bsc")
     {   // Remember the compressor selected
         Frost::Helpers::compressor = Frost::Helpers::BSC;
         File::MultiChunk::setMaximumSize(25*1024*1024);
         optionsMap.storeValue("multichunk", new Strings::FastString("25600K"), true);
+    }
+
+    // Check for bsc selection
+    if (optionsMap["entropy"])
+    {
+        if (optionsMap["entropy"]->invFindAnyChar(".0123456789") != -1)
+            return showHelpMessage("Bad argument for entropy, should be a decimal number like 0.95");
+
+        Frost::Helpers::entropyThreshold = (double)*optionsMap["entropy"];
     }
 
     // Test mode first
@@ -3001,7 +3055,6 @@ int main(int argc, char ** argv)
     if (checkOption(options, "exclude") == EXIT_SUCCESS) return EXIT_SUCCESS;
     if (checkOption(options, "multichunk", true) == EXIT_SUCCESS) return EXIT_SUCCESS;
     if (checkOption(options, "password") == EXIT_SUCCESS) return EXIT_SUCCESS;
-    if (checkOption(options, "entropy") == EXIT_SUCCESS) return EXIT_SUCCESS;
 
     if (optionsMap["exclude"])
         Frost::Helpers::excludedFilePath = *optionsMap["exclude"];
