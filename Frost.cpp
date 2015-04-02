@@ -226,6 +226,8 @@ namespace Frost
 
         // Excluded file list if found
         String excludedFilePath;
+        // Included file list if found
+        String includedFilePath;
 
         // Base 85 encoding
         String fromBinary(const uint8 * data, const uint32 size, const bool base)
@@ -917,25 +919,16 @@ namespace Frost
     {
         struct MatchAFile { virtual bool isExcluded(const String & relPath) const { return false; } virtual ~MatchAFile() {} };
         struct MatchSimpleRule : public MatchAFile { String rule; virtual bool isExcluded(const String & relPath) const { return relPath.Find(rule) != -1; } MatchSimpleRule(const String & rule) : rule(rule) {} };
-        struct MatchRegEx : public MatchAFile { String regEx; mutable void * capts; int capCount; virtual bool isExcluded(const String & relPath) const { int capCount = 0; return relPath.regExFit(regEx, true, &capts, &capCount); }
-                                                MatchRegEx(const String & regEx) : regEx(regEx), capts(0), capCount(0) {} ~MatchRegEx() { free(capts); capCount = 0; } };
+        struct MatchRegEx : public MatchAFile { String regEx; bool inv; mutable void * capts; int capCount; virtual bool isExcluded(const String & relPath) const { int capCount = 0; bool a = relPath.regExFit(regEx, true, &capts, &capCount); return inv ? !a:a; }
+                                                MatchRegEx(const String & regEx, const bool inv = false) : regEx(regEx), capts(0), capCount(0), inv(inv) {} ~MatchRegEx() { free(capts); capCount = 0; } };
 
-        Container::NotConstructible<MatchAFile>::IndexList matches;
-    public:
-        bool isExcluded(const String & relPath) const
+        typedef Container::NotConstructible<MatchAFile>::IndexList MatchArray;
+        MatchArray excMatches, incMatches;
+
+        void buildMatchList(const String & filePath, MatchArray & matches)
         {
-            for (size_t i = 0; i < matches.getSize(); i++)
-                if (matches.getElementAtUncheckedPosition(i)->isExcluded(relPath))
-                    return true;
-            return false;
-        }
-
-        MatchExcludedFiles()
-        {
-            if (!Helpers::excludedFilePath) return;
-
             // Get a list of rules in this file
-            Strings::StringArray rules(File::Info(Helpers::excludedFilePath, true).getContent());
+            Strings::StringArray rules(File::Info(filePath, true).getContent());
             for (size_t i = 0; i < rules.getSize(); i++)
             {
                 const String & rule = rules.getElementAtUncheckedPosition(i);
@@ -943,8 +936,30 @@ namespace Frost
 
                 if (rule.midString(0, 2) == "r/")
                     matches.Append(new MatchRegEx(rule.midString(2, rule.getLength())));
+                else if (rule.midString(0, 2) == "R/")
+                    matches.Append(new MatchRegEx(rule.midString(2, rule.getLength()), true));
                 else matches.Append(new MatchSimpleRule(rule));
             }
+        }
+    public:
+        bool isExcluded(const String & relPath) const
+        {
+            for (size_t i = 0; i < excMatches.getSize(); i++)
+                if (excMatches.getElementAtUncheckedPosition(i)->isExcluded(relPath))
+                {
+                    for (size_t j = 0; j < incMatches.getSize(); j++)
+                        if (incMatches.getElementAtUncheckedPosition(j)->isExcluded(relPath))
+                            return false;
+                    return true;
+                }
+            return false;
+        }
+
+        MatchExcludedFiles()
+        {
+            if (!Helpers::excludedFilePath) return;
+            buildMatchList(Helpers::excludedFilePath, excMatches);
+            if (Helpers::includedFilePath) buildMatchList(Helpers::includedFilePath, incMatches);
         }
     };
 
@@ -2119,7 +2134,15 @@ int showHelpMessage(const Frost::String & error = "")
            "\t                     \tIf a line starts by 'r/' the exclusion rule is considered as a regular expression otherwise the rule is matched if the analyzed file path contains the rule.\n"
            "\t                     \tThis also means that if you need to exclude a file whose name starts by 'r/', you need to write 'r/r/'.\n"
            "\t                     \tEven if the regular expression returns a partial match, the file is excluded, so you need to be very strict on the rules declaration.\n"
+           "\t                     \tIf the rule starts by 'R/' then it's matched inverted (that is, the file is excluded if it does NOT fit the rule).\n"
            "\t                     \tTo get more details about the regular expression engine, run --help regex\n"
+           "\t--include list.inc \tYou can specify a file containing the inclusion list for backup (only if an exclude list is used). This file is read line-by-line (one rule per line)\n"
+           "\t                     \tIf a line starts by 'r/' the inclusion rule is considered as a regular expression otherwise the rule is matched if the analyzed file path contains the rule.\n"
+           "\t                     \tEven if the regular expression returns a partial match, the file is included, so you need to be very strict on the rules declaration.\n"
+           "\t                     \tIf the rule starts by 'R/' then it's matched inverted (that is, the file is included if it does NOT fit the rule).\n"
+           "\t                     \tInclusion list happens after exclusion (that is, inclusion is only tested to re-include files that would have been excluded without it)\n"
+           "\t                     \tFor example, if you need to exclude the complete 'subDir' folder, except 'subDir/important', the exclude list should contain 'subDir/' and the include list\n"
+           "\t                     \tshould contain 'subDir/important'. The final '/' is important in the exclude list else 'subDir' folder will not be saved yet it's required for the included file.\n"
            "\t--entropy threshold\tBy default, multichunks are compressed before encryption. This behavior might be undesirable for hard to compress data (like mp3/jpg/mp4/etc),\n"
            "\t                     \tbecause compression will take time for nothing and will not save any more space. Frost can detect such case by computing entropy for the multichunk and only\n"
            "\t                     \tcompress it when its entropy is below the given threshold (default is 1.0 meaning everything will be below this threshold hence will get compressed)\n"
@@ -3053,11 +3076,17 @@ int main(int argc, char ** argv)
     if (checkOption(options, "strategy") == EXIT_SUCCESS) return EXIT_SUCCESS;
     if (checkOption(options, "keyid") == EXIT_SUCCESS) return EXIT_SUCCESS;
     if (checkOption(options, "exclude") == EXIT_SUCCESS) return EXIT_SUCCESS;
+    if (checkOption(options, "include") == EXIT_SUCCESS) return EXIT_SUCCESS;
     if (checkOption(options, "multichunk", true) == EXIT_SUCCESS) return EXIT_SUCCESS;
     if (checkOption(options, "password") == EXIT_SUCCESS) return EXIT_SUCCESS;
 
     if (optionsMap["exclude"])
         Frost::Helpers::excludedFilePath = *optionsMap["exclude"];
+    if (optionsMap["include"])
+    {
+        if (!optionsMap["exclude"]) return showHelpMessage("Include list can only be used if an exclusion list is used");
+        Frost::Helpers::includedFilePath = *optionsMap["include"];
+    }
 
     if (optionsMap["multichunk"])
         File::MultiChunk::setMaximumSize((uint32)parseNumericSuffixed(*optionsMap["multichunk"]));
