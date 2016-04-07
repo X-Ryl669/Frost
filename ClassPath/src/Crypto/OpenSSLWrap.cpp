@@ -219,11 +219,15 @@ namespace Crypto
 
     SSLContext::SSLContext(const Protocol protocol)
         :context(SSL_CTX_new(protocol == Any ? SSLv23_method() :
+#ifndef OPENSSL_NO_SSL3_METHOD
                             (protocol == TLSv1 ? TLSv1_method() :
 #ifndef OPENSSL_NO_SSL2
                             (protocol == SSLv3 ? SSLv3_method() : SSLv2_method()))))
 #else
                             SSLv3_method())))
+#endif
+#else
+                            TLSv1_method()))
 #endif
     {
         // Load the root certificate store from Mozilla's version.
@@ -260,11 +264,15 @@ namespace Crypto
     }
     SSLContext::SSLContext(const char * rootCertificateBundlePath, const Protocol protocol)
         : context ( ::SSL_CTX_new( protocol == Any ? SSLv23_method() :
+#ifndef OPENSSL_NO_SSL3_METHOD
                                 (protocol == TLSv1 ? TLSv1_method() :
 #ifndef OPENSSL_NO_SSL2
                                 (protocol == SSLv3 ? SSLv3_method() : SSLv2_method()))))
 #else
                                 SSLv3_method())))
+#endif
+#else
+                            TLSv1_method()))
 #endif
     {
         loadCertificate(rootCertificateBundlePath);

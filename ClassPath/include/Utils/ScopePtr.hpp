@@ -97,6 +97,25 @@ namespace Utils
 
         The interface using a reference &, like operator = and constructor won't own the object by default, while the other will.
 
+        Unlike smart pointers (with reference counting), OwnPtr can deal with stack based object correctly
+        (smart pointer need pointers allocated on the heap). So it's also a simple way to return either heap allocated or
+        member's reference without the user knowning about it.
+        For example, this is possible with no copy required:
+        @code
+            struct A
+            {
+                Item cache;
+                OwnPtr<Item> getItem(int id)
+                {
+                    if (id == 0) return (Item*)0; // Invalid identifier
+                    if (id == cache.id) return cache; // Return a probably stack based object
+                    else return new Item(id); // Return a heap allocated object
+                }
+            };
+
+            A a;
+        @endcode
+
         @warning Copy constructor use move semantics, so this works as intended:
                  OwnPtr<A> a = new A(); */
     template <class T>
@@ -165,6 +184,8 @@ namespace Utils
         /** Sell the object. Once this is done, we don't own it anymore (and you can not sell something you don't own).
             Unlike Forget, this actually keep the pointer valid in this object. */
         ForcedInline(void sold() throw())                                      { own = false; }
+        /** Check if we own the object */
+        ForcedInline(bool owned() throw())                                     { return own; }
 
         // Interface
     public:

@@ -7,48 +7,16 @@
 #include <share.h>
 #endif
 
+// We need the minimal declaration
+#include "LoggerMinimal.hpp"
 // We need locks to allow multithreading logging to file
 #include "../Threading/Lock.hpp"
 #include "../Threading/Threads.hpp"
 // We need strings too
 #include "../Strings/Strings.hpp"
 
-
-/** If you intend to log something to a console, or a file, or both, this is where to look for */
 namespace Logger
 {
-    /** The allowed flags to filter upon.
-        When using Logger::log, you need to "tag" your message with some flags which are checked against the current application's mask.
-        If they fit the mask, the log message will go through.  */
-    enum Flags
-    {
-        Error       =   0x00000001,   //!< A typical error
-        Warning     =   0x00000002,   //!< A typical warning
-        File        =   0x00000004,   //!< The log is related to file operations
-        Network     =   0x00000008,   //!< The log is related to network operations
-        Directory   =   0x00000010,   //!< The log is related to directory operations
-        Cache       =   0x00000020,   //!< The log is related to cache operations
-        Content     =   0x00000040,   //!< The log is related to content operations
-        Function    =   0x00000080,   //!< Typically used to show user-specified function
-        Dump        =   0x00000100,   //!< Probably the most verbose log
-        Creation    =   0x00000200,   //!< Log related to creating objects
-        Deletion    =   0x00000400,   //!< Log related to deleting objects
-        Timeout     =   0x00000800,   //!< Log related to time outs
-        Connection  =   0x00001000,   //!< Log related to connections (network / local)
-        Tests       =   0x00002000,   //!< Special Tests class for some logs
-        Database    =   0x00004000,   //!< Logs database queries (warning, this can be a security risk)
-        Config      =   0x00008000,   //!< Config related logs
-        Crypto      =   0x00010000,   //!< Crypto based logs (warning, this can be a security risk)
-        Packet      =   0x00020000,   //!< Log Packet related operations
-
-        // Compound
-
-        AllFlags    =   0xFFFFFFFF,
-    };
-
-
-
-
     /** The logger output sink interface */
     struct OutputSink
     {
@@ -89,7 +57,9 @@ namespace Logger
     };
 
 #if defined(_WIN32) || defined(_POSIX)
-    /** The Tee sink */
+    /** The Tee sink.
+        This redirect the logs to up to two different sinks. 
+        Because each sink can have its own log flags, you can have a console and a file sink only capturing whatever you want. */
     struct TeeSink : public OutputSink
     {
         OutputSink * sinks[2];
@@ -106,7 +76,8 @@ namespace Logger
     };
 
 #ifdef _WIN32
-    /** The output sink to the console */
+    /** The output sink to the debug console.
+        To see this error sink, you need either to run the software under Visual Studio's debugger, or have DebugView installed and running. */
     struct DebugConsoleSink : public OutputSink
     {
         // Members
@@ -128,7 +99,8 @@ namespace Logger
     typedef ConsoleSink DebugConsoleSink;
 #endif
 
-    /** The output sink to the error console */
+    /** The output sink to the error console.
+        Under POSIX and Win32 system, this writes the log to the error's file descriptor (that is, what's under stderr FILE pointer). */
     struct ErrorConsoleSink : public OutputSink
     {
         // Members
@@ -147,7 +119,9 @@ namespace Logger
     };
 
 #if defined(_WIN32) || defined(_POSIX)
-    /** The output sink to a file */
+    /** The output sink to a file.
+        Output the logs to a file for either appending or replacing.
+        No limit whatsoever is used, so you can fill your entire hard drive with such logger. */
     struct FileOutputSink : public OutputSink
     {
         // Members
@@ -162,7 +136,12 @@ namespace Logger
         ~FileOutputSink() { Threading::ScopedLock scope(lock); if (file) fclose(file); file = 0; }
     };
 
-    /** Structured output sink */
+    /** Structured output sink.
+        This sink captures time and flag for each log output. 
+        It detects repetitions and avoid writing them (adding a "repeated x times" marker in the log).
+        It also alternates automatically between two output files so that each file are never bigger than the given break size.
+        This means that depending on your log amount, only a small history is kept whose size is based on bytes.
+        This is a basic "log rotation" feature, without any bells and whistles. */
     struct StructuredFileOutputSink : public OutputSink
     {
         // Members
@@ -210,11 +189,6 @@ namespace Logger
     /** Get a reference on the currently selected default sink */
     extern OutputSink & getDefaultSink();
 
-    /** This is the main function for logging any information to the selected sink
-        You'll use it like any other printf like function.
-        @param flags    Any combination of the Logger::Flags value (the sink will check its own mask against these flags to allow logging or not)
-        @param format   The printf like format */
-    void log(const unsigned int flags, const char * format, ...);
 /*
     static void dlog(const char * file, const int line, const unsigned int flags, const char * format, ...)
     {

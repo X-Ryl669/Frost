@@ -166,6 +166,25 @@ namespace Platform
         FileIndexWrapper(int fd) : fd(fd) {}
         ~FileIndexWrapper() { if (fd >= 0) close(fd); fd = -1; }
     };
+    
+    /** Turn the current process into a daemon. 
+        Log will be redirected to syslog service, 
+        Input and output file descriptor will be closed, and we'll detach from the 
+        running terminal.
+        @param pathToPIDFile    The path to the file containing the daemon PID (useful for system script typically)
+        @param syslogName       The name of the syslog reported daemon
+        @param parent           On parent process will be set to true, and false in child process
+        @return false for forking error   */
+    bool daemonize(const char * pathToPIDFile, const char * syslogName, bool & parent);
+
+    /** Drop super user privileges.
+        After calling this function, the real id are the effective id and saved id.
+        Ancillary groups are also dropped.
+        @warning You must check the return for this function else if your program is compromised, you might leave escalation issues.
+        @param dropUserID       If true, the real user ID will be used to overrride all other user ID
+        @param dropGroupID      If true, the read group ID will be used to override all other group ID
+        @return true on success. */
+    bool dropPrivileges(const bool dropUserID = true, const bool dropGroupID = true);
 #endif
 
     /** This structure is used to load some code dynamically from a file on the filesystem */

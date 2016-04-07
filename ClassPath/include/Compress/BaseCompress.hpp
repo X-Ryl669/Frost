@@ -22,7 +22,8 @@ namespace Compression
     /** The base compression interface.
         All (de)compressors implements this interface.
         Since each compressor might show different options, you should check each compressor explicit documentation.
-        @sa ZLib, GZip, BSCLib */
+        @sa ZLib, GZip, BSCLib
+        @sa Tests::CompressTests */
     class BaseCompressor
     {
         // Members

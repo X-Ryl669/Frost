@@ -18,6 +18,8 @@
 // We need compression too
 #include "ClassPath/include/Streams/CompressStream.hpp"
 #include "ClassPath/include/Compress/BSCLib.hpp"
+// We need loggers too
+#include "ClassPath/include/Logger/Logger.hpp"
 
 
 // The global option map
@@ -217,6 +219,347 @@ namespace Frost
     }
 
     namespace DatabaseModel { String databaseURL = ""; }
+#if KeepPreviousVersionFormat != 1
+  #define MapAs(X, Y, Offset) (X*)(Y + Offset)
+    namespace FileFormat
+    {
+        // Start a new revision for this backup file
+        bool IndexFile::startNewRevision()
+        {
+            const uint32 revision = catalog->revision + 1;
+            if (readOnly) return false;
+            fileTree.revision = local.revision = revision;
+            metadata.Reset();
+            metadata.Append(String::Print(TRANS("Revision %u created on %s"), revision, (const char*)Time::LocalTime::Now().toDate()));
+            return true;
+        }
+
+        // Append a chunk to this index file
+        bool IndexFile::appendChunk(Chunk & chunk)
+        {
+            if (readOnly) return false;
+            chunk.UID = maxChunkID++ + 1;
+            local.chunks.insertSorted(chunk);
+            consolidated.chunks.insertSorted(chunk);
+            return true;
+        }
+
+        // Append a multichunk to this file
+        bool IndexFile::appendMultichunk(Multichunk * mchunk, ChunkList * list)
+        {
+            if (readOnly || !mchunk || !list) return false;
+            // Make sure it does not exists already
+            mchunk->UID = maxMultichunkID + 1;
+            mchunk->listID = maxChunkListID + 1;
+            list->UID = maxChunkListID + 1;
+            if (multichunks.storeValue(mchunk->UID, mchunk) && chunkList.storeValue(list->UID, list))
+            {
+                maxChunkListID++; maxMultichunkID++;
+                return true;
+            }
+            return false;
+        }
+
+        bool IndexFile::appendFileItem(FileTree::Item * item, ChunkList * list)
+        {
+            if (readOnly || !item || !list) return false;
+            // Make sure it does not exists already
+            list->UID = maxChunkListID + 1;
+            item->fixed->chunkListID = list->UID;
+            fileTree.items.Append(item);
+            if (chunkList.storeValue(list->UID, list))
+            {
+                maxChunkListID++;
+                return true;
+            }
+            return false;
+        }
+
+        // Create a new file from scratch.
+        String IndexFile::createNew(const String & filePath, const Utils::MemoryBlock & cipheredMasterKey, const String & backupPath)
+        {
+            File::Info info(filePath, true);
+            if (info.doesExist()) return TRANS("File already exists: ") + filePath;
+            if (cipheredMasterKey.getSize() != ArrSz(MainHeader::cipheredMasterKey)) return TRANS("Invalid ciphered master key format");
+            file = new Stream::MemoryMappedFileStream(info.getFullPath(), true);
+            if (!file) return TRANS("Out of memory");
+            // Compute the size required for the metadata and filter arguments and header
+            metadata.info.Clear();
+            metadata.Append(backupPath);
+            metadata.Append(TRANS("Initial backup started on ") + Time::LocalTime::Now().toDate());
+
+            uint64 size = MainHeader::getSize();
+
+            if (!file->map(0, size)) return TRANS("Could not allocate file space for creation. Is disk full?");
+            // Ok, create the buffers now for this file
+            uint8 * filePtr = file->getBuffer();
+            if (!filePtr) return TRANS("Failed to get a pointer on the mapped area");
+
+            header = *MapAs(MainHeader, filePtr, 0);
+            new(header) MainHeader(); // Force construction of the object
+            catalog = new Catalog(0); // This is required for previous linking
+            memcpy(header->cipheredMasterKey, cipheredMasterKey.getConstBuffer(), ArrSz(header->cipheredMasterKey));
+
+            // Ok, header is written, let's unmap the area
+            readOnly = false;
+            maxChunkID = 0; maxChunkListID = 0; maxMultichunkID = 0;
+            fileTree.revision = local.revision = 1;
+            return "";
+        }
+        // Load a file from the given storage
+        String IndexFile::readFile(const String & filePath, const bool readWrite)
+        {
+            File::Info info(filePath, true);
+            if (!info.doesExist()) return TRANS("File does not exists: ") + filePath;
+            file = new Stream::MemoryMappedFileStream(info.getFullPath(), readWrite);
+            if (!file) return TRANS("Out of memory");
+            // Check if we can map the complete file (right now, it's much easier this way)
+            if (!file->map()) return TRANS("Could not open the given file (permission error ?): ") + filePath;
+            readOnly = !readWrite;
+
+            // Ok, create the buffers now for this file
+            uint8 * filePtr = file->getBuffer();
+            if (!filePtr) return TRANS("Failed to get a pointer on the mapped area");
+
+            header = *MapAs(MainHeader, filePtr, 0);
+            if (!header->isCorrect(file->fullSize())) return TRANS("Given index format not correct");
+            uint64 catalogOffset = header->catalogOffset.fileOffset();
+            if (!catalogOffset) catalogOffset = file->fullSize() - Catalog::getSize();
+            // Get the offset to the catalog for reading
+            catalog = *MapAs(Catalog, filePtr, catalogOffset);
+
+            if (!catalog->isCorrect(file->fullSize(), catalogOffset))
+                return TRANS("Catalog in file is corrupted.");
+
+
+            // Now we have a catalog, let's extract all the data we need
+            // Fuse the chunks
+            maxChunkID = 0;
+            consolidated.Clear();
+            local.Clear();
+            maxChunkListID = 0;
+            multichunksRO.clearTable();
+            multichunks.clearTable();
+            maxMultichunkID = 0;
+            arguments.arguments.Clear();
+            metadata.info.Clear();
+
+            Catalog * c = catalog;
+            while (c)
+            {
+                if (dumpState) c->dump();
+
+                Chunks chunk(c->revision);
+                if (!chunk.loadReadOnly(filePtr + c->chunks.fileOffset(), file->fullSize() - c->chunks.fileOffset())) return String::Print(TRANS("Could not read the chunks for revision %d"), c->revision);
+                if (chunk.revision != c->revision) return String::Print(TRANS("Unexpected chunks revision %u for catalog revision %u"), chunk.revision, c->revision);
+
+                // Insert all chunks in the consolidated array (this can take some time)
+                for (size_t i = 0; i < chunk.chunks.getSize(); i++)
+                {
+                    if (chunk.chunks[i].UID > maxChunkID) maxChunkID = chunk.chunks[i].UID;
+                    if (readWrite) consolidated.chunks.insertSorted(chunk.chunks[i]);
+                    else           consolidated.chunks.Append(chunk.chunks[i]); // Not sorted, we'll sort them later on
+                }
+
+                // Read all chunk lists now
+                uint64 chunkListOffset = c->chunkLists.fileOffset();
+                for (uint32 i = 0; i < c->chunkListsCount; i++)
+                {
+                    ChunkList * cl = new ChunkList();
+                    if (!cl) return TRANS("Out of memory");
+                    if (!cl->load(filePtr + chunkListOffset, file->fullSize() - chunkListOffset)) return TRANS("Could not load chunk list");
+
+                    if (!chunkListRO.storeValue(cl->UID, cl)) return String::Print(TRANS("Chunk list with UID %u already exist"), cl->UID);
+                    if (cl->UID > maxChunkListID) maxChunkListID = cl->UID;
+                    chunkListOffset += cl->getSize();
+                }
+
+                // Read all previous multichunks now
+                uint64 multichunkOffset = c->multichunks.fileOffset();
+                for (uint32 i = 0; i < c->multichunksCount; i++)
+                {
+                    Multichunk * mc = MapAs(Multichunk, filePtr, multichunkOffset);
+                    if (!mc->isCorrect(file->fullSize(), file->fullSize() - multichunkOffset)) return String::Print(TRANS("Invalid %u-th multichunk in revision %u"), i, c->revision);
+                    if (mc->UID > maxMultichunkID) maxMultichunkID = mc->UID;
+                    multichunksRO.storeValue(mc->UID, mc);
+
+                    multichunkOffset += mc->getSize();
+                }
+
+                // Read filter arguments
+                if (!arguments.arguments.getSize() && c->optionFilterArg.fileOffset())
+                {
+                    if (!arguments.load(filePtr + c->optionFilterArg.fileOffset(), file->fullSize() - c->optionFilterArg.fileOffset()))
+                        return String::Print(TRANS("Could not read the filters' argument for revision %u"), c->revision);
+                    if (!arguments.isCorrect(file->fullSize(), c->optionFilterArg.fileOffset()))
+                        return String::Print(TRANS("Bad filters' arguments for revision %u"), c->revision);
+                }
+
+                // Read metadata
+                if (!metadata.info.getSize() && c->optionMetadata.fileOffset())
+                {
+                    if (!metadata.load(filePtr + c->optionMetadata.fileOffset(), file->fullSize() - c->optionMetadata.fileOffset()))
+                        return String::Print(TRANS("Could not read the metadata for revision %u"), c->revision);
+                    if (!metadata.isCorrect(file->fullSize(), c->optionMetadata.fileOffset()))
+                        return String::Print(TRANS("Bad metadata for revision %u"), c->revision);
+                }
+
+                c = c->previous.fileOffset() ? MapAs(Catalog, filePtr, c->previous.fileOffset()) : 0;
+            }
+
+            // Read the last filetree (that's the only required for now)
+            fileTree.Clear();
+            fileTreeRO.Clear();
+            if (!fileTreeRO.load(filePtr + catalog->fileTree.fileOffset(), file->fullSize() - catalog->fileTree.fileOffset()))
+                return String::Print(TRANS("Could not load the file tree for revision %u"), catalog->revision);
+
+            ChunkUIDSorter sorter;
+            if (!readWrite) Container::Algorithms<Container::PlainOldData<Chunk>::Array>::sortContainer(consolidated.chunks, sorter);
+            // Ok, done loading this file
+            return "";
+        }
+        const Chunk * IndexFile::findChunk(const uint32 uid) const
+        {
+            size_t pos = 0;
+            Chunk item(uid);
+            if (readOnly)
+            {   // The consolidated array is sorted by UID, so we can do a O(log N) search here
+                ChunkUIDSorter sorter;
+                pos = Container::Algorithms<Container::PlainOldData<Chunk>::Array>::searchContainer(consolidated.chunks, sorter, item);
+                if (pos == consolidated.chunks.getSize() || consolidated.chunks.getElementAtPosition(pos).UID != uid) return 0;
+            }
+            else
+            {
+                // This is going to be very slow O(N)
+                pos = consolidated.chunks.indexOf(item);
+                if (pos == consolidated.chunks.getSize()) return 0;
+            }
+            return &consolidated.chunks.getElementAtPosition(pos);
+        }
+
+        // Close the file (and make sure mapping is actually correct)
+        String IndexFile::close()
+        {
+            if (!file || readOnly || (fileTree.items.getSize() == 0 && !metadata.modified))
+            {
+                file = 0; catalog = 0; header = 0;
+                fileTree.Clear(); fileTreeRO.Clear();
+                metadata.Reset(); arguments.Reset();
+                consolidated.Clear();       local.Clear();              maxChunkID = 0;
+                chunkListRO.clearTable();   chunkList.clearTable();     maxChunkListID = 0;
+                multichunks.clearTable();   multichunksRO.clearTable(); maxMultichunkID = 0;
+                return ""; // Nothing to do or no modifications done
+            }
+
+            // Get a coarse approximation of the required size for the file expansion required
+            uint64 requiredAdditionalSize = fileTree.getSize() + (arguments.modified ? arguments.getSize() : 0) + (metadata.modified ? metadata.getSize() : 0) + multichunks.getSize() * Multichunk::getSize()
+                                            + local.getSize() + Catalog::getSize();
+            // We need to iterate the chunklists to know their size
+            ChunkLists::IterT cl = chunkList.getFirstIterator();
+            while (cl.isValid()) { requiredAdditionalSize += (*cl)->getSize(); ++cl; }
+
+            uint64 initialSize = file->fullSize();
+            uint64 initialCatalog = header->catalogOffset.fileOffset();
+            if (!initialCatalog && initialSize > header->getSize()) initialCatalog = initialSize - Catalog::getSize();
+
+            // Make sure we can allocate such size now on file
+            if (!file->map(0, file->fullSize() + requiredAdditionalSize))
+                return String::Print(TRANS("Cannot allocate %llu more bytes for the index file, is disk full?"), requiredAdditionalSize);
+            uint8 * filePtr = file->getBuffer();
+
+
+            uint32 prevRev = initialCatalog ? (*MapAs(Catalog, filePtr, initialCatalog)).revision : 0;
+
+            // Ok, start by writing all the new informations
+            Catalog cat(prevRev + 1);
+            uint64 wo = initialSize;
+            cat.chunks.fileOffset(wo);
+            // Write the new chunk array
+            local.write(filePtr + wo); wo += local.getSize();
+            // Write the chunk list
+            cat.chunkLists.fileOffset(wo);
+            cat.chunkListsCount = chunkList.getSize();
+            {
+                ChunkLists::IterT iter = chunkList.getFirstIterator();
+                while (iter.isValid())
+                {
+                    (*iter)->write(filePtr + wo); wo += (*iter)->getSize();
+                    ++iter;
+                }
+            }
+            // Write the multichunk list
+            cat.multichunks.fileOffset(wo);
+            cat.multichunksCount = multichunks.getSize();
+            {
+                Multichunks::IterT iter = multichunks.getFirstIterator();
+                while (iter.isValid())
+                {
+                    (*iter)->write(filePtr + wo); wo += (*iter)->getSize();
+                    ++iter;
+                }
+            }
+            // We need to write the file tree too
+            cat.fileTree.fileOffset(wo);
+            fileTree.write(filePtr + wo); wo += fileTree.getSize();
+
+            // Check if we need to write the arguments
+            if (arguments.modified)
+            {
+                cat.optionFilterArg.fileOffset(wo);
+                arguments.write(filePtr + wo); wo += arguments.getSize();
+            } else cat.optionFilterArg = catalog->optionFilterArg;
+            // Check if we need to write the metadata
+            if (metadata.modified)
+            {
+                cat.optionMetadata.fileOffset(wo);
+                metadata.write(filePtr + wo); wo += metadata.getSize();
+            } else cat.optionMetadata = catalog->optionMetadata;
+
+            cat.previous.fileOffset(initialCatalog);
+            // Now we can write the catalog
+            if (wo + cat.getSize() != file->fullSize()) return TRANS("Invalid file size computation");
+            cat.write(filePtr + wo);
+            file->unmap(true);
+            file = 0;
+            return "";
+        }
+
+        // Get the file base name for this multichunk
+        String Multichunk::getFileName() const
+        {
+            String ret; uint32 outSize = (uint32)(ArrSz(checksum) * 2);
+            if (!Encoding::encodeBase16(checksum, ArrSz(checksum), (uint8*)ret.Alloc(ArrSz(checksum)*2), outSize)) return "";
+            ret.releaseLock((int)outSize);
+            ret += ".#";
+            return ret;
+        }
+
+        Utils::OwnPtr<FileTree> IndexFile::getFileTree(const uint32 revision)
+        {
+            // Check easy first, with no destruction
+            if (!revision || !file) return 0;
+            if (!readOnly && revision == fileTree.revision) return fileTree;
+            if (revision == fileTreeRO.revision) return fileTreeRO;
+            if (revision > fileTree.revision && revision > fileTreeRO.revision) return 0;
+
+            // Ok, need to extract the other revisions
+            uint8 * filePtr = file->getBuffer();
+            Catalog * c = catalog;
+            while (c)
+            {
+                if (c->revision == revision)
+                {
+                    Utils::OwnPtr<FileTree> ft(new FileTree(revision));
+                    if (!ft->load(filePtr + c->fileTree.fileOffset(), file->fullSize() - c->fileTree.fileOffset())) return 0;
+                    return ft;
+                }
+                c = MapAs(Catalog, filePtr, c->previous.fileOffset());
+            }
+            return 0;
+        }
+    }
+  #undef MapAs
+#endif
     namespace Helpers
     {
         CompressorToUse compressor;
@@ -228,6 +571,11 @@ namespace Frost
         String excludedFilePath;
         // Included file list if found
         String includedFilePath;
+
+#if KeepPreviousVersionFormat != 1
+        // The index file we are using
+        FileFormat::IndexFile indexFile;
+#endif
 
         // Base 85 encoding
         String fromBinary(const uint8 * data, const uint32 size, const bool base)
@@ -321,7 +669,25 @@ namespace Frost
             return String::Print("%d:%s:AES_CTR", File::MultiChunk::MaximumSize, compressorName[actualComp]);
         }
 
-        bool closeMultiChunk(const String & backupTo, File::MultiChunk & multiChunk, uint64 multiChunkID, uint64 * totalOutSize, ProgressCallback & callback, uint64 & previousMultiChunkID, CompressorToUse actualComp)
+#if KeepPreviousVersionFormat != 1
+        static uint16 getFilterArgumentIndex(CompressorToUse actualComp)
+        {
+            const String & filterArg = getFilterArgument(actualComp);
+            uint16 index = indexFile.getFilterArguments().getArgumentIndex(filterArg);
+            if (index == indexFile.getFilterArguments().arguments.getSize())
+                return indexFile.getFilterArguments().appendArgument(filterArg);
+            return index;
+        }
+#endif
+
+
+#if KeepPreviousVersionFormat == 1
+        typedef uint64 ChunkListT;
+#else
+        typedef Utils::ScopePtr<FileFormat::ChunkList> & ChunkListT;
+#endif
+
+        bool closeMultiChunk(const String & backupTo, File::MultiChunk & multiChunk, ChunkListT multiChunkID, uint64 * totalOutSize, ProgressCallback & callback, uint64 & previousMultiChunkID, CompressorToUse actualComp)
         {
             bool worthTelling = multiChunk.getSize() > 2*1024*1024;
             if (worthTelling && !callback.progressed(ProgressCallback::Backup, TRANS("Closing multichunk"), 0, 0, 0, 0, ProgressCallback::KeepLine))
@@ -380,6 +746,8 @@ namespace Frost
             if (worthTelling && !callback.progressed(ProgressCallback::Backup, TRANS("Multichunk closed"), 0, 0, 0, 0, ProgressCallback::KeepLine))
                 return false;
 
+#if KeepPreviousVersionFormat == 1
+
             DatabaseModel::MultiChunk dbMChunk;
             if (previousMultiChunkID)
             {
@@ -404,6 +772,27 @@ namespace Frost
             dbMChunk.FilterArgument = getFilterArgument(actualComp);
             dbMChunk.Path = multiChunkHash + ".#";
             dbMChunk.ID = Database::Index::WantNewIndex;
+#else
+            if (previousMultiChunkID)
+            {
+                // Might need to update the previous multichunk ID
+                FileFormat::Multichunk * mc = indexFile.getMultichunk((uint16)previousMultiChunkID);
+                if (mc->listID == multiChunkID->UID)
+                {   // Same multichunk, so let's modify it (remove the previous file)
+                    File::Info(backupTo + mc->getFileName()).remove();
+                    // Update it (this will modify the file multichunk position)
+                    mc->filterArgIndex = getFilterArgumentIndex(actualComp);
+                    memcpy(mc->checksum, chunkHash, ArrSz(chunkHash));
+                    previousMultiChunkID = 0;
+                    multiChunk.Reset();
+                    return true;
+                }
+            }
+            FileFormat::Multichunk * mc = new FileFormat::Multichunk(indexFile.allocateMultichunkID());
+            mc->filterArgIndex = getFilterArgumentIndex(actualComp);
+            memcpy(mc->checksum, chunkHash, ArrSz(chunkHash));
+            indexFile.appendMultichunk(mc, multiChunkID.Forget());
+#endif
 
             multiChunk.Reset();
             return true;
@@ -442,8 +831,7 @@ namespace Frost
                     hash.removeValue(oldestHash);
                 }
                 totalCacheSize += chunk->getSize();
-                ChunkCache * cache = new ChunkCache(chunk);
-                return hash.storeValue(id, cache);
+                return hash.storeValue(id, new ChunkCache(chunk));
             }
 
             MultiChunkCache(const size_t maxCacheSize) : maxCacheSize(maxCacheSize), totalCacheSize(0) {}
@@ -529,10 +917,8 @@ namespace Frost
             return "";
         }
 
-        File::Chunk * extractChunk(String & error, const String & basePath, const String & MultiChunkPath, const uint64 MultiChunkID, const size_t chunkOffset, const String & chunkChecksum, const String & filterMode, MultiChunkCache & cache, ProgressCallback & callback)
+        File::Chunk * extractChunkBin(String & error, const String & basePath, const String & MultiChunkPath, const uint64 MultiChunkID, const size_t chunkOffset, const uint8 * chunkCS, const String & filterMode, MultiChunkCache & cache, ProgressCallback & callback)
         {
-            error = "";
-//            File::MultiChunk localMultichunk, & mchunk = cache ? *cache : localMultichunk;
             File::MultiChunk * cached = cache.getChunk(MultiChunkID);
 
             if (!cached)
@@ -557,6 +943,15 @@ namespace Frost
             }
 
             // Ok, extract the chunk
+            File::Chunk * chunk = cached->findChunk(chunkCS, (size_t)chunkOffset);
+            return chunk;
+        }
+
+
+        File::Chunk * extractChunk(String & error, const String & basePath, const String & MultiChunkPath, const uint64 MultiChunkID, const size_t chunkOffset, const String & chunkChecksum, const String & filterMode, MultiChunkCache & cache, ProgressCallback & callback)
+        {
+            error = "";
+            // Ok, extract the chunk
             uint8 chunkCS[Hashing::SHA1::DigestSize];
             uint32 chunkCSSize = (uint32)ArrSz(chunkCS);
             if (!Helpers::toBinary(chunkChecksum, chunkCS, chunkCSSize) || chunkCSSize != (uint32)ArrSz(chunkCS))
@@ -564,20 +959,26 @@ namespace Frost
                 error = TRANS("Bad checksum for chunk with checksum: ") + chunkChecksum;
                 return 0;
             }
-
-            File::Chunk * chunk = cached->findChunk(chunkCS, (size_t)chunkOffset);
-            return chunk;
+            return extractChunkBin(error, basePath, MultiChunkPath, MultiChunkID, chunkOffset, chunkCS, filterMode, cache, callback);
         }
 
+#if KeepPreviousVersionFormat == 1
         unsigned int allocateChunkList()
         {
             BuildPool(DatabaseModel::ChunkList, chunkListPool, ID, _C::Max());
             return chunkListPool.count ? chunkListPool[0].ID + 1 : 1;
         }
+#else
+        uint32 allocateChunkList()
+        {
+            return indexFile.allocateChunkListID();
+        }
+#endif
     }
     // Initialize the database connection, and bootstrap it if required.
     String initializeDatabase(const String & backupPath, unsigned int & revisionID, MemoryBlock & cipheredMasterKey)
     {
+#if KeepPreviousVersionFormat == 1
         if (!Database::SQLFormat::initialize(DEFAULT_INDEX, DatabaseModel::databaseURL, "", "", 0))
             return TRANS("Can't initialize the database with the given parameters.");
 
@@ -632,12 +1033,29 @@ namespace Frost
                 pool[0].synchronize("Version");
             } else revisionID = previousRevID;
         }
+#else
+        // Check if we are opening or creating an index file now
+        const String & indexPath = DatabaseModel::databaseURL + DEFAULT_INDEX;
+        if (!File::Info(indexPath).doesExist())
+        {
+            revisionID = 1;
+            return Helpers::indexFile.createNew(indexPath, cipheredMasterKey, backupPath);
+        }
+        // File exists, let's create a new revision if required
+        const String & ret = Helpers::indexFile.readFile(indexPath, backupPath);
+        if (ret) return ret;
+        cipheredMasterKey = Helpers::indexFile.getCipheredMasterKey().getMovable();
+        if (backupPath && !Helpers::indexFile.startNewRevision())
+            return TRANS("Could not start a new revision in index file.");
+        revisionID = Helpers::indexFile.getCurrentRevision();
+#endif
         return "";
     }
 
     // Finalize the database, updating the database description when done.
     void finalizeDatabase()
     {
+#if KeepPreviousVersionFormat == 1
         // Check if we were backing up
         if (wasBackingUp)
         {
@@ -671,10 +1089,41 @@ namespace Frost
             }
         }
         Database::SQLFormat::finalize((uint32)-1);
+#else
+        if (wasBackingUp)
+        {
+            if (backupWorked)
+                Helpers::indexFile.getMetaData().info[Helpers::indexFile.getMetaData().info.getSize() - 1] += TRANS(" finished on ") + Time::LocalTime::Now().toDate();
+            else
+                Helpers::indexFile.getMetaData().info[Helpers::indexFile.getMetaData().info.getSize() - 1]  = TRANS("Reverted to last known good revision on ") + Time::LocalTime::Now().toDate();
+        }
+        const String & ret = Helpers::indexFile.close();
+        if (ret) fputs(ret + "\n", stderr); // Don't silent the error if any
+#endif
     }
 
 
+    /** This is used as a wrapper over a DatabaseModel::Entry to avoid doing a lot of queries on the database */
+    class FileMDEntry
+    {
+        /** The file entry ID in database */
+        unsigned int ID;
+        /** The file metadata */
+        String metadata;
 
+        // Interface
+    public:
+        /** Convert to unsigned int for the item ID */
+        operator unsigned int() const { return ID; }
+        /** Get the metadata */
+        const String & getMetaData() const { return metadata; }
+
+        FileMDEntry(const unsigned int ID, const String & md) : ID(ID), metadata(md) {}
+    };
+    /** The cache of files for a revision */
+    typedef Container::HashTable<FileMDEntry, String, Container::HashKey<String> > PathIDMapT;
+
+#if KeepPreviousVersionFormat == 1
     /** Create a list of files in a directory based on the Entry's in the database.
         @param dirPath      The directory path to look for
         @param entryList    On output, contains a sorted list of entries' ID in the specified directory
@@ -717,25 +1166,6 @@ namespace Frost
         return dirEntries[0].ID;
     }
 
-    /** This is used as a wrapper over a DatabaseModel::Entry to avoid doing a lot of queries on the database */
-    class FileMDEntry
-    {
-        /** The file entry ID in database */
-        unsigned int ID;
-        /** The file metadata */
-        String metadata;
-
-        // Interface
-    public:
-        /** Convert to unsigned int for the item ID */
-        operator unsigned int() const { return ID; }
-        /** Get the metadata */
-        const String & getMetaData() const { return metadata; }
-
-        FileMDEntry(const unsigned int ID, const String & md) : ID(ID), metadata(md) {}
-    };
-
-    typedef Container::HashTable<FileMDEntry, String, Container::HashKey<String> > PathIDMapT;
     /** Create a list of files in a directory based on the Entry's in the database.
         @param dirPath  The directory path to look for
         @param fileList On output, contains a sorted list of files and directories path in the specified directory
@@ -805,6 +1235,98 @@ namespace Frost
         }
         return true;
     }
+
+#else
+    /** The index array */
+    typedef Container::PlainOldData<uint32>::Array IndexArray;
+    /** Collect the list of files in a directory based on the Entry's in the database.
+        @param dirPath      The directory path to look for
+        @param entryList    On output, contains a sorted list of index of files in the File Tree
+        @param fileTree     The file under consideration
+        @return The index in the file tree for the directory + 1, or 0 on error */
+    uint32 createActualEntryListInDir(const String & dirPath, IndexArray & entryList, Utils::OwnPtr<FileFormat::FileTree> & fileTree)
+    {
+        entryList.Clear();
+
+        uint32 parentIndex = fileTree->findItem(dirPath);
+        if (parentIndex == fileTree->notFound()) return 0;
+
+        // Then iterate all children with this parent
+        for (size_t i = 0; i < fileTree->items.getSize(); i++)
+        {
+            if (fileTree->items[i].fixed && fileTree->items[i].fixed->parentID == parentIndex)
+                entryList.Append(i);
+        }
+        return parentIndex+1;
+    }
+
+    /** Create a list of files in a directory based on the Entry's in the database.
+        @param dirPath  The directory path to look for
+        @param fileList On output, contains a sorted list of files and directories path in the specified directory
+        @param revID    The maximum revision ID to include
+        @return The directory ID if found, or 0 on error */
+    bool createFileListInDir(const String & dirPath, PathIDMapT & fileList, const unsigned int revID)
+    {
+        fileList.clearTable();
+
+        Utils::OwnPtr<FileFormat::FileTree> fileTree = Helpers::indexFile.getFileTree(revID);
+        if (!fileTree) return false;
+
+        IndexArray entries;
+
+        uint32 dirID = createActualEntryListInDir(dirPath, entries, fileTree);
+        if (dirID == 0 || entries.getSize() == 0) return false;
+
+        // Then find all files and directory and sort them
+        for (size_t i = 0; i < entries.getSize(); i++)
+            fileList.storeValue(fileTree->getItemFullPath(entries[i]), new FileMDEntry(entries[i], fileTree->items[entries[i]].getMetaData()), true);
+        return true;
+    }
+
+    /** Create the list of files and directories based on the Entry's in the database.
+        @param fileList On output, contains a sorted list of files and directories path in the specified directory
+        @param revID    The maximum revision ID to include
+        @return true if the revision is valid */
+    bool createFileListInRev(PathIDMapT & fileList, const unsigned int revID)
+    {
+        fileList.clearTable();
+
+        // First find the parent index for the given path
+        Utils::OwnPtr<FileFormat::FileTree> fileTree = Helpers::indexFile.getFileTree(revID);
+        if (!fileTree) return false;
+
+        for (uint32 i = 0; i < fileTree->items.getSize(); i++)
+            fileList.storeValue(fileTree->getItemFullPath(i), new FileMDEntry(i, fileTree->items[i].getMetaData()), true);
+
+        return true;
+    }
+    /** Create a list of directories based on the Entry's in the database.
+        @param dirList  On output, will be filled with the directories to create for restoring
+        @param revID    The maximum revision ID to include
+        @return true if the revision is valid and output was filled */
+    bool createDirListInRev(Strings::StringArray & dirList, const unsigned int revID)
+    {
+        dirList.Clear();
+        // First find the parent index for the given path
+        Utils::OwnPtr<FileFormat::FileTree> fileTree = Helpers::indexFile.getFileTree(revID);
+        if (!fileTree) return false;
+
+        for (uint32 i = 0; i < fileTree->items.getSize(); i++)
+        {
+            FileFormat::FileTree::Item * item = fileTree->getItem(i);
+            File::Info a;
+            if (a.analyzeMetaData(item->getMetaData()) && a.isDir())
+                dirList.Append(fileTree->getItemFullPath(i));
+        }
+
+        // Then sort the directory array
+        Strings::CompareString cmp;
+        Container::Algorithms<Strings::StringArray>::sortContainer(dirList, cmp);
+        return true;
+    }
+
+#endif
+
 
     // Very basic algorithm to make a size readable by a human easily
     String makeLegibleSize(uint64 size)
@@ -983,9 +1505,18 @@ namespace Frost
         uint64            compMultiChunkListID, encMultiChunkListID;
         uint64            compPreviousMCID, encPreviousMCID;
 
-        PathIDMapT           prevFilesInDir;
         String               prevParentFolder;
         MatchExcludedFiles   excludes;
+
+#if KeepPreviousVersionFormat == 1
+        PathIDMapT           prevFilesInDir;
+#else
+        uint32               prevParentID;
+        Utils::OwnPtr<FileFormat::FileTree> fileTree, prevFileTree;
+        Utils::MemoryBlock   metadataTmp;
+        Utils::ScopePtr<FileFormat::Multichunk> compMultichunk, encMultichunk;
+        Utils::ScopePtr<FileFormat::ChunkList> compMultichunkList, encMultichunkList;
+#endif
 
         // Check if a file has content to save
         bool hasContent(File::Info & info)
@@ -993,6 +1524,7 @@ namespace Frost
             return info.isFile() && !info.isDir() && !info.isLink();
         }
 
+#if KeepPreviousVersionFormat == 1
         unsigned int findParentDirectoryID(const String & strippedFilePath)
         {
             String parentPath = File::General::normalizePath(strippedFilePath + "/../").normalizedPath(Platform::Separator, false);
@@ -1015,8 +1547,6 @@ namespace Frost
                 return entry["Metadata"];
             return "";
         }
-
-
 
         void deleteRemainingEntry(unsigned int ID)
         {
@@ -1317,18 +1847,6 @@ namespace Frost
             return callback.progressed(ProgressCallback::Backup, TRANS("Done"), 0, 0, 0, 0, ProgressCallback::FlushLine);
         }
 
-        /** Finish the current multichunk, as it's the end of the backup process */
-        bool finishMultiChunk(File::MultiChunk & multiChunk, uint64 & multiChunkListID, uint64 & previousMCID, const Helpers::CompressorToUse comp)
-        {
-            // Check if we started a multichunk (need to close it in that case)
-            if (multiChunk.getSize())
-            {
-                Assert(multiChunkListID);
-                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize, callback, previousMCID, comp))
-                    return false;
-            }
-            return true;
-        }
 
         /** Reopen an existing multichunk */
         void reopenMultichunk(Helpers::CompressorToUse comp, File::MultiChunk & multiChunk, uint64 & multiChunkListID, uint64 & previousMCID)
@@ -1356,20 +1874,250 @@ namespace Frost
                 }
             }
         }
+#else
+        // Returns the previous chunklist ID for the file if it's the same or 0 if not
+        uint32 checkDifferentFile(File::Info & info, const String & strippedFilePath, const String & metadata)
+        {
+            if (!prevFileTree) return 0;
+            uint32 prevItemID = prevFileTree->findItem(strippedFilePath);
+            if (prevItemID == prevFileTree->notFound()) return 0;
 
+            return info.hasSimilarMetadata(prevFileTree->getItem(prevItemID)->getMetaData(), File::Info::AllButAccessTime, &metadata) ? prevFileTree->getItem(prevItemID)->getChunkListID() : 0;
+        }
+
+        virtual bool fileFound(File::Info & info, const String & strippedFilePath)
+        {
+            if (!fileTree) return WARN_CB(ProgressCallback::Backup, info.name, TRANS("Invalid File Tree found. Are you trying to backup using a bad revision ID ?"));
+            // Compute stats first
+            uint32 entriesCount = info.getEntriesCount();
+            if (info.isDir()) total += entriesCount;
+            seen++;
+
+            // Ok, backup this file, if required (we lie about the size here)
+            if (!callback.progressed(ProgressCallback::Backup, TRANS("Analysing: ") + info.name, 0, 1, seen, total, ProgressCallback::KeepLine))
+                return false;
+            if (excludes.isExcluded(strippedFilePath))
+            {   // This file is excluded
+                if (!callback.progressed(ProgressCallback::Backup, TRANS("Excluded: ") + info.name, 0, 0, seen, total, ProgressCallback::FlushLine))
+                    return false;
+                return true;
+            }
+
+            // We will extract the metadata out of this file first
+            uint32 size = info.getMetaDataEx(metadataTmp.getBuffer(), metadataTmp.getSize());
+            if (size != metadataTmp.getSize())
+            {
+                bool needExtract = size > metadataTmp.getSize();
+                if (!metadataTmp.ensureSize(size, true))
+                    return WARN_CB(ProgressCallback::Backup, info.name, TRANS("Could not allocate buffer for metadata"));
+                if (needExtract) info.getMetaDataEx(metadataTmp.getBuffer(), metadataTmp.getSize());
+            }
+            String metadata = info.expandMetaData(metadataTmp.getConstBuffer(), metadataTmp.getSize());
+            if (dumpState)
+            {
+                String metadataCheck = info.getMetaData();
+                if (metadataCheck.fromFirst("/").fromFirst("/") != metadata.fromFirst("/").fromFirst("/"))
+                {
+                    // They should match perfectly, recompute them to debug them
+                    info.getMetaDataEx(metadataTmp.getBuffer(), metadataTmp.getSize());
+                }
+                fprintf(stdout, "Mismatch in metadata %s vs %s\n", (const char*)metadata, (const char*)metadataCheck);
+            }
+
+            // Now handle special file directly
+            if (info.isLink())
+            {
+                // Check if the link point to outside the backup folder (in that case warn the user that it'll not be backuped)
+                String backupFullPath = File::Info(folderToBackup).getRealFullPath();
+                String currentFullPath = info.getRealFullPath();
+                if (currentFullPath.midString(0, backupFullPath.getLength()) != backupFullPath)
+                {
+                    if (!WARN_CB(ProgressCallback::Backup, info.name, TRANS("Symbolic link points outside of the backup folder, the content will not be saved, only the link")))
+                        return false;
+                }
+            }
+
+            if (strippedFilePath == PathSeparator && fileTree->findItem(strippedFilePath) == fileTree->notFound())
+            {
+                // Create the root folder if it does not exists yet
+                fileTree->appendItem(&FileFormat::FileTree::Item::createNew(false).setMetaData(metadataTmp.getConstBuffer(), (uint16)metadataTmp.getSize()).setChunkListID(0).setParentID(0));
+                dirCount++;
+                return callback.progressed(ProgressCallback::Backup, info.name, 0, 0, seen, total, ProgressCallback::KeepLine);
+            }
+            String parentFolder = info.getParentFolder();
+            if (parentFolder != prevParentFolder)
+            {
+                uint32 parentID = fileTree->findItem(strippedFilePath.upToLast("/"));
+                if (parentID == fileTree->notFound())
+                {
+                    WARN_CB(ProgressCallback::Backup, info.name, TRANS("File found in subdir before dir was seen: ") + strippedFilePath);
+                    return false;
+                }
+                prevParentID = parentID;
+                prevParentFolder = parentFolder;
+            }
+
+            // We'll need the parent directory ID to link with
+
+            // Check if the entry already exists in the database
+            uint32 prevChunkListID = checkDifferentFile(info, strippedFilePath, metadata);
+            if (prevChunkListID)
+            {
+                // The file already exists in the previous file tree, so we'll skip chunking and all other process, just copy the relevant informations
+                fileTree->appendItem(&FileFormat::FileTree::Item::createNew(false).setMetaData(metadataTmp.getConstBuffer(), (uint16)metadataTmp.getSize())
+                                                                                    .setBaseName(info.name)
+                                                                                    .setChunkListID(prevChunkListID)
+                                                                                    .setParentID(prevParentID+1));
+            }
+            else
+            {
+                if (info.isLink() || info.isDevice() || info.isDir())
+                {
+                    fileTree->appendItem(&FileFormat::FileTree::Item::createNew(false).setMetaData(metadataTmp.getConstBuffer(), (uint16)metadataTmp.getSize())
+                                                                                        .setBaseName(info.name).setChunkListID(0).setParentID(prevParentID+1));
+                } else if (info.isFile())
+                {
+                    // We need to chunk it
+                    File::Chunk temporaryChunk;
+                    ::Stream::InputFileStream stream(info.getFullPath());
+
+                    Utils::ScopePtr<FileFormat::FileTree::Item> item(&FileFormat::FileTree::Item::createNew(false));
+                    item->setMetaData(metadataTmp.getConstBuffer(), (uint16)metadataTmp.getSize()).setBaseName(info.name).setParentID(prevParentID+1);
+                    bool hasData = false;
+                    Utils::ScopePtr<FileFormat::ChunkList> fileList(new FileFormat::ChunkList);
+
+                    // Build the list of chunk ID for storage in the DB
+                    uint64 streamOffset = stream.currentPosition();
+                    uint64 fullSize = stream.fullSize();
+                    totalInSize += fullSize;
+                    while (chunker.createChunk(stream, temporaryChunk))
+                    {
+                        if (!callback.progressed(ProgressCallback::Backup, info.name, streamOffset, fullSize, seen, total, ProgressCallback::KeepLine))
+                            return false;
+
+                        FileFormat::Chunk tmpChunk(temporaryChunk.checksum, temporaryChunk.size);
+                        // Ok, got a chunk, let's first figure out if we need to store it in the database
+                        uint32 chunkID = Helpers::indexFile.findChunk(tmpChunk);
+                        if (chunkID == (uint32)-1)
+                        {
+                            // The chunk does not exist, so let's append to the current multichunk, and create an entry for it
+
+                            // We need to figure out where this chunk should go
+                            double entropy = compMultiChunk.getChunkEntropy(&temporaryChunk);
+                            File::MultiChunk & multiChunk = entropy <= Helpers::entropyThreshold ? compMultiChunk : encMultiChunk;
+                            FileFormat::Multichunk * mc = entropy <= Helpers::entropyThreshold ? compMultichunk : encMultichunk;
+                            Helpers::ChunkListT & mcl = entropy <= Helpers::entropyThreshold ? compMultichunkList : encMultichunkList;
+                            uint64 & previousMCID = entropy <= Helpers::entropyThreshold ? compPreviousMCID : encPreviousMCID;
+
+
+                            if (!multiChunk.canFit(temporaryChunk.size))
+                            {
+                                // Close this multichunk, and apply filters
+                                if (!Helpers::closeMultiChunk(backupTo, multiChunk, mcl, &totalOutSize, callback, previousMCID, entropy <= Helpers::entropyThreshold ? Helpers::Default : Helpers::None))
+                                    return false;
+                            }
+                            // Make sure we have a chunk list to store too
+                            if (!mcl) mcl = new FileFormat::ChunkList(0, true);
+
+                            // Append to the current multichunk
+                            size_t offsetInMC = multiChunk.getSize();
+                            uint8 * chunkBuffer = multiChunk.getNextChunkData(temporaryChunk.size, temporaryChunk.checksum);
+                            if (!chunkBuffer) return false;
+
+                            memcpy(chunkBuffer, temporaryChunk.data, temporaryChunk.size);
+
+                            // Then add to the chunk list for multichunk
+                            chunkID = Helpers::indexFile.allocateChunkID();
+                            mcl->appendChunk(chunkID, offsetInMC);
+                            // And remember in which multichunk it is in too
+                            tmpChunk.multichunkID = Helpers::indexFile.allocateMultichunkID(); // This is safe because it returns the next multichunk's ID until it's closed & saved
+                            Helpers::indexFile.appendChunk(tmpChunk);
+
+                            Assert(streamOffset + temporaryChunk.size == stream.currentPosition());
+                            hasData = true;
+                        }
+                        fileList->appendChunk(chunkID);
+                        streamOffset = stream.currentPosition();
+                    }
+
+
+                    // Ok, done with synchronization, insert in index
+                    Helpers::indexFile.appendFileItem(item.Forget(), fileList.Forget());
+                    fileCount++;
+                }
+                else
+                {
+                    if (!WARN_CB(ProgressCallback::Backup, info.name, TRANS("Non regular type (fifo, pipe or socket) are not backed up.")))
+                        return false;
+                }
+            }
+            return callback.progressed(ProgressCallback::Backup, info.name, 0, 0, seen, total, ProgressCallback::FlushLine);
+        }
+
+        /** Accessible wrapper from outside to finish the multichunks */
+        bool finishMultiChunks()
+        {
+            if (!finishMultiChunk(compMultiChunk, compMultichunkList, compPreviousMCID, Helpers::Default)) return false;
+            if (!finishMultiChunk(encMultiChunk, encMultichunkList, encPreviousMCID, Helpers::None)) return false;
+
+            // If we found something to analyze, then the backup worked
+            if (totalInSize)
+            {
+                Frost::backupWorked = true;
+                Helpers::indexFile.getMetaData().Append(String::Print("FileCount: %u", fileCount));
+                Helpers::indexFile.getMetaData().Append(String::Print("DirCount: %u", dirCount));
+                Helpers::indexFile.getMetaData().Append(String::Print("InitialSize: %lld", totalInSize));
+                Helpers::indexFile.getMetaData().Append(String::Print("BackupSize: %lld", totalOutSize));
+                // If we were appending to a multichunk, remove the previous multichunk
+                //!< @todo
+
+                // Then close the index too
+                String error = Helpers::indexFile.close();
+                if (error)
+                {
+                    WARN_CB(ProgressCallback::Backup, TRANS("Error"), error);
+                    return false;
+                }
+            }
+            return callback.progressed(ProgressCallback::Backup, TRANS("Done"), 0, 0, 0, 0, ProgressCallback::FlushLine);
+        }
+
+
+#endif
+
+        /** Finish the current multichunk, as it's the end of the backup process */
+        bool finishMultiChunk(File::MultiChunk & multiChunk, Helpers::ChunkListT & multiChunkList, uint64 & previousMCID, const Helpers::CompressorToUse comp)
+        {
+            // Check if we started a multichunk (need to close it in that case)
+            if (multiChunk.getSize())
+            {
+                Assert(multiChunkList);
+                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkList, &totalOutSize, callback, previousMCID, comp))
+                    return false;
+            }
+            return true;
+        }
 
         BackupFile(ProgressCallback & callback, const String & backupTo, const unsigned int revID, const String & rootFolder, PurgeStrategy strategy)
             : callback(callback), backupTo(backupTo),
               folderToBackup(rootFolder.normalizedPath(Platform::Separator, true)), revID(revID), seen(0), total(1),
               fileCount(0), dirCount(0), totalInSize(0), totalOutSize(0),
               compMultiChunkListID(0), encMultiChunkListID(0), compPreviousMCID(0), encPreviousMCID(0), prevParentFolder("*")
+#if KeepPreviousVersionFormat == 1
+#else
+              , prevParentID(0), fileTree(Helpers::indexFile.getFileTree(revID)), prevFileTree(Helpers::indexFile.getFileTree(revID - 1))
+#endif
         {
+#if KeepPreviousVersionFormat == 1
             if (strategy == Slow)
             {
                 // Need to reopen last multichunks if it makes any sense
                 reopenMultichunk(Helpers::Default, compMultiChunk, compMultiChunkListID, compPreviousMCID);
                 reopenMultichunk(Helpers::None, encMultiChunk, encMultiChunkListID, encPreviousMCID);
             }
+#else
+            //!< @todo
+#endif
         }
     };
 
@@ -1388,7 +2136,7 @@ namespace Frost
         int restoreSingleFile(Stream::OutputStream & stream, String & errorMessage, uint64 chunkListID, const String & filePath, const uint64 fileSize, const uint32 current = 0, const uint32 total = 1)
         {
     #define ERR(Msg) { errorMessage = Msg; return -1; }
-
+#if KeepPreviousVersionFormat == 1
             // The initial approach that used to work was doing multiple request per chunk and as such, was very slow.
             // The new approach is using the filtering capabilities of the SQL engine to perform a single request with all informations included.
             // Basically, we'll be joining the ChunkList table for the File's chunk and the MultiChunk's chunk, and joining the Multichunk table too to get the
@@ -1434,9 +2182,51 @@ namespace Frost
                 // Select next row
                 ++iter;
             }
+#else
+            FileFormat::ChunkList * chunkList = Helpers::indexFile.getChunkList((uint32)chunkListID);
+            if (!chunkList)
+            {
+                errorMessage = TRANS("Invalid chunklist for file: ") + filePath;
+                return 1;
+            }
+            const FileFormat::Chunks & chunks = Helpers::indexFile.getTotalChunks();
+            for (size_t i = 0; i < chunkList->chunksID.getSize(); i++)
+            {
+                const uint32 chunkID = chunkList->chunksID.getElementAtUncheckedPosition(i);
+                // Then search for this chunk in the consolidated chunks array
+                const FileFormat::Chunk * chunkIndex = Helpers::indexFile.findChunk(chunkID);
+                if (!chunkIndex)
+                    ERR(TRANS("Missing chunk index for this file: ") + chunkID);
+
+                // Find the multichunk who's storing this chunk
+                const FileFormat::Multichunk * mchunk = Helpers::indexFile.getMultichunk(chunkIndex->multichunkID);
+                if (!mchunk)
+                    ERR(TRANS("Missing multichunk index for this file: ") + chunkIndex->multichunkID);
+
+                // We need the offset in the multichunk's chunklist so it's faster to restore
+                FileFormat::ChunkList * mcChunkList = Helpers::indexFile.getChunkList(mchunk->listID);
+                size_t chunkOffset = (size_t)-1;
+                if (mcChunkList) chunkOffset = mcChunkList->getChunkOffset(chunkID);
+
+                errorMessage = "";
+                File::Chunk * chunk = Helpers::extractChunkBin(errorMessage, backupFolder, mchunk->getFileName(), mchunk->UID, chunkOffset, chunkIndex->checksum, Helpers::indexFile.getFilterArguments().getArgument(mchunk->filterArgIndex), cache, callback);
+                if (!chunk || errorMessage) return -1;
+
+                // Ok, if we got a chunk, let's save it
+                if (!chunk)
+                    ERR(TRANS("Missing chunk for this file: ") + chunkID);
+                if (stream.write(chunk->data, chunk->size) != (uint64)chunk->size)
+                    ERR(TRANS("Can't write the file (disk full ?)"));
+
+                if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + filePath, stream.currentPosition(), fileSize, current, total, stream.currentPosition() != fileSize ? ProgressCallback::KeepLine : ProgressCallback::FlushLine))
+                    ERR(TRANS("Interrupted in output"));
+            }
+#endif
             return 0; // Done
         }
 
+
+#if KeepPreviousVersionFormat == 1
         /** Restore a single file from the database
             @return 0 on success, -1 on error, 1 on warning */
         int restoreFile(const DatabaseModel::Entry & file, String & errorMessage, const uint32 current, const uint32 total)
@@ -1514,6 +2304,91 @@ namespace Frost
     #undef ERR
             return 0;
         }
+#else
+        /** File removed, let's apply the same on the file system */
+        int removeFile(const String & filePath, String & errorMessage, const uint32 current, const uint32 total)
+        {
+        #define WarnAndReturn(Msg) WARN_CB(ProgressCallback::Restore, filePath, TRANS( Msg )) ? 1 : -1
+            File::Info outFile(folderTrimmed + filePath);
+            if (!outFile.doesExist()) return 0; // Ignore deleted file that does not exists on the system.
+
+            // We need to delete the file from the system, depending on the overwrite policy
+            if (overwritePolicy == No)
+                return WarnAndReturn("This file already exists and is deleted in the backup, and no overwrite specified");
+            if (overwritePolicy == Update && outFile.modification < File::Info(outFile.getFullPath()).modification)
+                return WarnAndReturn("This file already exists in the restoring folder and is newer than the backup which is deleted");
+
+            if (!File::Info(outFile.getFullPath()).remove())
+                ERR(TRANS("Can not remove file on the system: ") + filePath);
+            return 0;
+        }
+
+        /** Restore a single file from the database
+            @return 0 on success, -1 on error, 1 on warning */
+        int restoreFile(const uint32 fileIndex, String & errorMessage, const uint32 current, const uint32 total)
+        {
+            Utils::OwnPtr<FileFormat::FileTree> tree = Helpers::indexFile.getFileTree(Helpers::indexFile.getCurrentRevision());
+            const String & filePath = tree->getItemFullPath(fileIndex);
+            const FileFormat::FileTree::Item * item = tree->getItem(fileIndex);
+
+            // We need to figure out if the file is a regular file, we do so by checking its metadata field
+            File::Info outFile(folderTrimmed + filePath);
+            if (!outFile.analyzeMetaData(item->getMetaData()))
+            {
+                errorMessage = TRANS("Bad metadata found in database");
+                return WarnAndReturn("Bad metadata for this file, it's ignored for restoring");
+            }
+
+            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + filePath, 0, outFile.size, current, total, ProgressCallback::KeepLine))
+                ERR(TRANS("Interrupted in output"));
+
+
+            // Check if the file already exists
+            if (outFile.doesExist())
+            {
+                if (item->getMetaData() != File::Info(outFile.getFullPath()).getMetaData())
+                {
+                    switch(overwritePolicy)
+                    {
+                    case No: return WarnAndReturn("This file already exists and is different in the restoring folder, and no overwrite specified");
+                    case Update:
+                        if (outFile.modification < File::Info(outFile.getFullPath()).modification)
+                            return WarnAndReturn("This file already exists in the restoring folder and is newer than the backup");
+                        break;
+                    case Yes:
+                    default:
+                        break;
+                    }
+                }
+            }
+
+            // Ok, now check if it's a regular file that need its content to be restored
+            if (outFile.isFile())
+            {
+                // Seem so, let's restore it now.
+                ::Stream::OutputFileStream stream(outFile.getFullPath());
+                int ret = restoreSingleFile(stream, errorMessage, item->getChunkListID(), filePath, outFile.size, current, total);
+                if (ret == 1) return WarnAndReturn(errorMessage);
+                if (ret < 0) return ret;
+            }
+            else
+            {
+                if (!callback.progressed(ProgressCallback::Restore, outFile.getFullPath(), 0, 0, current, total, ProgressCallback::FlushLine))
+                    ERR(TRANS("Interrupted in output"));
+            }
+
+            // Then restore the metadata here
+            if (!outFile.setMetaData(item->getMetaData()))
+            {
+                errorMessage = TRANS("Failed to restore metadata");
+                return WarnAndReturn("Failed to restore the file's metadata");
+            }
+        #undef WarnAndReturn
+        #undef ERR
+            return 0;
+        }
+
+#endif
 
         RestoreFile(ProgressCallback & callback, const String & folderTrimmed, const String & backupFolder, OverwritePolicy policy, const size_t maxCacheSize)
             : callback(callback), folderTrimmed(folderTrimmed), backupFolder(backupFolder.normalizedPath(Platform::Separator, true)),
@@ -1561,6 +2436,7 @@ namespace Frost
     };
     unsigned int listBackups(const ::Time::Time & startTime, const ::Time::Time & endTime, const bool withList)
     {
+#if KeepPreviousVersionFormat == 1
         BuildPool(DatabaseModel::Revision, pool, TimeSinceEpoch, _C::Between((uint64)startTime.asNative(), (uint64)endTime.asNative()));
         if (!pool.count)
             fprintf(stdout, "%s", (const char*)TRANS("No revision found\n"));
@@ -1607,8 +2483,71 @@ namespace Frost
             }
         }
         return (unsigned int)pool.count;
+#else
+        const FileFormat::Catalog * catalog = Helpers::indexFile.getCatalog();
+        uint32 count = 0;
+        FileFormat::MetaData md;
+        while (catalog)
+        {
+            if (catalog->time >= startTime.Second() && catalog->time <= endTime.Second())
+            {
+                if (!Helpers::indexFile.Load(md, catalog->optionMetadata))
+                    fprintf(stdout, (const char*)TRANS("Revision %d happened on %s\n"), (int)catalog->revision, (const char*)::Time::Time(catalog->time).toDate());
+                else
+                {
+                    const String & initialSize = md.findKey("InitialSize").fromFirst(": ");
+                    if (initialSize)
+                    {
+                        const int64 is = initialSize, bs = md.findKey("BackupSize").fromFirst(": ");
+                        // Extract the total backup size from the metadata
+                        fprintf(stdout, (const char*)TRANS("Revision %d happened on %s, linked %u files and %u directories, cumulative size %s (backup is %s, saved %d%%)\n"), (int)catalog->revision, (const char*)::Time::Time(catalog->time).toDate(),
+                                                     (uint32)md.findKey("FileCount").fromFirst(": "), (uint32)md.findKey("DirCount").fromFirst(": "), (const char*)makeLegibleSize(is),
+                                                     (const char*)makeLegibleSize(bs), 100 - (100 * (uint64)bs) / (uint64)is);
+                    }
+                    else
+                        // Extract the total backup size from the metadata
+                        fprintf(stdout, (const char*)TRANS("Revision %d happened on %s, linked %u files and %u directories, cumulative size %s (backup is %s, saved 100%%)\n"), (int)catalog->revision, (const char*)::Time::Time(catalog->time).toDate(),
+                                                     (uint32)md.findKey("FileCount").fromFirst(": "), (uint32)md.findKey("DirCount").fromFirst(": "), (const char*)makeLegibleSize((int64)initialSize),
+                                                     (const char*)makeLegibleSize((int64)md.findKey("BackupSize").fromFirst(": ")));
+
+                }
+                // Then make a list of files for this revision
+                PathIDMapT fileList;
+                if (withList && createFileListInRev(fileList, catalog->revision))
+                {
+                    Strings::StringArray filePaths;
+                    // Prepare the file list in the format we like
+                    PathIDMapT::IterT iter = fileList.getFirstIterator();
+                    while (iter.isValid())
+                    {
+                        String md = (*iter)->getMetaData();
+                        String metaData = File::Info::printMetaData(md);
+                        if (metaData)
+                        {
+                            filePaths.Append(String::Print(TRANS("%s %s [rev%u:id%u]"), (const char*)metaData, (const char*)*(iter.getKey()), (unsigned int)catalog->revision, (unsigned int)*(*iter)));
+                        }
+                        else
+                            filePaths.Append(String::Print(TRANS("%s [rev%u:id%u]"), (const char*)*(iter.getKey()), (unsigned int)catalog->revision, (unsigned int)*(*iter)));
+                        ++iter;
+                    }
+                    // Sort the file list
+                    CompareStringPath cs;
+                    Container::Algorithms<Strings::StringArray>::sortContainer(filePaths, cs);
+                    // Show it
+                    for (size_t j = 0; j < filePaths.getSize(); j++)
+                        fprintf(stdout, "\t%s\n", (const char*)filePaths[j]);
+                }
+                count++;
+            }
+            if (!catalog->previous.fileOffset() || !Helpers::indexFile.Map(catalog, catalog->previous)) break;
+        }
+        if (!count)
+            fprintf(stdout, "%s", (const char*)TRANS("No revision found\n"));
+        return count;
+#endif
     }
 
+#if KeepPreviousVersionFormat == 1
     // Purge old backups
     String purgeBackup(const String & chunkFolder, ProgressCallback & callback, const PurgeStrategy strategy, const unsigned int upToRevision)
     {
@@ -1938,6 +2877,7 @@ namespace Frost
         Database::SQLFormat::optimizeTables(0);
         return "";
     }
+#endif
 
     // Restore a backup to the given folder
     String restoreBackup(const String & folderToRestore, const String & restoreFrom, const unsigned int revisionID, ProgressCallback & callback, const size_t maxCacheSize)
@@ -1962,13 +2902,14 @@ namespace Frost
         if (!createFileListInRev(fileList, revisionID))
             return TRANS("Can not get any file or directory from this revision");
 
-
-        // Need to find out all the directories required for this revision, in order to restore them
-        Database::Pool<DatabaseModel::Entry> dirPool = ((Select("*").From("Entry").Where("Revision") <= revisionID).And("Type") == 1).OrderBy("Path", true, "Revision", false);
-
         uint32 total = (uint32)fileList.getSize(), current = 0;
         String lastPath = "*";
         RestoreFile restore(callback, folderTrimmed, restoreFrom, overwritePolicy, maxCacheSize);
+
+#if KeepPreviousVersionFormat == 1
+        // Need to find out all the directories required for this revision, in order to restore them
+        Database::Pool<DatabaseModel::Entry> dirPool = ((Select("*").From("Entry").Where("Revision") <= revisionID).And("Type") == 1).OrderBy("Path", true, "Revision", false);
+
         unsigned int skip = 1;
         for (unsigned int i = 0; i < dirPool.count; i+= skip)
         {
@@ -2048,7 +2989,69 @@ namespace Frost
                 }
             }
         }
+#else
+        // Compute a list of files in the restoring folder, as we might need to remove them later on
+        if (!callback.progressed(ProgressCallback::Restore, TRANS("...analysing restore folder..."), 0, 1, 0, 1, ProgressCallback::KeepLine))
+            return TRANS("Error in output");
 
+        // Need to create all required directories first
+        Strings::StringArray dirs;
+        if (!createDirListInRev(dirs, revisionID))
+            return TRANS("Can not get the directory list from this revision");
+
+        String errorMessage;
+
+        for (size_t i = 0; i < dirs.getSize(); i++)
+        {
+            const String & dir = dirs.getElementAtUncheckedPosition(i);
+            FileMDEntry * entry = fileList.getValue(dir);
+            if (!entry)
+                return TRANS("Inconsistency in the file list for restoring the directory: ")+dir;
+            if (restore.restoreFile(*(entry), errorMessage, current, total) < 0)
+                return errorMessage;
+            ++current;
+        }
+
+        File::FileItemArray files;
+        File::Scanner::FileFilters filters;
+        File::Scanner::scanFolderFilename(folderTrimmed, "/", files, filters, true); // If it fails, we don't care
+
+
+        PathIDMapT::IterT iter = fileList.getFirstIterator();
+        while (iter.isValid())
+        {
+            lastPath = *iter.getKey();
+            File::Info dir(folderTrimmed + lastPath);
+
+            // Remove the file from the current file list if found (this is O(N) search here, could be faster if sorting the array)
+            for (size_t i = 0; i < files.getSize(); i++)
+                if (files[i].name == lastPath)
+                {
+                    files.Remove(i); break;
+                }
+
+            if (dir.isDir()) { ++iter; continue; }
+
+            // Show the list of directories to restore
+            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + lastPath, 0, 1, current, total, ProgressCallback::KeepLine))
+                return TRANS("Interrupted in output");
+
+            if (restore.restoreFile(*(*iter), errorMessage, current, total) < 0)
+                return errorMessage;
+
+            ++current;
+            ++iter;
+        };
+
+        // All files that remains in the file array should be deleted now as they are not in backup
+        for (size_t i = 0; i < files.getSize(); i++)
+        {
+            lastPath = folderTrimmed + files[i].name;
+            if (restore.removeFile(lastPath, errorMessage, current, total) < 0)
+                return errorMessage;
+        }
+
+#endif
         // Ok done restoring
         return "";
     }
@@ -2073,12 +3076,18 @@ namespace Frost
 
         String baseFolder = "";
         RestoreFile restore(callback, baseFolder, restoreFrom, No, maxCacheSize);
+#if KeepPreviousVersionFormat == 1
         DatabaseModel::Entry file;
         file.ID = *entry;
-
         String errorMsg;
         int ret = restore.restoreSingleFile(Stream::StdOutStream::getInstance(), errorMsg, file.ChunkListID, file.Path, entryMD.size);
         if (ret < 0) return errorMsg;
+#else
+        String errorMsg;
+        FileFormat::FileTree::Item * item = Helpers::indexFile.getFileTree(revisionID)->getItem((unsigned int)*entry); // Call uint operator
+        int ret = restore.restoreSingleFile(Stream::StdOutStream::getInstance(), errorMsg, item->getChunkListID(), fileToRestore, entryMD.size);
+        if (ret < 0) return errorMsg;
+#endif
 
         // Ok done restoring
         return "";
@@ -2096,16 +3105,22 @@ int showHelpMessage(const Frost::String & error = "")
 {
     if (error) fprintf(stderr, "error: %s\n\n", (const char*)TRANS(error));
 
-    printf("Frost (C) Copyright 2014 - Cyril RUSSO (This software is BSD licensed) \n");
+    printf("Frost (C) Copyright 2015 - Cyril RUSSO (This software is BSD licensed) \n");
     printf(TRANS("Frost is a tool used to efficiently backup and restore files to/from a remote\n"
            "place with no control other the remote server software.\n"
            "No warranty of any kind is provided for the use of this software.\n"
-           "Current version: %d. \n\n"
+           "Current version: 2 build %d. \n\n"
+           "Backup set from Frost version 2 use a different index file format and are not compatible with version 1's SQLite based files.\n"
+           "If you need to upgrade to version 2, run a new backup of your directory, you'll loose history for your backup set using version 1.\n\n"
            "Usage:\n"
            "  Actions:\n"
            "\t--restore dir [rev]\tRestore the revision (default: last) to the given directory (either backup or restore mode is supported)\n"
            "\t--backup dir\t\tBackup the given directory (either backup or restore mode is supported)\n"
+#if KeepPreviousVersionFormat == 1
            "\t--purge [rev]\t\tPurge the given remote backup directory up to the given revision number (use --list to find out)\n"
+#else
+           //!< @todo
+#endif
            "\t--list [range]\t\tList the current backup in the specified index (required) and time range in UTC (in the form 'YYYYMMDDHHmmSS YYYYMMDDHHmmSS')\n"
            "\t--filelist [range]\tList the current backup in the specified index (required) and time range in UTC, including the file list in this revision\n"
            "\t--cat path [rev]\tLocate the file for the given path and optional revision number (remote is required), extract it to the standard output\n"
@@ -2126,10 +3141,17 @@ int showHelpMessage(const Frost::String & error = "")
            "\t                     \tIf you backup often, and purge at regular interval, the default should allow fast restoring and purging\n"
            "\t--compression [bsc]\tYou can change the compression library to use (default is zlib). Using 'bsc' is faster than LZMA and gives better compression ratio.\n"
            "\t                     \tHowever, 'bsc' also changes the multichunk size to 25MB.\n"
+#if KeepPreviousVersionFormat == 1
            "\t--strategy [mode]    \tThe purging strategy, 'fast' for removing lost chunk from database, but does not reassemble multichunks\n"
            "\t                     \t'slow' for rebuilding multichunks after fast pruning. This will save the maximum backup amount, at the price of much longer processing\n"
            "\t                     \t'slow' can also be used for when backing up to reopen and append to the last multichunk from the last backup. This will reduce the number of multichunks created.\n"
            "\t                     \t       In that case, this means that the previous set of backup is mutated (which might not be desirable depending on the storage).\n"
+#else
+           "\t--strategy [mode]    \tThe purging strategy. By default 'fast', when purging from previous revision, a new index file is created that's built from the cleaned index.\n"
+           "\t                     \tHowever, multichunks are not rebuild to remove lost chunks. When using 'slow', multichunks are rebuilt too to remove lost chunks. This incurs reading\n"
+           "\t                     \tand writing many multichunk (which might not be desirable if storage is remote). This can also be used when backing up to reopen and append to the last\n"
+           "\t                     \tmultichunk from the last backup. This will reduce the number of multichunks created (but last set is mutated).\n"
+#endif
            "\t--exclude list.exc \tYou can specify a file containing the exclusion list for backup. This file is read line-by-line (one rule per line)\n"
            "\t                     \tIf a line starts by 'r/' the exclusion rule is considered as a regular expression otherwise the rule is matched if the analyzed file path contains the rule.\n"
            "\t                     \tThis also means that if you need to exclude a file whose name starts by 'r/', you need to write 'r/r/'.\n"
@@ -2183,9 +3205,32 @@ int showSecurityMessage()
            "\tsystem, a userspace file-system facility (like FUSE) allows to access remote site directly via the\n"
            "\tfilesystem layer.\n"
            "\tIn that case, access to this remote mount point might prove slow. To optimize access and backup speed\n"
-           "\tyou should keep the index database locally (either by transfering it before and after the process)\n"
+           "\tyou should keep the index file locally (either by transfering it before and after the process)\n"
            "\tThe keyvault is never modified by Frost after first backup, so you might as well leave it on a server\n"
            "\tor locally depending on your security concerns.\n"
+           "  Space usage/Speed tradeoff configuration:\n"
+           "\tWhile using version 1, we have spotted decrease in performance while the backup set is becoming large\n"
+           "\tAfter profiling, the bottleneck happened in the database code where simple access to indexed data was\n"
+           "\textremely slow (up to few second). Starting with version 2, the new index file format is being used,\n"
+           "\tand this has some impact on your Frost settings:\n"
+           "\t1- New index is much smaller. We expect to fit the index file in memory for usual backup set size\n"
+           "\t2- Access algorithm are all made 0(log N) when O(1) is not possible.\n"
+           "\t3- File format is made as less as mutable as possible. While backing up, no change is made past the\n"
+           "\t   file header. File is recreated on purging, and no modification is done on restoring.\n"
+           "\t4- File format is made to be memory mapped as much as possible. This means that accesses will be fast\n"
+           "\t   and the operating system will be able to swap the non-used part if memory is lacking\n\n"
+           "\t5- Index file are not endianness neutral. You can not save a backup on little endian system (amd64,\n"
+           "\t   x86, ARM) and restore on a big endian system. However, the storage format used is type-size clear\n"
+           "\t   so a backup on a 32 bits system will be restoreable/continueable on a 64 bits system and viceversa."
+           "\tSize limits have been selected to have as less impact as possible, yet, you must be aware of them:\n"
+           "\t1- Index file format is limited to 16GB (typically a 100k files / 250GB dataset uses 500MB)\n"
+           "\t   However, on a 32-bits machine, index file format will be limited to the maximum memory\n"
+           "\t   map size (likely 2GB to 3.5GB on linux).\n"
+           "\t2- There is only 65536 possible multichunks. When starting the backup set, you can specify the size\n"
+           "\t   of the multichunk. By default, multichunks are 25MB in size (you can change this with the\n"
+           "\t   --multichunk option), so the maximum backup set can be 65536*25MB = 1.64TB at worse\n"
+           "\t   If your backup set is made of very big files, you should increase the multichunks' size\n"
+           "\t   If your backup set is made of many small files, you should split your backup set in many backups\n"
            ),
 #include "build/build-number.txt"
     );
@@ -2268,6 +3313,7 @@ int checkTests(Strings::StringArray & options)
             return EXIT_SUCCESS;
 
         }
+#if KeepPreviousVersionFormat == 1
         else if (testName == "db")
         {
             // Create a fake database URL
@@ -2287,6 +3333,7 @@ int checkTests(Strings::StringArray & options)
             fprintf(stderr, "Success\n");
             return EXIT_SUCCESS;
         }
+#endif
         else if (testName == "roundtrip")
         {
             // First create some specific files to save
@@ -2369,6 +3416,8 @@ int checkTests(Strings::StringArray & options)
             result = Frost::backupFolder("test/", "./testBackup/", revisionID, console);
             if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
 
+            result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
+            if (result) ERR("Can't open the index file: %s\n", (const char*)result);
             if (Frost::listBackups() != 1) ERR("Can't list the created backup\n");
 
             // Finalize the database and clean up all our stuff before restoring
@@ -2378,6 +3427,7 @@ int checkTests(Strings::StringArray & options)
             /////////////////////////////// Restoring here /////////////////////////////////
             // Ok, let's re-open again all of stuff
             revisionID = 0;
+
             result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
             if (result) ERR("Can't re-open the database: %s\n", (const char*)result);
             if (!cipheredMasterKey.getSize()) ERR("Bad readback of the ciphered master key\n");
@@ -2400,8 +3450,9 @@ int checkTests(Strings::StringArray & options)
             Frost::finalizeDatabase();
             fprintf(stderr, "Success\n");
             return EXIT_SUCCESS;
-
-        } else if (testName == "purge")
+        }
+#if KeepPreviousVersionFormat == 1
+        else if (testName == "purge")
         {
             // Delete a big file to figure out what happens to the final directory
             File::Info("./test/bigFile.bin").remove();
@@ -2443,7 +3494,9 @@ int checkTests(Strings::StringArray & options)
             Frost::finalizeDatabase();
             fprintf(stderr, "Success\n");
             return EXIT_SUCCESS;
-        } else if (testName == "fs")
+        }
+#endif
+        else if (testName == "fs")
         {
             File::Info("./test/").remove();
             File::Info("./testBackup/").remove();
@@ -2486,6 +3539,9 @@ int checkTests(Strings::StringArray & options)
             result = Frost::backupFolder("test/", "./testBackup/", revisionID, console);
             if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
 
+            Frost::finalizeDatabase();
+            result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
+            if (result) ERR("Can't open the index file: %s\n", (const char*)result);
             if (Frost::listBackups() != 1) ERR("Can't list the created backup\n");
 
             // Reported issue #3
@@ -2498,6 +3554,9 @@ int checkTests(Strings::StringArray & options)
             result = Frost::backupFolder("test/", "./testBackup/", revisionID, console);
             if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
 
+            Frost::finalizeDatabase();
+            result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
+            if (result) ERR("Can't open the index file: %s\n", (const char*)result);
             if (Frost::listBackups() != 2) ERR("Can't list the created backup\n");
 
             // Add another file and backup
@@ -2507,9 +3566,12 @@ int checkTests(Strings::StringArray & options)
             Frost::finalizeDatabase();
             result = Frost::initializeDatabase("test/", revisionID, cipheredMasterKey);
             if (result) ERR("Creating the database failed: %s\n", (const char*)result);
-            result = Frost::backupFolder("test/", "./testBackup/", revisionID+2, console);
+            result = Frost::backupFolder("test/", "./testBackup/", revisionID, console);
             if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
 
+            Frost::finalizeDatabase();
+            result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
+            if (result) ERR("Can't open the index file: %s\n", (const char*)result);
             if (Frost::listBackups() != 3) ERR("Can't list the created backup\n");
 
             // Finalize the database and clean up all our stuff before restoring
@@ -2576,7 +3638,7 @@ int checkTests(Strings::StringArray & options)
                     buf[i + 1] = buf[i];
                 }
                 // Not so simple, let's make it harder for compression
-                for (int i = 0; i < 32*1024*1024; i+= 5)
+                for (int i = 0; i < 32*1024*1024 - 4; i+= 5)
                 {
                     buf[i + 2] = (buf[i] - buf[i+1]) > 10 ? buf[i]+2 : buf[i+1];
                     buf[i + 4] = (buf[i+3] + buf[i+2] + buf[i+1] + buf[i]) / 3;
@@ -2887,7 +3949,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         memset(password, 0, passLen);
     } else { pass = *optionsMap["password"]; optionsMap.removeValue("password"); }
 
-
+#if KeepPreviousVersionFormat == 1
     if (action == "purge")
     {
         // Purge the directory now for useless chunks
@@ -2914,6 +3976,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
 
         return EXIT_SUCCESS;
     }
+#endif
     if (action == "backup")
     {
         // Ok, start the system now
@@ -2952,12 +4015,20 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
 
         // Display some statistics
+#if KeepPreviousVersionFormat == 1
         Frost::DatabaseModel::Revision rev;
         rev.ID = revisionID;
         console.progressed(Frost::ProgressCallback::Backup, "", 0, 0, 0, 0, Frost::ProgressCallback::FlushLine);
         console.progressed(Frost::ProgressCallback::Backup, Frost::String::Print(Frost::__trans__("Finished: %s, (source size: %lld, backup size: %lld, %u files, %u directories)"),
                                             (const char*)backup, (uint64)rev.InitialSize, (uint64)rev.BackupSize, (uint32)rev.FileCount, (uint32)rev.DirCount), 1, 1, (uint32)rev.FileCount, (uint32)rev.FileCount,
                                             Frost::ProgressCallback::FlushLine);
+#else
+        console.progressed(Frost::ProgressCallback::Backup, "", 0, 0, 0, 0, Frost::ProgressCallback::FlushLine);
+        console.progressed(Frost::ProgressCallback::Backup, Frost::String::Print(Frost::__trans__("Finished: %s, (source size: %lld, backup size: %lld, %u files, %u directories)"),
+                                            (const char*)backup, (int64)Frost::Helpers::indexFile.getMetaData().findKey("InitialSize").fromFirst(": "), (int64)Frost::Helpers::indexFile.getMetaData().findKey("BackupSize").fromFirst(": "), (uint32)Frost::Helpers::indexFile.getMetaData().findKey("FileCount").fromFirst(": "), (uint32)Frost::Helpers::indexFile.getMetaData().findKey("DirCount").fromFirst(": ")), 1, 1, (uint32)Frost::Helpers::indexFile.getMetaData().findKey("FileCount").fromFirst(": "), (uint32)Frost::Helpers::indexFile.getMetaData().findKey("FileCount").fromFirst(": "),
+                                            Frost::ProgressCallback::FlushLine);
+
+#endif
         // Need to be called anyway
         Frost::finalizeDatabase();
         if (warningLog.getSize()) fputs((const char*)(warningLog.Join("\n")+"\n"), stderr);
@@ -3006,6 +4077,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
     return BailOut;
 }
 
+#if KeepPreviousVersionFormat == 1
 namespace Database { String constructFilePath(String fullPath, const String & URL); }
 struct ExitErrorCallback : public Database::DatabaseConnection::ClassErrorCallback
 {
@@ -3021,12 +4093,17 @@ struct ExitErrorCallback : public Database::DatabaseConnection::ClassErrorCallba
     }
 } exitErrorCallback;
 
-
 int main(int argc, char ** argv)
 {
     // Install callbacks for errors and logging
     Database::SQLFormat::setErrorCallback(exitErrorCallback);
 
+#else
+
+int main(int argc, char ** argv)
+{
+
+#endif
     // Build the options array
     Strings::StringArray options(argv, (size_t)argc);
     if (options.getSize() < 2)
@@ -3122,7 +4199,9 @@ int main(int argc, char ** argv)
     if ((ret = handleAction(options, "list")) != BailOut) return ret;
     if ((ret = handleAction(options, "filelist")) != BailOut) return ret;
     if ((ret = handleAction(options, "cat")) != BailOut) return ret;
+#if KeepPreviousVersionFormat == 1
     if ((ret = handleAction(options, "purge")) != BailOut) return ret;
+#endif
     if ((ret = handleAction(options, "backup")) != BailOut) return ret;
     if ((ret = handleAction(options, "restore")) != BailOut) return ret;
 

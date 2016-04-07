@@ -134,7 +134,7 @@ namespace Time
         // [0.032123s or 24535335 cycles over 3 calls] Basic loop
         // =========================================================
         @endcode
-        You can also use the PROFILE("Basic loop") macro that's just ignored in Release mode. */
+        You can also use the PROFILER("Basic loop") macro that's just ignored in Release mode. */
     class ScopedProfiler
     {
         /** The profiled item */
@@ -193,7 +193,9 @@ namespace Time
     };
 
 #if (DEBUG==1) || defined(EnableProfiling)
-#define PROFILER(X) ScopedProfiler __profiler__ (X)
+#define _CONCAT(X,Y) X ## _ ## Y
+#define _EVAL(X,Y) _CONCAT(X,Y)
+#define PROFILER(X) ::Time::ScopedProfiler _EVAL(__profiler__,__LINE__) (X)
 #else
 /** Use this macro to disable profiling when on release mode (else #define EnableProfiling 1) */
 #define PROFILER(X) (void)(X)

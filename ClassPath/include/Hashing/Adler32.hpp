@@ -19,7 +19,9 @@ namespace Hashing
             hasher.Hash(myBuffer, myBufferSize);
             // Finally get the result
             hasher.Finalize((byte*)&result);
-        @endcode */
+        @endcode
+     
+        @sa Tests::Adler32Tests */
     struct Adler32 : public Hasher
     {
         // Members

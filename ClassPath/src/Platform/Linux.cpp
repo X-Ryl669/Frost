@@ -2,10 +2,27 @@
 #include "../../include/Platform/Platform.hpp"
 // We need locks too
 #include "../../include/Threading/Lock.hpp"
+// We need Logger too
+#include "../../include/Logger/Logger.hpp"
+// We need File too for writing the Pid content
+#include "../../include/File/File.hpp"
 
 #ifdef _POSIX
 #include <termios.h>
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <syslog.h>
+#include <errno.h>
+#include <pwd.h>
+#include <signal.h>
+#include <unistd.h>
+#include <sys/stat.h>
+
+#ifdef _LINUX
+#include <grp.h>
+#endif
+
+
 namespace Platform
 {
     void * malloc(size_t size, const bool)
@@ -92,6 +109,149 @@ namespace Platform
         strcpy(outputName, libraryName);
         strcat(outputName, ".so"); // On Mac OSX both .bundle and .so are valid, so let's use .so
     }
+    
+    
+    /** The output sink to the error console */
+    struct SyslogSink : public Logger::OutputSink
+    {
+        // Members
+    private:
+        Threading::Lock lock;
+    public:
+        virtual void gotMessage(const char * message, const unsigned int flags)
+        {
+            if (logMask & flags)
+            {
+                Threading::ScopedLock scope(lock);
+                int level = LOG_INFO;
+                if ((flags & Logger::Dump) > 0)       level = LOG_DEBUG;
+                if ((flags & Logger::Warning) > 0)    level = LOG_WARNING;
+                if ((flags & Logger::Error) > 0)      level = LOG_ERR;
+                syslog(level, "%s", (const char*)message);
+            }
+        }
+        SyslogSink(unsigned int logMask, const char * daemonName) : OutputSink(logMask)
+        {
+            openlog(daemonName, LOG_PID, LOG_DAEMON);
+        }
+        ~SyslogSink() { closelog(); }
+    };
+    
+
+#define EXIT_SUCCESS 0
+#define EXIT_FAILURE 1
+
+#ifdef DEBUG
+#define OUTLOG(X, Y, ...)  printf(Y "\n", ##__VA_ARGS__) // , __VA_ARGS)
+#else
+#define OUTLOG(X, Y, ...)  syslog(X, Y, ##__VA_ARGS__)
+#endif
+    static volatile bool childReady = false;
+
+    // The child signal handler
+    static void childSigHandler(int signum)
+    {
+        switch(signum)
+        {
+        case SIGALRM: childReady = false; break;
+        case SIGUSR1: childReady = true;  break;
+        case SIGCHLD: childReady = false; break;
+        default: break;
+        }
+    }
+
+    bool daemonize(const char * pidFile, const char * syslogName, bool & isParent)
+    {
+        // Set up the logger to use
+        Logger::setDefaultSink(new SyslogSink(Logger::getDefaultSink().logMask, syslogName));
+        Logger::log(Logger::Content, "Starting %s", syslogName);
+    
+        isParent = true;
+
+        // Check if already a daemon
+        if (getppid() == 1) return true;
+
+        // Trap signals that we expect to recieve
+        signal(SIGCHLD, childSigHandler); signal(SIGUSR1, childSigHandler); signal(SIGALRM, childSigHandler);
+
+        // Fork off the parent process
+        childReady = false;
+        pid_t pid = fork();
+        if (pid < 0)
+        {
+            Logger::log(Logger::Error, "Unable to fork daemon, code=%d (%s)", errno, strerror(errno));
+            return false;
+        }
+        // If we got a good PID, then we can exit the parent process.
+        if (pid > 0)
+        {
+            // Wait for confirmation from the child via SIGUSR1 or SIGCHLD
+            uint32 sleepTime = 0;
+            while (sleepTime < 2000 && !childReady)
+            {
+                Threading::Thread::Sleep(100);
+                sleepTime += 100;
+            }
+            return childReady;
+        }
+
+        // At this point we are executing as the child process
+        isParent = false;
+        if (pidFile && pidFile[0])
+            File::Info(pidFile, true).setContent(Strings::FastString::Print("%d", getpid()));
+
+        // Cancel certain signals
+        signal(SIGCHLD, SIG_DFL); // A child process dies
+        // Various TTY signals
+        signal(SIGTSTP, SIG_IGN); signal(SIGTTOU, SIG_IGN); signal(SIGTTIN, SIG_IGN);
+        // Ignore hangup
+        signal(SIGHUP,  SIG_IGN);
+
+        // Change the file mode mask, create new session for child, and change to root folder to avoid holding references
+        umask(0);
+        if (setsid() < 0)
+        {
+            Logger::log(Logger::Error, "Unable to create new session, code=%d (%s)", errno, strerror(errno));
+            return false;
+        }
+
+        if ((chdir("/")) < 0)
+        {
+            Logger::log(Logger::Error, "Unable to create new session, code=%d (%s)", errno, strerror(errno));
+            return false;
+        }
+
+        // Redirect standard files to /dev/null
+        freopen( "/dev/null", "r", stdin); freopen( "/dev/null", "w", stdout); freopen( "/dev/null", "w", stderr);
+
+        // Tell the parent process that we have started
+        kill(getppid(), SIGUSR1);
+        return true;
+    }
+
+    bool dropPrivileges(const bool userID, const bool groupID)
+    {
+        gid_t newgid = getgid(), oldgid = getegid();
+        uid_t newuid = getuid(), olduid = geteuid();
+
+        // We need to drop ancillary groups while we are root as they can be used back to regain root
+        if (!olduid && groupID) setgroups(1, &newgid);
+
+        if (groupID && newgid != oldgid)
+        {
+            if (setgid(newgid) == -1) return false;
+        }
+
+        if (userID && newuid != olduid)
+        {
+            if (setuid(newuid) == -1) return false;
+        }
+        // Verify we can get back to full privileges
+        if (groupID && newgid != oldgid && (setegid(oldgid) != -1 || getegid() != newgid)) return false;
+        if (userID && newuid != olduid && (seteuid(olduid) != -1 || geteuid() != newuid)) return false;
+        return true;
+    }
+
 }
 
 #endif

@@ -5,9 +5,9 @@
 #define LargeFree(X)        Platform::free(X, true)
 #define LargeCAlloc(X)      Platform::calloc(1, X, true)
 
-#if defined(_OPENMP) && defined(LIBBSC_OPENMP_SUPPORT)
+#if defined(_OPENMP) && defined(EBSC_OPENMP_SUPPORT)
     #include <omp.h>
-    #define LIBBSC_OPENMP
+    #define EBSC_OPENMP
 #endif
 
 #if defined(__GNUC__)
@@ -2220,13 +2220,13 @@ static void trsort(int *ISA, int *SA, int n, int depth)
 static int sort_typeBstar(const uint8 *T, int *SA, int *bucket_A, int *bucket_B, int n, int openMP)
 {
     int *PAb, *ISAb, *buf;
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
     int *curbuf;
     int l;
 #endif
     int i, j, k, t, m, bufsize;
     int c0, c1;
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
     int d0, d1;
 #endif
     
@@ -2287,7 +2287,7 @@ static int sort_typeBstar(const uint8 *T, int *SA, int *bucket_A, int *bucket_B,
         SA[--BUCKET_BSTAR(c0, c1)] = m - 1;
         
         /* Sort the type B* substrings using sssort. */
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
         if (openMP)
         {
             buf = SA + m;
@@ -5112,9 +5112,9 @@ static EOS bsc_unbwt_reconstruct_serial(uint8 * T, uint32 * P, int n, int index)
     return unbwt_biPSI_serial(T, P, n, index);
 }
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
-static int bsc_unbwt_mergedTL_parallel(uint8 * RESTRICT T, uint32 * RESTRICT P, int n, int index, int * RESTRICT indexes)
+static EOS bsc_unbwt_mergedTL_parallel(uint8 * RESTRICT T, uint32 * RESTRICT P, int n, int index, int * RESTRICT indexes)
 {
     uint32 bucket[ALPHABET_SIZE];
 
@@ -5160,10 +5160,10 @@ static int bsc_unbwt_mergedTL_parallel(uint8 * RESTRICT T, uint32 * RESTRICT P, 
         }
     }
 
-    return LIBBSC_NO_ERROR;
+    return Success;
 }
 
-static int bsc_unbwt_biPSI_parallel(uint8 * RESTRICT T, uint32 * RESTRICT P, int n, int index, int * RESTRICT indexes)
+static EOS bsc_unbwt_biPSI_parallel(uint8 * RESTRICT T, uint32 * RESTRICT P, int n, int index, int * RESTRICT indexes)
 {
     if (int * RESTRICT bucket = (int *)LargeCAlloc(ALPHABET_SIZE * ALPHABET_SIZE * sizeof(int)))
     {
@@ -5276,14 +5276,14 @@ static int bsc_unbwt_biPSI_parallel(uint8 * RESTRICT T, uint32 * RESTRICT P, int
             }
 
             LargeFree(fastbits); LargeFree(bucket);
-            return LIBBSC_NO_ERROR;
+            return Success;
         }
         LargeFree(bucket);
     };
-    return LIBBSC_NOT_ENOUGH_MEMORY;
+    return Success;
 }
 
-static int bsc_unbwt_reconstruct_parallel(uint8 * T, uint32 * P, int n, int index, int * indexes)
+static EOS bsc_unbwt_reconstruct_parallel(uint8 * T, uint32 * P, int n, int index, int * indexes)
 {
     if (n < 3 * 1024 * 1024) return bsc_unbwt_mergedTL_parallel(T, P, n, index, indexes);
     return bsc_unbwt_biPSI_parallel(T, P, n, index, indexes);
@@ -5305,7 +5305,7 @@ EOS BWTDecode(uint8 * T, int n, int index, uint8 num_indexes, int * indexes, int
     {
         EOS result = Success;
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
         int mod = n / 8;
         {
@@ -5314,7 +5314,7 @@ EOS BWTDecode(uint8 * T, int n, int index, uint8 num_indexes, int * indexes, int
             mod |= mod >> 16; mod >>= 1;
         }
 
-        if ((features & LIBBSC_FEATURE_MULTITHREADING) && (n >= 64 * 1024) && (num_indexes == (uint8)((n - 1) / (mod + 1))) && (indexes != NULL))
+        if ((features & Multithreading) && (n >= 64 * 1024) && (num_indexes == (uint8)((n - 1) / (mod + 1))) && (indexes != NULL))
         {
             result = bsc_unbwt_reconstruct_parallel(T, P, n, index, indexes);
         }
@@ -6920,7 +6920,7 @@ EOS coder_compress_serial(const uint8 * input, uint8 * output, int n, Coder code
     return outputPtr;
 }
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
 EOS coder_compress_parallel(const uint8 * input, uint8 * output, int n, Coder coder)
 {
@@ -6956,8 +6956,9 @@ EOS coder_compress_parallel(const uint8 * input, uint8 * output, int n, Coder co
                     int blockStart   = compressedStart[blockId];
                     int blockSize    = compressedSize[blockId];
 
-                    compressionResult[blockId] = bsc_coder_encode_block(input + blockStart, buffer + blockStart, blockSize, blockSize, coder);
-                    if (compressionResult[blockId].getError() != Success) compressionResult[blockId] = blockSize;
+                    EOS intResult = coder_encode_block(input + blockStart, buffer + blockStart, blockSize, blockSize, coder);
+                    compressionResult[blockId] = intResult.getError() != Success ? blockSize : intResult.getError();
+
 
                     saveInt(output + 1 + 8 * blockId + 0, blockSize);
                     saveInt(output + 1 + 8 * blockId + 4, compressionResult[blockId]);
@@ -6965,13 +6966,13 @@ EOS coder_compress_parallel(const uint8 * input, uint8 * output, int n, Coder co
 
                 #pragma omp single
                 {
-                    result = 1 + 8 * nBlocks;
+                    int res = 1 + 8 * nBlocks;
                     for (int blockId = 0; blockId < nBlocks; ++blockId)
                     {
-                        result += compressionResult[blockId];
+                        res += compressionResult[blockId];
                     }
 
-                    if (result >= n) result = NotCompressible;
+                    result = res >= n ? NotCompressible : res;
                 }
 
                 if (result.getError() == Success)
@@ -7007,7 +7008,7 @@ EOS coder_compress(const uint8 * input, uint8 * output, int n, Coder coder, int 
     if ((coder != QLFCStatic) && (coder != QLFCAdaptive))
         return BadParameter;
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
     if ((coder_num_blocks(n) != 1) && (features & Multithreading))
     {
@@ -7041,7 +7042,7 @@ EOS coder_decompress(const uint8 * input, uint8 * output, Coder coder, int featu
 
     int decompressionResult[ALPHABET_SIZE];
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
     if (features & Multithreading)
     {
@@ -7057,7 +7058,7 @@ EOS coder_decompress(const uint8 * input, uint8 * output, Coder coder, int featu
             int outputSize = readInt(input + 1 + 8 * blockId + 0);
 
             if (inputSize != outputSize)
-                decompressionResult[blockId] = coder_decode_block(input + inputPtr, output + outputPtr, coder);
+                decompressionResult[blockId] = coder_decode_block(input + inputPtr, output + outputPtr, coder).getError();
             else
             {
                 decompressionResult[blockId] = inputSize; memcpy(output + outputPtr, input + inputPtr, inputSize);
@@ -7172,7 +7173,7 @@ int detect_segments_serial(BscSegmentationModel * RESTRICT model, const uint8 * 
     return blockSize;
 }
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
 int detect_segments_parallel(BscSegmentationModel * RESTRICT model0, BscSegmentationModel * RESTRICT model1, const uint8 * RESTRICT input, int n)
 {
@@ -7223,7 +7224,7 @@ int detect_segments_parallel(BscSegmentationModel * RESTRICT model0, BscSegmenta
             {
                 #pragma omp single
                 {
-                    int64 entropy = 0;
+                    int64 _entropy = 0;
                     for (int context = 0; context < ALPHABET_SIZE; ++context)
                     {
                         int count = 0;
@@ -7232,12 +7233,12 @@ int detect_segments_parallel(BscSegmentationModel * RESTRICT model0, BscSegmenta
                             int frequency = model0->contexts[context].Frequencies[symbol].right + model1->contexts[context].Frequencies[symbol].left;
                             model0->contexts[context].Frequencies[symbol].right = model1->contexts[context].Frequencies[symbol].left = frequency;
 
-                            count += frequency; entropy -= bsc_entropy(frequency);
+                            count += frequency; _entropy -= entropy(frequency);
                         }
-                        model0->contextsCount[context].right = model1->contextsCount[context].left = count; entropy += bsc_entropy(count);
+                        model0->contextsCount[context].right = model1->contextsCount[context].left = count; _entropy += entropy(count);
                     }
 
-                    globalEntropy = entropy; globalBestEntropy = entropy - (entropy >> 5) - (65536LL * 12 * 1024);
+                    globalEntropy = _entropy; globalBestEntropy = _entropy - (_entropy >> 5) - (65536LL * 12 * 1024);
                 }
             }
 
@@ -7316,7 +7317,7 @@ EOS detect_segments_recursive(BscSegmentationModel * model0, BscSegmentationMode
 
     int blockSize = n;
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
     if (features & Multithreading)
     {
@@ -7636,7 +7637,7 @@ EOS detect_recordsize(const uint8 * RESTRICT input, int n, int features)
 EOS reverse_block(uint8 * T, int n, int features)
 {
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
     if (features & Multithreading)
     {
@@ -7674,7 +7675,7 @@ EOS reorder_forward(uint8 * T, int n, int recordSize, int features)
 
         int chunk = (n / recordSize);
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
         if (features & Multithreading)
         {
@@ -7729,7 +7730,7 @@ EOS reorder_reverse(uint8 * T, int n, int recordSize, int features)
 
         int chunk = (n / recordSize);
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
         if (features & Multithreading)
         {
@@ -7910,20 +7911,8 @@ EOS lzp_decode_block(const uint8 * input, const uint8 * inputEnd, uint8 * output
                     const uint8 * reference = outputStart + value;
                           uint8 * outputEnd = output + len;
 
-                    if (output - reference < 4)
-                    {
-                        int offset[4] = {0, 3, 2, 3};
-
-                        *output++ = *reference++;
-                        *output++ = *reference++;
-                        *output++ = *reference++;
-                        *output++ = *reference++;
-
-                        reference -= offset[output - reference];
-                    }
-                    while (output < outputEnd) { saveUint(output, readUint(reference)); output += 4; reference += 4; }
-
-                    output = outputEnd; context = output[-1] | (output[-2] << 8) | (output[-3] << 16) | (output[-4] << 24);
+                    while (output < outputEnd) *output++ = *reference++;
+                    context = output[-1] | (output[-2] << 8) | (output[-3] << 16) | (output[-4] << 24);
                 }
                 else
                 {
@@ -7982,7 +7971,7 @@ EOS lzp_compress_serial(const uint8 * input, uint8 * output, int n, int hashSize
     return outputPtr;
 }
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
 EOS lzp_compress_parallel(const uint8 * input, uint8 * output, int n, int hashSize, int minLen)
 {
@@ -7990,8 +7979,8 @@ EOS lzp_compress_parallel(const uint8 * input, uint8 * output, int n, int hashSi
     {
         int compressionResult[ALPHABET_SIZE];
 
-        int nBlocks   = bsc_lzp_num_blocks(n);
-        int result    = LIBBSC_NO_ERROR;
+        int nBlocks   = lzp_num_blocks(n);
+        EOS result    = Success;
         int chunkSize = n / nBlocks;
 
         int numThreads = omp_get_max_threads();
@@ -8012,8 +8001,8 @@ EOS lzp_compress_parallel(const uint8 * input, uint8 * output, int n, int hashSi
                     int blockStart   = blockId * chunkSize;
                     int blockSize    = blockId != nBlocks - 1 ? chunkSize : n - blockStart;
 
-                    compressionResult[blockId] = lzp_encode_block(input + blockStart, input + blockStart + blockSize, buffer + blockStart, buffer + blockStart + blockSize, hashSize, minLen);
-                    if (EOS(compressionResult[blockId]).getError() != Success) compressionResult[blockId] = blockSize;
+                    EOS res = lzp_encode_block(input + blockStart, input + blockStart + blockSize, buffer + blockStart, buffer + blockStart + blockSize, hashSize, minLen);
+                    compressionResult[blockId] = res.getError() != Success ? blockSize : (int)Success;
 
                     saveInt(output + 1 + 8 * blockId + 0, blockSize);
                     saveInt(output + 1 + 8 * blockId + 4, compressionResult[blockId]);
@@ -8021,13 +8010,13 @@ EOS lzp_compress_parallel(const uint8 * input, uint8 * output, int n, int hashSi
 
                 #pragma omp single
                 {
-                    result = 1 + 8 * nBlocks;
+                    int res = 1 + 8 * nBlocks;
                     for (int blockId = 0; blockId < nBlocks; ++blockId)
                     {
-                        result += compressionResult[blockId];
+                        res += compressionResult[blockId];
                     }
 
-                    if (result >= n) result = NotCompressible;
+                    result = res >= n ? NotCompressible : res;
                 }
 
                 if (result.getError() == Success)
@@ -8061,9 +8050,9 @@ EOS lzp_compress_parallel(const uint8 * input, uint8 * output, int n, int hashSi
 EOS lzp_compress(const uint8 * input, uint8 * output, int n, int hashSize, int minLen, int features)
 {
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
-    if ((num_blocks(n) != 1) && (features & Multithreading))
+    if ((lzp_num_blocks(n) != 1) && (features & Multithreading))
     {
         return lzp_compress_parallel(input, output, n, hashSize, minLen);
     }
@@ -8084,7 +8073,7 @@ EOS lzp_decompress(const uint8 * input, uint8 * output, int n, int hashSize, int
 
     int decompressionResult[ALPHABET_SIZE];
 
-#ifdef LIBBSC_OPENMP
+#ifdef EBSC_OPENMP
 
     if (features & Multithreading)
     {
@@ -8100,7 +8089,7 @@ EOS lzp_decompress(const uint8 * input, uint8 * output, int n, int hashSize, int
             int outputSize = readInt(input + 1 + 8 * blockId + 0);
 
             if (inputSize != outputSize)
-                decompressionResult[blockId] = lzp_decode_block(input + inputPtr, input + inputPtr + inputSize, output + outputPtr, hashSize, minLen);
+                decompressionResult[blockId] = lzp_decode_block(input + inputPtr, input + inputPtr + inputSize, output + outputPtr, hashSize, minLen).getError();
             else
             {
                 decompressionResult[blockId] = inputSize; memcpy(output + outputPtr, input + inputPtr, inputSize);

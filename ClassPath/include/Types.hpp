@@ -318,7 +318,10 @@
 #endif
 
 // Helper function that should never be omitted
+/** Get the absolute value for a signed number */
 template <typename T> inline T Abs(T a) { return a < 0 ? -a : a; }
+/** Get the absolute value for the difference (a - b), it works with unsigned number too */
+template <typename T> inline T AbsDiff(T a, T b) { return a < b ? b-a : a-b; }
 // Easy method to get a int as big endian in all case
 inline uint32 BigEndian(uint32 a)
 {
@@ -394,12 +397,25 @@ namespace Private
     // If the compiler stop here, you're actually trying to figure out the size of an pointer and not a compile-time array.
     template< typename T, size_t N >
     char (&ArraySize_REQUIRES_ARRAY_ARGUMENT(T (&)[N]))[N];
+    
+    // You can have default derivation from this structure
+    struct Empty {};
+    
+    template <typename T>
+    struct Alignment
+    {
+        // C++ standard requires struct's member to be aligned to the largest member's alignment requirement
+        struct In { char p; T q; };
+        enum { value = sizeof(In) - sizeof(T) };
+    };
 }
 
 #define ArrSz(X) sizeof(Private::ArraySize_REQUIRES_ARRAY_ARGUMENT(X))
 #ifndef ArraySize
    #define ArraySize ArrSz
 #endif
+
+#define AlignOf(X) Private::Alignment<X>::value
 
 
 #ifndef TypeDetection_Impl
@@ -434,6 +450,30 @@ MakePOD(float);
 #undef MakePOD
 #undef MakeIntPOD
 #endif
+
+/** Useful Safe bool idiom.
+    @param Derived      The current class that should be "bool" convertible
+    @param Base         If provided, it makes the complete stuff derives from this class, thus avoiding multiple inheritance
+    @code
+       // Before 
+       struct A { bool operator !() const; ... };
+       struct B : public C { bool operator !() const; ... };
+ 
+       // Use like this :
+       struct A : public SafeBool<A> { bool operator !() const; ... };
+       struct B : public SafeBool<B, C> { bool operator !() const; ... };
+       
+       A a;
+       if (a) printf("It does!\n");
+    @endcode */
+template <class Derived, class Base = Private::Empty>
+class SafeBool : public Base
+{
+    void badBoolType() {} typedef void (SafeBool::*badBoolPtr)();
+public:
+    /** When used like in a bool context, this is called */
+    inline operator badBoolPtr() const { return !static_cast<Derived const&>( *this ) ? 0 : &SafeBool::badBoolType; }
+};
 
 
 #ifdef _WIN32
@@ -594,6 +634,15 @@ MakePOD(float);
         #define _JSFlagName _
     #endif
 
+    #if (WantAsyncFile == 1)
+        #define _AIOFlag    262144
+        #define _AIOFlagName AIO
+    #else
+        #define _AIOFlag 0
+        #define _AIOFlagName _
+    #endif
+
+
     #if (DEBUG==1)
         #define _DebugFlag         1073741824
         #define _DebugFlagName     Debug
@@ -625,7 +674,7 @@ MakePOD(float);
 
     #define _ClassPathFlags (_SSLFlag + _AESFlag + _TypeFlag + _FFMPEGFlag + _TLSFlag + _BaseFlag + _FloatFlag + \
                              _ChronoFlag + _AtomicFlag + _MD5Flag + _ExLockFlag + _SOAPFlag + _CompressFlag + \
-                             _OwnPicFlag + _RegExFlag + _PingFlag + _BSCFlag + _JSFlag + _DebugFlag)
+                             _OwnPicFlag + _RegExFlag + _PingFlag + _BSCFlag + _JSFlag + _AIOFlag + _DebugFlag)
 
 
     #define _String(X) #X
@@ -642,8 +691,8 @@ MakePOD(float);
         // This is going to break your software in a very subtle way, since the binary will not match the sources, so debugging will be painful, if not impossible.
         // The solution is simple, make sure you are using the same flags for the both projects.
         enum { ClassPathFlags = _ClassPathFlags };
-        extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _DebugFlagName);
-        inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _DebugFlagName); }
+        extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DebugFlagName);
+        inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DebugFlagName); }
         extern const char * getBuildFlagsName();
         /** This get the Git's HEAD SHA1 added with -dirty if dirty or "" if not supported */
         extern const char * getBuildRepoVer();
@@ -714,6 +763,9 @@ MakePOD(float);
 
     #undef _BSCFlag
     #undef _BSCFlagName
+
+    #undef _AIOFlag
+    #undef _AIOFlagName
 
     #undef _DebugFlag
     #undef _DebugFlagName

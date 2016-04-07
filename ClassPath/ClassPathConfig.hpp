@@ -11,7 +11,7 @@
     Either you provide a buildConfig file that's included by the Makefile to make these flags:
     Such file is never included in the repository so the format should be like this:
     @verbatim
-    WantSSLCode WantDynamicEngine WantPingCode WantAES WantMD5Hashing WantThreadLocalStorage WantBaseEncoding WantFloatParsing WantRegularExpressions WantTimedProfiling WantAtomicClass WantExtendedLock WantSOAP WantCompression WantBSCCompression WantLightImageCode
+    WantSSLCode WantDynamicEngine WantPingCode WantAES WantMD5Hashing WantThreadLocalStorage WantBaseEncoding WantFloatParsing WantRegularExpressions WantTimedProfiling WantAtomicClass WantExtendedLock WantSOAP WantCompression WantBSCCompression WantLightImageCode WantAsyncFile
     @endverbatim
     Please notice that the former does not change the link dependencies (like on miniupnpc or openssl even if disabled), while the later
     change them, the Makefile adapts to the flags.
@@ -127,10 +127,15 @@
     Default: enabled */
 #define WantDynamicEngine 0
 
+/** If you want asynchronous file IO, enable this. This provides the AsyncStream class in the File namespace.
+    This requires linking with libaio on linux system.
+    Default: enabled */
+#define WantAsyncFile 1
+
 
 /** If you want ...
     Default: disabled */
-#define ___PlaceHolderHere____    1
+//#define ___PlaceHolderHere____    1
 
 
 

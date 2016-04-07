@@ -58,7 +58,7 @@ namespace Bstrlib
 		}
 		else
 		{
-			if (slen > 0)	memcpy(data, blk, slen);
+            if (slen > 0 && blk)    memcpy(data, blk, slen);
 			data[slen] = '\0';
 		}
 	}

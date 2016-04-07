@@ -169,7 +169,8 @@ namespace Crypto
         virtual uint32  hashSize() const throw() { return 32; }
     };
 
-    /** AES algorithm using OpenSSL */
+    /** AES algorithm using OpenSSL.
+        @sa Tests::AESTests */
     struct OSSL_AES : public Crypto::BaseSymCrypt
     {
     private:

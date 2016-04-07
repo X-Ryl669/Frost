@@ -230,6 +230,9 @@ namespace File
 
 
         /** Make the directory for this (invalid) file.
+            @note With POSIX system, a default permission of 0755 is attempted for the directory.
+                  This is actually masked with umask and the supported bits. For example, under linux,
+                  the final permission will be (0755 & ~umask & 01777) (this is a mkdir limitation)
             @param recursive    If true, will create missing directory up to the given path */
         bool makeDir(const bool recursive = true);
 
@@ -263,6 +266,23 @@ namespace File
             @sa setMetaData
             @return an opaque buffer that's system specific. */
         String getMetaData() const;
+        /** Get a compressed version of the metadata informations.
+            This buffer is system dependent, and contains everything needed to backup the file's metadata.
+            Unlike the getMetaData() call above, this one outputs a binary version of the metadata that can not be saved
+            in a text only archive. The size is not fixed, as compression is used to maximize compactness.
+            You'll expand this block with the expandMetaData call to reuse other metadata related functions.
+            @sa getMetaData expandMetaData
+            @param buffer   A pointer to a buffer where to store the metadata information. Can be 0 to query for required size
+            @param len      The length of the buffer in bytes (can be 0 to query the required size)
+            @return The used buffer size in bytes (or 0 upon error)
+            @warning Please notice that this method does not save the filesystem specific information like the inode number and device id for standard file.
+                     (but it's useless information anyway). When an hardlink is detected, the required information to restore it is saved */
+        uint32 getMetaDataEx(uint8 * buffer, const size_t len) const;
+        /** Expand the compressed metadata buffer received from call to getMetaDataEx.
+            @param buffer   A pointer to a buffer containing the compressed version of the metadata
+            @param len      The length of the buffer in bytes
+            @return A string describing the metadata that you can use with setMetaData, analyseMetaData and other methods */
+        static String expandMetaData(const uint8 * buffer, const size_t len);
         /** Set the metadata information from an opaque buffer.
             This buffer is system dependent, and contains everything needed to restore the file's metadata.
             @sa getMetaData
@@ -331,8 +351,9 @@ namespace File
         /** Get the number of contained files/items inside this item.
             For most file type, this will be 1, but for directories (or "pseudo-archive")
             this will returns the number of files inside the directory.
-            @note If the current item is a symbolic link, it's not followed (so it returns 1) */
-        uint32 getEntriesCount() const;
+            @note If the current item is a symbolic link, it's not followed (so it returns 1)
+            @param extension   If provided, only file with the given extension are counted. Expected value with leading dot like ".jpg" */
+        uint32 getEntriesCount(const String & extension = "") const;
 
 
 
@@ -554,6 +575,7 @@ namespace File
     };
 
 
+#if WantAsyncFile == 1
     /** The asynchronous file stream.
 
         All IO operations in this stream will likely return Asynchronous error.
@@ -692,6 +714,7 @@ namespace File
         friend struct MonitoringPool;
     };
 
+
     /** The monitoring pool base interface.
 
         Typically, using a monitoring pool, is as simple as appending asynchronous stream to monitor to the pool,
@@ -817,6 +840,8 @@ namespace File
         MonitoringPool(const bool own = false);
         ~MonitoringPool();
     };
+
+#endif
 
 }
 

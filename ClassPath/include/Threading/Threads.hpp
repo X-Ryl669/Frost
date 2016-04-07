@@ -236,6 +236,7 @@ namespace Threading
                 while (first) { removeVariable(first->getKey()); }
             }
         };
+/** Get the local variable of type X, name Y with the given key */
 #define GetLocalVariable(X, Y, key) X * Y = 0; { Threading::Thread::LocalVariableImpl<X>* tmpVar = dynamic_cast< Threading::Thread::LocalVariableImpl<X>* >(Threading::Thread::getLocalVariable(key)); Y = tmpVar ? tmpVar->operator X*() : 0; }
 
 
@@ -354,7 +355,16 @@ namespace Threading
         inline void setLeavingCallback(Leaving * cb) { leaving = cb; }
 
 #if (WantThreadLocalStorage == 1)
-        /** Append a TLS variable */
+        /** Append a TLS variable.
+            Typically a TLS variable is a variable that's local (different) for each thread. 
+            Since the variable must exists for any thread (even future threads), then a constructor (respectively destructor) is required.
+            Variable will be constructed if it was not constructed before (cost on first access, not on thread creation).
+            Because it's C++, the variable type is remembered and checked, and a basic memory leak checking is performed on program ending.
+
+            @param value    The value to set for this thread's local variable. Other thread will call the construction function.
+            @param consFunc The construction function. This must be a pointer to a function that takes the given TLS's key identifier and the default operating system value for a TLS
+            @param desFunc  The destruction function. This must be a pointer to a function that takes the given TLS variable. 
+            @return The key that can be used to find the local variable to manipulate. It's an opaque value. */
         template <class T>
         inline static LocalVariable::Key appendLocalVariable(T * value, T * (*consFunc)(LocalVariable::Key, T*), void (*desFunc)(T*)) { return getLocalVariableList().addVariableWithFunc(value, consFunc, desFunc); }
         /** Get a local variable by its key */
@@ -623,7 +633,7 @@ namespace Threading
         // Implementation
         virtual uint32 runThread()
         {
-            while (isRunning() && !cancelEvent.Wait((TimeOut)InstantCheck) && runIntern(progressIndex)) { SharedDataReaderWriter sdw(progressIndex); ++sdw; }
+            while (isRunning() && !cancelEvent.Wait(TimeOut::InstantCheck) && runIntern(progressIndex)) { SharedDataReaderWriter sdw(progressIndex); ++sdw; }
             done.Set();
             return 0;
         }
@@ -642,7 +652,7 @@ namespace Threading
         }
 
         /** Check if the job has finished */
-        bool isFinished() const { return done.Wait((TimeOut)InstantCheck); }
+        bool isFinished() const { return done.Wait(TimeOut::InstantCheck); }
 
         /** Check the progress so far */
         uint32 progress() const { return progressIndex; } // Read 32 bits are atomic on most platform
@@ -651,8 +661,8 @@ namespace Threading
         bool cancelJob(const TimeOut timeoutMs = Infinite)
         {
             cancelEvent.Set();
-            if (oneShot && !done.Wait((TimeOut)InstantCheck)) return destroyThread(true);
-            return done.Wait((TimeOut)timeoutMs);
+            if (oneShot && !done.Wait(TimeOut::InstantCheck)) return destroyThread(true);
+            return done.Wait(timeoutMs);
         }
 
         /** Construction with one shot method with this signature: void Obj::method() */

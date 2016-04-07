@@ -89,8 +89,6 @@ RegisterClassFunctions(Database::TableDefinition*, ("<Value></Value>"), throw Co
 
     typedef Type::VarT<Type::ObjectCopyPolicy>::Empty VarEmpty;
     typedef Type::VarT<Type::ObjectPtrPolicy>::Empty RefEmpty;
-    typedef Container::NotConstructible<Type::VarT<Type::ObjectPtrPolicy> >::IndexList RefArray;
-    typedef Container::WithCopyConstructor<Type::VarT<Type::ObjectCopyPolicy> >::Array VarArray;
 
     typedef Container::WithCopyConstructor<Strings::FastString>::Array StringArray;
 

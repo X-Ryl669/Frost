@@ -3,8 +3,10 @@
 
 // Include the type engine declaration
 #include "../../include/Variant/UTI.hpp"
-// Include the variant type declaration
+// We need the variant type declaration
 #include "../../include/Variant/Variant.hpp"
+// We need containers of Variant too
+#include "../../include/Variant/VariantContainer.hpp"
 // We need container
 #include "../../include/Container/Container.hpp"
 // We need strings
@@ -81,8 +83,6 @@ namespace UniversalTypeIdentifier
 
     typedef Type::VarT<Type::ObjectCopyPolicy>::Empty VarEmpty;
     typedef Type::VarT<Type::ObjectPtrPolicy>::Empty RefEmpty;
-    typedef Container::NotConstructible<Type::VarT<Type::ObjectPtrPolicy> >::IndexList RefArray;
-    typedef Container::WithCopyConstructor<Type::VarT<Type::ObjectCopyPolicy> >::Array VarArray;
 
     typedef Container::WithCopyConstructor<Strings::FastString>::Array StringArray;
 

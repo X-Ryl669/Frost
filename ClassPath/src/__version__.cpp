@@ -148,6 +148,15 @@
         #define _JSFlagName _
     #endif
 
+    #if (WantAsyncFile == 1)
+        #define _AIOFlag    262144
+        #define _AIOFlagName AIO
+    #else
+        #define _AIOFlag 0
+        #define _AIOFlagName _
+    #endif
+
+
     #if (DEBUG==1)
         #define _DebugFlag         1073741824
 		#define _DebugFlagName     Debug
@@ -192,12 +201,12 @@
     #define EVALUATOR(x,y)  PASTER(x,y)
     #define NAME(fun, TERM) EVALUATOR(fun, TERM)
 
-    #define FlagNames Stringize(_SSLFlagName) Stringize(_AESFlagName) Stringize(_TypeFlagName) Stringize(_FFMPEGFlagName) Stringize(_TLSFlagName) Stringize(_BaseFlagName) Stringize(_FloatFlagName) Stringize(_ChronoFlagName) Stringize(_AtomicFlagName) Stringize(_MD5FlagName) Stringize(_ExLockFlagName) Stringize(_SOAPFlagName) Stringize(_CompressFlagName) Stringize(_OwnPicFlagName) Stringize(_RegExFlagName) Stringize(_PingFlagName) Stringize(_BSCFlagName) Stringize(_JSFlagName) Stringize(_DebugFlagName)
+    #define FlagNames Stringize(_SSLFlagName) Stringize(_AESFlagName) Stringize(_TypeFlagName) Stringize(_FFMPEGFlagName) Stringize(_TLSFlagName) Stringize(_BaseFlagName) Stringize(_FloatFlagName) Stringize(_ChronoFlagName) Stringize(_AtomicFlagName) Stringize(_MD5FlagName) Stringize(_ExLockFlagName) Stringize(_SOAPFlagName) Stringize(_CompressFlagName) Stringize(_OwnPicFlagName) Stringize(_RegExFlagName) Stringize(_PingFlagName) Stringize(_BSCFlagName) Stringize(_JSFlagName) Stringize(_AIOFlagName) Stringize(_DebugFlagName)
     #define _ClassPathBuildFlags (_DebugFlag + _PlatformVal + _LargeFileOffsetVal + _AtomicVal)
 
     namespace BuildInfo
     {
-        int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _DebugFlagName) = ClassPathFlags;
+        int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DebugFlagName) = ClassPathFlags;
         const char * getBuildFlagsName() { return FlagNames; }
         int NAME(NAME(NAME(NAME(_checkSameBuildFlags_, _DebugFlagName), _Platform), _LargeFileOffset), _Atomic) = _ClassPathBuildFlags;
         #pragma message("Using ClassPath with flags " FlagNames)
@@ -264,6 +273,9 @@
 
     #undef _BSCFlag
     #undef _BSCFlagName
+
+    #undef _AIOFlag
+    #undef _AIOFlagName
 
     #undef _DebugFlag
     #undef _DebugFlagName

@@ -4,6 +4,12 @@
 #include <memory.h>
 #include <string.h>
 
+#if defined(_OPENMP)
+  #include <omp.h>
+  #define EBSC_OPENMP 1
+#endif
+
+
 #include "EBSC.hpp"
 
 // We need platform code too for large malloc & calloc & free
@@ -53,7 +59,7 @@ namespace BSC
     * @param num_indexes    - the length of secondary indexes array, can be 0.
     * @param indexes        - the secondary indexes array, can be NULL.
     * @param features       - the set of additional features.
-    * @return LIBBSC_NO_ERROR if no error occurred, error code otherwise.
+    * @return Success if no error occurred, error code otherwise.
     */
     EOS BWTDecode(uint8 * T, int n, int index, uint8 num_indexes, int * indexes, int features);
 
@@ -183,7 +189,7 @@ divbwt(const uint8 *T, uint8 *U, int *A, int n, uint8 * num_indexes, int * index
     * @param T          - the input/output memory block of n bytes.
     * @param n          - the length of the memory block.
     * @param features   - the set of additional features.
-    * @return LIBBSC_NO_ERROR if no error occurred, error code otherwise.
+    * @return Success if no error occurred, error code otherwise.
     */
     EOS reverse_block(uint8 * T, int n, int features);
 
@@ -202,7 +208,7 @@ divbwt(const uint8 *T, uint8 *U, int *A, int n, uint8 * num_indexes, int * index
     * @param n          - the length of the memory block.
     * @param recordSize - the size of record.
     * @param features   - the set of additional features.
-    * @return LIBBSC_NO_ERROR if no error occurred, error code otherwise.
+    * @return Success if no error occurred, error code otherwise.
     */
     EOS reorder_forward(uint8 * T, int n, int recordSize, int features);
 
@@ -212,7 +218,7 @@ divbwt(const uint8 *T, uint8 *U, int *A, int n, uint8 * num_indexes, int * index
     * @param n          - the length of the memory block.
     * @param recordSize - the size of record.
     * @param features   - the set of additional features.
-    * @return LIBBSC_NO_ERROR if no error occurred, error code otherwise.
+    * @return Success if no error occurred, error code otherwise.
     */
     EOS reorder_reverse(uint8 * T, int n, int recordSize, int features);
 

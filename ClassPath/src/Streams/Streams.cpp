@@ -16,6 +16,13 @@
 // We need assert too
 #include "../../include/Utils/Assert.hpp"
 
+#if defined(_POSIX)
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#endif
+
 namespace Stream
 {
     InputFileStream::InputFileStream(const String & name) : fileName(name), stream(0), fileSize((uint64)BadStreamSize)
@@ -66,6 +73,127 @@ namespace Stream
         return ((File::BaseStream*)stream)->read((char*)buffer, (int)min((uint64)INT_MAX, size));
     }
 
+#if defined(_WIN32) || defined(_POSIX)
+    // Memory mapped file stream
+  #if defined(_WIN32)
+    #define IsInvalid(X)  (X == INVALID_HANDLE_VALUE)
+  #else
+    #define IsInvalid(X)  (X == -1)
+  #endif
+
+    uint64 MemoryMappedFileStream::getSystemPageSize()
+    {
+        static uint64 pageSize = 0;
+        if (!pageSize)
+        {
+  #if defined(_WIN32)
+            SYSTEM_INFO SystemInfo;
+            GetSystemInfo(&SystemInfo);
+            pageSize = SystemInfo.dwAllocationGranularity;
+  #else
+            pageSize = sysconf(_SC_PAGE_SIZE);
+  #endif
+        }
+        return pageSize;
+    }
+    
+    bool MemoryMappedFileStream::map(const uint64 _offset, const uint64 _size)
+    {
+        if (IsInvalid(stream)) return false;
+        // If you need to enlarge the file, use a smaller offset than the file size
+        if (offset > fileSize) return false;
+        unmap();
+
+        uint64 size = _size ? _size : (fileSize - _offset);
+        // Round the offset to a page boundary
+        uint64 pagedOff = pagedOffset(_offset);
+  #if defined(_WIN32)
+        mapHandle = ::CreateFileMapping(stream, 0, writing ? PAGE_READWRITE : PAGE_READONLY, (size + _offset) >> 32ULL, (size + _offset) & 0xFFFFFFFF, 0);
+        if (mapHandle == INVALID_HANDLE_VALUE) return false;
+        
+        char* data = (char*)::MapViewOfFile(mapHandle, writing ? FILE_MAP_WRITE : FILE_MAP_READ, pagedOff >> 32ULL, pagedOff & 0xFFFFFFFF, size + (_offset - pagedOff));
+        if (!data) return false;
+  #else
+        // Should we enlarge the file on the file system first ?
+        if ((size + _offset) > fileSize && ftruncate(stream, size + _offset) == -1) return false;
+        
+        char* data = (char*)::mmap(0, size + (_offset - pagedOff), PROT_READ | (writing ? PROT_WRITE : 0), MAP_SHARED, stream, pagedOff);
+        if (data == MAP_FAILED) return false;
+  #endif
+        // For writing, we need to adjust when mapping exceed initial file size
+        if ((size + _offset) > fileSize) fileSize = size + _offset;
+
+        // We store the buffer already positioned where we want
+        area = data + (_offset - pagedOff);
+        mappedSize = size;
+        offset = _offset;
+        return true;
+    }
+    
+    uint8 * MemoryMappedFileStream::getBuffer()
+    {
+        return (uint8*)area;
+    }
+    void MemoryMappedFileStream::unmap(const bool _sync)
+    {
+        if (_sync) sync();
+        if (area)
+        {
+            // Extract the base of the mapped page
+            char* data = (char*)area - rem();
+  #if defined(_WIN32)
+            ::UnmapViewOfFile(data);
+            ::CloseHandle(mapHandle); mapHandle = INVALID_HANDLE_VALUE;
+  #else
+            uint64 size = mappedSize + rem();
+            ::munmap(const_cast<char*>(data), size);
+  #endif
+        }
+        mappedSize = 0;
+        offset = 0;
+        area = 0;
+    }
+    bool MemoryMappedFileStream::sync()
+    {
+        if (area)
+        {
+            char* data = (char*)area - rem();
+            uint64 size = mappedSize + rem();
+  #if defined(_WIN32)
+            return ::FlushViewOfFile(data, size) != 0 && ::FlushFileBuffers(stream) != 0;
+  #else
+            if (::msync(data, size, MS_SYNC) != 0) return false;
+  #endif
+        }
+        return true;
+    }
+    MemoryMappedFileStream::MemoryMappedFileStream(const Strings::FastString & name, bool writeToo)
+        : fileSize(File::Info(name).size), area(0), mappedSize(0), offset(0), writing(writeToo),
+  #if defined(_WIN32)
+        stream(INVALID_HANDLE_VALUE), mapHandle(INVALID_HANDLE_VALUE)
+  #else
+        stream(-1)
+  #endif
+    {
+  #if defined(_WIN32)
+        Strings::ReadOnlyUnicodeString fileName = Strings::convert(name);
+        stream = ::CreateFileW(fileName.getData(), GENERIC_READ | (writeToo ? GENERIC_WRITE : 0), FILE_SHARE_READ | FILE_SHARE_WRITE, 0, writeToo ? OPEN_ALWAYS : OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+  #else
+        stream = ::open(name, writeToo ? O_RDWR | O_CREAT : O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+  #endif
+    }
+    MemoryMappedFileStream::~MemoryMappedFileStream()
+    {
+        unmap();
+  #if defined(_WIN32)
+        ::CloseHandle(stream); stream = INVALID_HANDLE_VALUE;
+  #else
+        ::close(stream); stream = -1;
+  #endif
+    }
+
+  #undef IsInvalid
+#endif
 
     InputStringStream::InputStringStream(const String & _content) : content(_content), position(0) {}
     void InputStringStream::resetStream(const String & _content) { content = _content; position = 0; }
@@ -394,7 +522,12 @@ namespace Stream
     {
         memset(buffer, 0, sizeof(buffer));
 
-        if (_keySize != _ivSize) return;
+        if (_keySize != _ivSize)
+        {
+            // You must provide a key that's exactly the same size as the initialization vector
+            Assert(_keySize != _ivSize);
+            return;
+        }
         // Build the key
         if ((_keySize & 0xF) == 0)
         {

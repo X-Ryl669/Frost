@@ -107,15 +107,14 @@ namespace Random
         {
             uint32 InitialSize = size;
             uint8 EntropyBucket[16] = {0};
-            *(clock_t*)&EntropyBucket[0] = clock();
-            *(time_t*)&EntropyBucket[4] = time(NULL) - (time_t)clock();
-#ifdef _WIN32
-            ::Sleep(0);
-#else
-            sched_yield();
+#if defined(_WIN32)
+            clock_t before = clock();
+            ::Sleep(1);
+            clock_t after = clock();
+            // Need to initialize the buffer with some value before xoring
+            memcpy(EntropyBucket, &before, sizeof(before));
+            memcpy(&EntropyBucket[sizeof(before)], &after, sizeof(after));
 #endif
-            *(time_t*)&EntropyBucket[8] = time(NULL);
-            *(clock_t*)&EntropyBucket[12] = clock();
 
             // Try to gather entropy from some real source
 #if defined(_WIN32)
@@ -135,8 +134,6 @@ namespace Random
                 fclose(rnd);
             }
 #endif
-
-
             // This is lame code here
             for (; size > 16; size -= 16)
                 memcpy(&arrayToStoreEntropyTo[size - 16], EntropyBucket, 16);

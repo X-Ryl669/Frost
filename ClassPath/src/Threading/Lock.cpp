@@ -89,7 +89,7 @@ bool Threading::ReadWriteLock::readerWait(const Threading::TimeOut timeout) vola
 
 		while(1)
 		{
-			canRead = read->Wait((TimeOut)(timeout - consumedTime));
+			canRead = read->Wait((TimeOut::Type)(timeout - consumedTime));
             lock.Acquire();
 			if(!writerCount)
 			{
@@ -534,6 +534,7 @@ void Threading::FastLock::_Unlock(void * arg) volatile
     pthread_mutex_unlock((HMUTEX*)&mutex);
 }
 
+
   #if defined(_POSIX) && !defined(HAS_ATOMIC_BUILTIN)
 HMUTEX Threading::SharedData<uint32>::sxMutex = PTHREAD_MUTEX_INITIALIZER;
   #endif
@@ -553,3 +554,9 @@ struct AutoRegisterAtomicCS
 };
 static AutoRegisterAtomicCS __aracs;
 #endif
+
+bool Threading::SpinDelay::wait()
+{
+    if (counter++ > 20) Threading::Thread::Sleep(0); // If we are waiting for too long, then relinguish our time slice.
+    return true;
+}

@@ -504,6 +504,101 @@ namespace Stream
         OutputFileStream(const OutputFileStream &);
     };
 
+#if defined(_WIN32) || defined(_POSIX)
+    /** A memory mapped file stream.
+        On most operating system, it's possible to map a file from disk as a memory area.
+
+        Content is read from disk on first access (a page fault is emitted and kernel trigger loading
+        from the disk before returning to userspace).
+
+        You must map() the portion of file first before you can get a valid buffer to read or write.
+        This does not implement InputStream or OutputStream interface because it's not made to be used
+        inplace of an InputStream or OutputStream (which are presenting I/O functions interfaces).
+
+        Code using this class has to be written explicitely for this interface. */
+    class MemoryMappedFileStream : public BaseStream, public MappableStream
+    {
+        // Members
+    private:
+        /** The file size */
+        uint64              fileSize;
+        /** The mapped area */
+        void *              area;
+        /** The mapped area size */
+        uint32              mappedSize;
+        /** The internal offset */
+        uint64              offset;
+        /** Set if writing is possible */
+        bool                writing;
+#ifdef _WIN32
+        /** The file handle */
+        HANDLE              stream;
+        /** The map handle */
+        HANDLE              mapHandle;
+#elif defined(_POSIX)
+        /** The file handle */
+        int                 stream;
+#endif
+
+        // Helpers
+    private:
+        /** Get the offset rounded to a system page size */
+        static inline uint64 pagedOffset(const uint64 offset) { return offset & ~(getSystemPageSize() - 1); } // equivalent to (offset / getSystemPageSize()) * getSystemPageSize()
+        /** Get the remaining of the current offset to the system page size */
+        inline uint64 rem() { return offset - pagedOffset(offset); }
+
+
+        // BaseStream interface
+    public:
+        /** This method returns the stream length in byte, if known
+            If the length is equal or higher than 2^32 - 1, the returned value is (uint64)-2
+            For stream where the length is not known, this method will return (uint64)-1. */
+        virtual uint64 fullSize() const { return fileSize; }
+        /** This method returns true if the end of stream is reached */
+        virtual bool endReached() const { return offset + mappedSize >= fileSize; }
+        /** This method returns the position of the next byte that could be read from this stream */
+        virtual uint64 currentPosition() const { return offset + mappedSize; }
+        /** Try to seek to the given absolute position (return false if not supported) */
+        virtual bool setPosition(const uint64 newPos) { return map(newPos); }
+
+        // Mappable stream interface
+    public:
+        /** Get the current buffer from the stream */
+        virtual const uint8 * getBuffer() const { return const_cast<MemoryMappedFileStream*>(this)->getBuffer(); }
+        /** Get the current buffer from the stream */
+        virtual uint8 * getBuffer();
+
+
+        // Our interface
+    public:
+        /** The memory page size (aka offset granularity) */
+        static uint64 getSystemPageSize();
+        /** Map an area of the file into memory.
+            @param offset   The number of bytes from the beginning of the file
+            @param size     The number of bytes to map (if both 0, tries to map all file)
+            @return true on success */
+        bool map(const uint64 offset = 0, const uint64 size = 0);
+        /** Unmap the current area of the file from memory.
+            If opened for writing, this also sync before unmapping to ensure consistency.
+            You don't need to call this usually. */
+        void unmap(const bool sync = true);
+        /** Sync the mapping to disk (only for file opened for writing) */
+        bool sync();
+
+        // Construction and destruction
+    public:
+        /** Construct a memory mapped file
+            @param name     The name of the file to open
+            @param writeToo If true, the file is opened for writing too (else only for reading).
+                            Please notice that if the file already exists, it's NOT truncated/overwritten
+                            (if you need to do so, use the File::Info class for this, before using this stream) */
+        MemoryMappedFileStream(const Strings::FastString & name, bool writeToo = false);
+        /** Obligatory destructor */
+        ~MemoryMappedFileStream();
+    };
+
+#endif
+
     /** A string-based input stream */
     class InputStringStream : public LineSplitStream<Strings::FastString>
     {

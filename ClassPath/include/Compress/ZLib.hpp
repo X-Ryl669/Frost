@@ -17,7 +17,8 @@ namespace Compression
     typedef Strings::FastString String;
 
     /** Common implementation for both ZLib and GZip.
-        This is made to avoid code duplication */
+        This is made to avoid code duplication
+        @sa Tests::CompressTests */
     class CommonZlib : public BaseCompressor
     {
         // Type definition and enumeration
@@ -91,7 +92,8 @@ namespace Compression
         You can set the compression factor with setCompressionFactor() method.
         You can fetch the last processing error with getLastError() method.
 
-        The specification for this file format is in RFC1950 */
+        The specification for this file format is in RFC1950
+        @sa Tests::CompressTests */
     class ZLib : public CommonZlib
     {
         // Interface
@@ -142,7 +144,8 @@ namespace Compression
         @warning Due to limitation in the GZip format, you can't store more than 4GB of data at once.
                  If you need to do so, you'd split your data first.
 
-        The specification for this file format is in RFC1952. */
+        The specification for this file format is in RFC1952.
+        @sa Tests::CompressTests */
     class GZip : public CommonZlib
     {
 

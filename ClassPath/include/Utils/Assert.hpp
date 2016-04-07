@@ -4,7 +4,7 @@
 // We need types
 #include "../Types.hpp"
 // We need logger too
-#include "../Logger/Logger.hpp"
+#include "../Logger/LoggerMinimal.hpp"
 
 #if (DEBUG==1)
     namespace Platform { void breakUnderDebugger(); }

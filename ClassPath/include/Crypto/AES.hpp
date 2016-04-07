@@ -24,7 +24,7 @@
 namespace Crypto
 {
     /** The Rijndael (AES) algorithm is used cypher and uncypher from 128 to 256 bits messages.
-        */
+        @sa Tests::AESTests */
     struct AES : public BaseSymCrypt
     {
         // Static look up tables

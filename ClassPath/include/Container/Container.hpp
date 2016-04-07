@@ -99,6 +99,7 @@ namespace Container
             <br>
             Policy must follow the MemoryPolicy interface
             @sa MemoryPolicy
+            @sa Tests::ContainerArrayTests
         */
         template <typename T, class Policy = MemoryPolicy<T>, bool ExactSize = false>
         class Array
@@ -121,6 +122,13 @@ namespace Container
         public:
             /** Default Constructor */
             inline Array() : array(0), currentSize(0), allocatedSize(0)  { }
+            /** Item based construction */
+            inline Array(const T & ref) : array(0), currentSize(0), allocatedSize(0) { Append(ref); }
+            /** Array based construction */
+            template <size_t N>
+            inline Array(const T (&arr)[N]) : array(0), currentSize(0), allocatedSize(0) { Grow(N, arr); }
+            /** Array based construction */
+            inline Array(T * const elements, const size_t count) : array(0), currentSize(0), allocatedSize(0) { Grow(count, elements); }
             /** Copy constructor */
             inline Array(const Array & other) : array(0), currentSize(0), allocatedSize(0) { *this = other; }
             /** Move constructor. Use getMovable() to move the array */
@@ -151,9 +159,20 @@ namespace Container
                 @param index    Zero based index of the element once inserted
                 @param ref      The element*/
             inline void insertBefore(size_t index, const T & ref) throw() { Insert(index, ref, (Bool2Type<ExactSize> * )0); }
+            /** Insert an element in this sorted array.
+                If the array is not sorted this will lead to safe but unpredictable results concerning the position of the insertion.
+                @note The array should be sorted for this method to have any useful effect, else use Append, it's faster
+                @param ref  The element to insert
+                @return The position of the inserted object, or getSize() on error */
+            inline size_t insertSorted(const T & ref) throw() { return InsertSorted(ref, (Bool2Type<ExactSize> * )0); }
             /** Remove an object from the array
                 @param index Zero based index of the object to remove */
             inline void Remove(size_t index) throw() { Remove(index, (Bool2Type<ExactSize> * )0); }
+            /** Remove an object by first searching into the array.
+                This is just a wrapper around indexOf and Remove.
+                @param objectToSearch   The object to look for in the array
+                @return true if the object was found and removed */
+            inline bool removeItem(const T & objectToSearch) throw() { size_t pos = indexOf(objectToSearch); if (pos < currentSize) { Remove(pos); return true; } return false; }
             /** Forget an object from the array
                 @param index Zero based index of the object to remove */
             inline void Forget(size_t index) throw() { Forget(index, (Bool2Type<ExactSize> * )0); }
@@ -244,7 +263,7 @@ namespace Container
                 if (currentSize >= allocatedSize)
                 {
                     // Need to realloc the data
-                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize>>1);
+                    if (allocatedSize < 2) allocatedSize = 2; else allocatedSize += (allocatedSize>>1);
                     array = Policy::NonDestructiveAlloc(array, currentSize, allocatedSize, Policy::DefaultElement());
                     if (array == 0) { Reset(); return; }
                 }
@@ -295,7 +314,7 @@ namespace Container
                 if (currentSize >= allocatedSize)
                 {
                     // Need to realloc the data
-                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize>>1);
+                    if (allocatedSize < 2) allocatedSize = 2; else allocatedSize += (allocatedSize>>1);
                     array = Policy::Insert(array, currentSize, allocatedSize, index, ref);
                     if (array == 0) { Reset(); return; }
                 } else
@@ -306,6 +325,20 @@ namespace Container
                     Policy::Copy(array[i], ref);
                 }
                 currentSize ++;
+            }
+            /** Insert an object into the array when the exact size must be respected */
+            inline size_t InsertSorted(const T & ref, Bool2Type<true> * t) throw()
+            {
+                size_t index = Policy::SearchInsertPos(array, currentSize, 0, ref);
+                Insert(index, ref, t);
+                return index;
+            }
+            /** Insert an object to the array when the array can be larger than the current size */
+            inline size_t InsertSorted(const T & ref, Bool2Type<false> * t) throw()
+            {
+                size_t index = Policy::SearchInsertPos(array, currentSize, 0, ref);
+                Insert(index, ref, t);
+                return index;
             }
 
             /** Remove an object from the array when the array should shrink to the new size */
@@ -463,6 +496,7 @@ namespace Container
 
             Policy must follow the MemoryPolicy interface
             @sa MemoryPolicy
+            @sa Tests::ContainerIndexListTests
         */
         template <typename TElem, class Policy = MemoryListPolicy<TElem, true>, bool ExactSize = false>
         class IndexList
@@ -488,6 +522,10 @@ namespace Container
         public:
             /** Default Constructor */
             inline IndexList() : array(0), currentSize(0), allocatedSize(0)  { }
+            /** Item based construction */
+            inline IndexList(const TPtr & ref) : array(0), currentSize(0), allocatedSize(0) { Append(ref); }
+            /** Array based construction */
+            inline IndexList(TPtr * const elements, const size_t count) : array(0), currentSize(0), allocatedSize(0) { Grow(count, elements); }
             /** Copy constructor */
             inline IndexList(const IndexList & other) : array(0), currentSize(0), allocatedSize(0) { *this = other; }
             /** Move constructor. Use getMovable() to move the array */
@@ -525,9 +563,21 @@ namespace Container
             /** Remove an object from the array
                 @param index Index of the object to remove */
             inline void Remove(size_t index) throw() { Remove(index, (Bool2Type<ExactSize> * )0); }
+            /** Remove an object by first searching into the array.
+                This is just a wrapper around indexOf and Remove.
+                @param objectToSearch   The object to look for in the array based on the given address
+                @return true if the object was found and removed */
+            inline bool removeItem(const TPtr & objectToSearch) throw() { size_t pos = indexOf(objectToSearch); if (pos < currentSize) { Remove(pos); return true; } return false; }
+            /** Remove an object by first searching into the array.
+                This is just a wrapper around indexOf and Remove.
+                @param objectToSearch   The object to look for in the array
+                @return true if the object was found and removed */
+            inline bool removeMatching(const TElem & objectToSearch) throw() { size_t pos = indexOfMatching(objectToSearch); if (pos < currentSize) { Remove(pos); return true; } return false; }
+
             /** Forget an object from the array
-                @param index Zero based index of the object to remove */
-            inline void Forget(size_t index) throw() { Forget(index, (Bool2Type<ExactSize> * )0); }
+                @param index Zero based index of the object to remove
+                @return A pointer on the forgotten object */
+            inline TPtr Forget(size_t index) throw() { return Forget(index, (Bool2Type<ExactSize> * )0); }
             /** Swap operator
                 @param index1   The index to the first object to swap
                 @param index2   The index to the second object to swap
@@ -605,7 +655,7 @@ namespace Container
                 if (currentSize >= allocatedSize)
                 {
                     // Need to realloc the data
-                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize >> 1); // Growth factor of 1.5 allow reuse of memory deallocated
+                    if (allocatedSize < 2) allocatedSize = 2; else allocatedSize += (allocatedSize >> 1); // Growth factor of 1.5 allow reuse of memory deallocated
                     array = Policy::NonDestructiveAlloc(array, currentSize, allocatedSize, Policy::DefaultElement());
                     if (array == 0) { Reset(); return; }
                 }
@@ -656,7 +706,7 @@ namespace Container
                 if (currentSize >= allocatedSize)
                 {
                     // Need to realloc the data
-                    if (allocatedSize == 0) allocatedSize = 2; else allocatedSize += (allocatedSize >> 1); // Growth factor of 1.5 allow reuse of memory deallocated
+                    if (allocatedSize < 2) allocatedSize = 2; else allocatedSize += (allocatedSize >> 1); // Growth factor of 1.5 allow reuse of memory deallocated
                     array = Policy::Insert(array, currentSize, allocatedSize, index, ref);
                     if (array == 0) { Reset(); return; }
                 } else
@@ -703,28 +753,34 @@ namespace Container
             }
 
             /** Forget an object from the array when the array should shrink to the new size */
-            inline void Forget(size_t index, Bool2Type<true> *) throw()
+            inline TPtr Forget(size_t index, Bool2Type<true> *) throw()
             {
+                TPtr ret = 0;
                 if (index < currentSize)
                 {
+                    ret = array[index];
                     Swap(index, currentSize - 1);
                     array[currentSize - 1] = Policy::DefaultElement();
                     Remove(currentSize - 1, (Bool2Type<true>*)0);
                 }
+                return ret;
             }
 
             /** Forget an object from the array when the array can stay the size it is currently */
-            inline void Forget(size_t index, Bool2Type<false> *) throw()
+            inline TPtr Forget(size_t index, Bool2Type<false> *) throw()
             {
+                TPtr ret = 0;
                 if (index < currentSize)
                 {
                     // Copy the data after the index
+                    ret = array[index];
                     Policy::CopyArray(&array[index], &array[index+1], currentSize - 1, currentSize - index - 1);
                     // Then switch the pointers
                     --currentSize;
                     // Zero the last element
                     array[currentSize] = Policy::DefaultElement();
                 }
+                return ret;
             }
 
             /** Access operator
@@ -1368,6 +1424,18 @@ namespace Container
                     }
                 }
             }
+            /** This method search for the given element and returns the position that's just after it */
+            inline static size_t SearchInsertPos(const T* array, const size_t arraySize, const size_t from, const T & valueToLookFor)
+            {
+                size_t highPos = arraySize, lowPos = 0, i = 0;
+                while (1)
+                {
+                    if (lowPos >= highPos) return arraySize;
+                    i = (highPos + lowPos) / 2;
+                    if (i == lowPos) return array[lowPos] <= valueToLookFor ? highPos : lowPos;
+                    if (array[i] <= valueToLookFor) lowPos = i; else highPos = i;
+                }
+            }
 
             /** This method search for the last given element and returns arraySize if not found */
             inline static size_t ReverseSearch(const T* array, const size_t arraySize, const T & valueToLookFor) { size_t i = arraySize; while (i && array[i-1] != valueToLookFor) i--; return i ? i - 1 : arraySize; }
@@ -1525,14 +1593,17 @@ namespace Container
     {
         /** @copydoc Container::PrivateGenericImplementation::Array
             @sa Container::PrivateGenericImplementation::Array for interface description
+            @sa Tests::ContainerArrayTests for example usage
         */
         typedef Container::PrivateGenericImplementation::Array<T, Policy, false> Array;
         /** @copydoc Container::PrivateGenericImplementation::IndexList
             @sa Container::PrivateGenericImplementation::IndexList for interface description
+            @sa Tests::ContainerIndexListTests for example usage
         */
         typedef Container::PrivateGenericImplementation::IndexList<T, PlainOldDataPolicy::DefaultMemoryListPolicy<T>, false> IndexList;
         /** @copydoc Container::PrivateGenericImplementation::ChainedList
             @sa Container::PrivateGenericImplementation::ChainedList for interface description
+            @sa Tests::ContainerChainedListTests for example usage
         */
         typedef Container::PrivateGenericImplementation::ChainedList<T, 4, PlainOldDataPolicy::SearchPolicy<T> > ChainedList;
     };
@@ -2477,6 +2548,7 @@ namespace Container
 
             You can safely use this algorithm on the IndexList and ChainedList containers too.
 
+
             @param array            A reference on the container to sort. The container must have a Swap(index, index) method
             @param comparator       A object that must have a <pre>compareData</pre> method which compare 2 container's object.
                                     Typically with a IndexList&lt;float&gt;, the expected method signature will be "int compareData(const float & a, const float & b)".
@@ -2489,13 +2561,15 @@ namespace Container
                                     will return the element that's just below the value to search for, else it returns the one just above
             @param firstIndex       The first index to start searching with
             @param lastIndex        The last index to stop searching with
-            @return the index of the matched element, or the array size if not found (even concidering the "below" parameter) */
+            @return the index of the matched element, or the array size if not found (even concidering the "below" parameter)
+                    For example, if you have "0 1 1 1 2" in your container and search for "1", with below == true, you'll get pos = 1 else it returns pos = 3
+        */
         template <typename Comparator, typename Val>
-        static size_t searchContainer(T & array, Comparator & comparator, const Val & value, const bool below = true, size_t firstIndex = 0, size_t lastIndex = (size_t)-1)
+        static size_t searchContainer(const T & array, Comparator & comparator, const Val & value, const bool below = true, size_t firstIndex = 0, size_t lastIndex = (size_t)-1)
         {
             (void) comparator; // Unused param
 
-            if (!array.getSize()) return array.getSize();
+            if (!array.getSize()) return 0;
             if (firstIndex >= array.getSize()) return array.getSize();
             if (lastIndex >= array.getSize()) lastIndex = array.getSize() - 1;
             if (lastIndex < firstIndex) return array.getSize();
@@ -2519,7 +2593,7 @@ namespace Container
                     if (!pos) return below ? array.getSize() : 0;
                     if (lastIndex == pos)
                         // Can't find it in the current array
-                        return below ? pos - 1 : array.getSize();
+                        return below ? pos - 1 : pos;
                     lastIndex = pos;
                     pos = (lastIndex + firstIndex) / 2;
                     continue;
@@ -2537,4 +2611,3 @@ namespace Container
 }
 
 #endif
-

@@ -10,7 +10,7 @@
 #ifdef _WIN32
 
 #define EPOCH_DIFF 0x019DB1DED53E8000I64 /* 116444736000000000 nsecs */
-#define RATE_DIFF 10000000.0 /* 100 nsecs */
+#define RATE_DIFF 10000000 /* 100 nsecs */
 
 namespace Time
 {
@@ -21,14 +21,14 @@ namespace Time
         ul.LowPart = fileTime.dwLowDateTime;
         ul.HighPart = fileTime.dwHighDateTime;
 
-        double currentTime = (double)((ul.QuadPart - EPOCH_DIFF) / RATE_DIFF);
+        double currentTime = (double)((ul.QuadPart - EPOCH_DIFF) / (double)RATE_DIFF);
         return currentTime;
     }
 
     void convert(const double time, FILETIME & ft)
     {
         LARGE_INTEGER ul;
-        ul.QuadPart = (LONGLONG)((time * RATE_DIFF) + EPOCH_DIFF);
+        ul.QuadPart = (LONGLONG)((time * (double)RATE_DIFF) + EPOCH_DIFF);
         ft.dwLowDateTime = ul.LowPart;
         ft.dwHighDateTime = ul.HighPart;
     }
@@ -339,11 +339,7 @@ namespace Time
 
         struct tm ekT = {0};
         time_t t = (time_t)preciseTime();
-#ifdef _WIN32
-        gmtime_s(&ekT, &t);
-#else
-        gmtime_r(&t, &ekT);
-#endif
+        makeUTCTime(t, ekT);
         if (iso8601)
             return sprintf(buffer, "%04d-%02d-%02dT%02d:%02d:%02dZ", ekT.tm_year + 1900, ekT.tm_mon + 1, ekT.tm_mday, ekT.tm_hour, ekT.tm_min, ekT.tm_sec);
         return sprintf(buffer, "%s, %02d %s %04d %02d:%02d:%02d %s", dayName[ekT.tm_wday], ekT.tm_mday, monthName[ekT.tm_mon], ekT.tm_year + 1900, ekT.tm_hour, ekT.tm_min, ekT.tm_sec, "GMT") + 1;
@@ -367,11 +363,7 @@ namespace Time
     {
         struct tm ekT = {0};
         time_t t = timeSinceEpoch.tv_sec;
-#ifdef _WIN32
-        gmtime_s(&ekT, &t);
-#else
-        gmtime_r(&t, &ekT);
-#endif
+        makeUTCTime(t, ekT);
         year = ekT.tm_year;
         month = ekT.tm_mon;
         dayOfMonth = ekT.tm_mday;
@@ -382,7 +374,126 @@ namespace Time
 
     }
 
-#if defined(_LINUX)
+#if defined(_WIN32)
+    static void (WINAPI* pGetSystemTimePreciseAsFileTime)(LPFILETIME) = 0;
+    
+    struct Calib
+    {
+        bool done;
+        uint64 freq;
+        uint64 systemTime100ns;
+        uint64 perfCounter;
+        
+        CRITICAL_SECTION lock;
+        Calib() : done(false), freq(0), systemTime100ns(0), perfCounter(0)
+        {
+            LARGE_INTEGER li;
+            QueryPerformanceFrequency(&li);
+            freq = li.QuadPart;
+            
+            InitializeCriticalSectionAndSpinCount(&lock, 4096);
+        }
+        ~Calib() { DeleteCriticalSection(&lock); }
+    };
+    static Calib calib;
+    void CalibrateClocks()
+    {
+#pragma comment(lib, "winmm.lib")    
+        timeBeginPeriod(1);
+        
+        // Wait until the scheduler as triggered us
+        FILETIME cur, start;
+        GetSystemTimeAsFileTime(&start);
+        do {
+            GetSystemTimeAsFileTime(&cur);
+        } while (memcmp(&start, &cur, sizeof(cur)) == 0);
+        
+        // No need to maintain high resolution anymore
+        timeEndPeriod(1);
+
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        
+        calib.perfCounter = now.QuadPart;
+        calib.systemTime100ns = ((uint64)cur.dwHighDateTime << 32ULL) | (uint64)cur.dwLowDateTime;
+        calib.done = true;
+    }
+    
+    static void WINAPI fallbackPreciseTime(LPFILETIME lpFT)
+    {
+        // Under Windows API, kernel developer decided not to give any good way (with a good offset and monotonic values) to get time
+        // so we must trick, cheat, spit to try to fix their laziness.
+        // To build a high resolution value we have to combine a low resolution (20ms ?) system time, and a microsecond clock.
+        // It would be easy except that both clock derives in time, and we "should" re-calibrated when the error between both clock
+        // reach the low clock resolution
+        // But since when we query the low clock, we don't get updated value (unless we wait for being re-scheduled leading to up to date low clock)
+        // this means blocking the calling thread for a complete scheduler's time slice
+        
+        // Add to this that this method can be called by multiple thread, and you get the idea how complex the Win dev left us.
+        bool doneCalib = false;
+        FILETIME ft;
+        do
+        {
+            // Should we calibrate now ?
+            if (!calib.done)
+            {   // Only one thread should do that
+                EnterCriticalSection(&calib.lock);
+                
+                if (!calib.done)
+                {   // If we are here, then no other thread started calibration yet
+                    // However, don't let other thread spin uselessly on the lock, since we have to block
+                    // until the low res clock increase, and this takes a while.
+                    SetCriticalSectionSpinCount(&calib.lock, 0);
+                    CalibrateClocks();
+                    doneCalib = true;
+                    SetCriticalSectionSpinCount(&calib.lock, 4096);
+                }
+                LeaveCriticalSection(&calib.lock);
+            }
+            
+            // Get both clock time now
+            GetSystemTimeAsFileTime(&ft);
+            LARGE_INTEGER ul, qpc;
+            ul.LowPart = ft.dwLowDateTime;
+            ul.HighPart = ft.dwHighDateTime;
+            
+            QueryPerformanceCounter(&qpc);
+            
+            // Ok, compute the final time
+            EnterCriticalSection(&calib.lock);
+            uint64 clk = calib.systemTime100ns + ((qpc.QuadPart - calib.perfCounter) * RATE_DIFF) / calib.freq;
+            LeaveCriticalSection(&calib.lock);
+            
+            // Check if the distance between clock need recalibration
+            // If it's larger than 40ms (more than 2 scheduler unit time), we need to recalibrate
+            // because we should have spotted the change in the low res clock and we did not
+            if (AbsDiff(clk, (uint64)ul.QuadPart) < 400000)
+            {
+                lpFT->dwLowDateTime = clk & 0xFFFFFFFFULL;
+                lpFT->dwHighDateTime = clk >> 32ULL;
+                return;
+            }
+            
+            // Ok, recalibration is required
+            calib.done = false;
+        } while (!doneCalib);
+        // Here we did calibration, yet, the time if still off by a wide margin, we'll never get a better measure than the low res system clock
+        memcpy(lpFT, &ft, sizeof(ft));
+    }
+
+    static void initHighFreqFunc()
+    {
+        // Check if we can use Windows 8's new GetSystemTimePreciseAsFileTime API, else we'll need to roll our own
+        if (!pGetSystemTimePreciseAsFileTime)
+        {
+            if (HMODULE h = GetModuleHandleA("kernel32.dll"))
+                InterlockedExchangePointer((PVOID*)&pGetSystemTimePreciseAsFileTime, (PVOID)(void (WINAPI*)(LPFILETIME))GetProcAddress(h, "GetSystemTimePreciseAsFileTime"));
+            if (!pGetSystemTimePreciseAsFileTime)
+                InterlockedExchangePointer((PVOID*)&pGetSystemTimePreciseAsFileTime, (PVOID)&fallbackPreciseTime);
+        }
+    }
+    
+#elif defined(_LINUX)
     // Return the offset from clock realtime and clock monotonic
     static struct timespec & getInitialTimespec()
     {
@@ -510,43 +621,7 @@ namespace Time
     uint32 getTimeWithBase(const uint32 base)
     {
 #ifdef _WIN32
-        static int64 performanceFrequency = -1;
-        if (performanceFrequency == -1)
-        {
-            // Try some heuristics, only if the clock used is the internal RTC we can trust the performance counter.
-            performanceFrequency = QueryPerformanceFrequency((LARGE_INTEGER*)&performanceFrequency) == TRUE && (performanceFrequency == 1193182 || performanceFrequency == 3579545) ? performanceFrequency : 0;
-            // Also, if there is more than one CPU, we can't trust the performance counter either
-            performanceFrequency = Threading::Thread::getCurrentCoreCount() > 1 ? 0 : performanceFrequency;
-        }
-
-        if (performanceFrequency)
-        {
-            LARGE_INTEGER counter;
-            QueryPerformanceCounter(&counter);
-            return (uint32)((uint64)counter.QuadPart * base / performanceFrequency);
-        }
-
-        // No trustable high clock available, let's use timeGetTime here
-#pragma comment(lib, "winmm.lib")
-        struct MMTime
-        {
-           MMTime() { timeBeginPeriod(1); }
-           ~MMTime() { timeEndPeriod(1); }
-        };
-
-        static MMTime initializer;
-        static uint32 period;
-        static uint32 lastTickCount;
-        static Threading::Lock lock;
-        uint32 milli = timeGetTime();
-        {
-            Threading::ScopedLock scope(lock);
-            if (lastTickCount > milli)
-                period++;
-            lastTickCount = milli;
-        }
-
-        return (uint32)((((uint64)milli | ((uint64)period << 32ULL)) * base) / 1000ULL);
+        return (uint32)getTimeWithBaseHiRes(base);
 #elif defined(_LINUX)
         struct timespec ts;
         if (clock_gettime(CLOCK_MONOTONIC, &ts) == EINVAL)
@@ -577,42 +652,14 @@ namespace Time
     uint64 getTimeWithBaseHiRes(const uint64 base)
     {
 #ifdef _WIN32
-        static int64 performanceFrequency = -1;
-        if (performanceFrequency == -1)
-        {
-            // Try some heuristics, only if the clock used is the internal RTC we can trust the performance counter.
-            performanceFrequency = QueryPerformanceFrequency((LARGE_INTEGER*)&performanceFrequency) == TRUE && (performanceFrequency == 1193182 || performanceFrequency == 3579545) ? performanceFrequency : 0;
-            // Also, if there is more than one CPU, we can't trust the performance counter either as when thread are migrated, time can go backward
-            performanceFrequency = Threading::Thread::getCurrentCoreCount() > 1 ? 0 : performanceFrequency;
-        }
+        FILETIME ft;
+        initHighFreqFunc();
+        pGetSystemTimePreciseAsFileTime(&ft);
+        LARGE_INTEGER ul;
+        ul.LowPart = ft.dwLowDateTime;
+        ul.HighPart = ft.dwHighDateTime;
 
-        if (performanceFrequency)
-        {
-            LARGE_INTEGER counter;
-            QueryPerformanceCounter(&counter);
-            return ((uint64)counter.QuadPart * base / performanceFrequency);
-        }
-
-        // No trustable high clock available, let's use timeGetTime here
-        struct MMTime
-        {
-           MMTime() { timeBeginPeriod(1); }
-           ~MMTime() { timeEndPeriod(1); }
-        };
-
-        static MMTime initializer;
-        static uint32 period;
-        static uint32 lastTickCount;
-        static Threading::Lock lock;
-        uint32 milli = timeGetTime();
-        {
-            Threading::ScopedLock scope(lock);
-            if (lastTickCount > milli)
-                period++;
-            lastTickCount = milli;
-        }
-
-        return ((((uint64)milli | ((uint64)period << 32ULL)) * base) / 1000ULL);
+        return multDiv(ul.QuadPart - EPOCH_DIFF, base, RATE_DIFF);
 #elif defined(_LINUX)
         struct timespec ts;
         if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)

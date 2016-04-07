@@ -5,8 +5,9 @@
 #include "../Types.hpp"
 // We need time declaration too
 #include <time.h>
+
 // And the compile time assertion code to prevent bad usage of Atomic class
-#include "../Utils/StaticAssert.hpp"
+#include "../Utils/Assert.hpp"
 
 // You must include this file on StellarisWare
 // #include "driverlib/interrupt.h"
@@ -25,17 +26,42 @@ namespace Threading
 #ifndef _WIN32
     inline bool stillBefore(struct timeval * tOut);
 #endif
-    /** The timeout to wait for */
-    enum TimeOut
+    /** The timeout to wait for, in milliseconds.
+        Use InstantCheck or Infinite if you need any of these cases. */
+    struct TimeOut
     {
-        InstantCheck = 0,
+        /** Possible shortcut for timeout */
+        enum Type
+    {
+           InstantCheck = 0,      //!< Check if the condition is valid, but does not wait
 #ifdef _WIN32
-        Infinite = INFINITE,
+           Infinite = INFINITE,   //!< Wait until the condition is valid
 #else
-        Infinite = 0xFFFFFFFF,
+           Infinite = 0xFFFFFFFF, //!< Wait until the condition is valid
 #endif
     };
+        /** The actual timeout duration in millisecond */
+        uint32 duration;
 
+#ifdef _WIN32
+        operator DWORD() const { return (DWORD)duration; }
+#else
+        operator uint32() const { return duration; }
+#endif
+
+        /** Build a TimeOut for special case */
+        TimeOut(const Type type) : duration((uint32)type) {}
+        /** Build a TimeOut for any other duration */
+        TimeOut(const uint32 duration) : duration(duration)
+        {
+#if (DEBUG==1)
+            if (duration == (uint32)InstantCheck || duration == (uint32)Infinite)
+               fprintf(stderr, "%s(%d) : Logic error. You can not use a duration of 0 or -1 as they are reserved for InstantCheck or Infinite. Use InstantCheck or Infinite in that case", __FILE__, __LINE__);
+#endif
+        }
+    };
+    static TimeOut Infinite = TimeOut(TimeOut::Infinite);
+    static TimeOut InstantCheck = TimeOut(TimeOut::InstantCheck);
 
     /** This class implements inter-thread event objects
 
@@ -1057,6 +1083,40 @@ namespace Threading
     };
 
 #if (WantAtomicClass == 1)
+    /** Delays the current operation a given number of times. Unlike traditional lock, this does not 
+        need any operating system helper upon contention. Instead, it burns CPU cycles, so this kind 
+        of lock should not be used for any large section of code.
+        Spin are only used in a single thread (it's not multithread safe).
+        The basic usage for this class is in the lock-free classes, when blocking behaviour is asked for.
+        In that case, since we know the system will progress, it's faster to simply loop with a SpinDelay 
+        rather than giving back our time slice to the operating system.
+        
+        Typically used like this:
+        @code
+            if (!isResultAvailableFromOtherThread())
+            {
+                SpinDelay spin;
+                while (spin.wait() && !isResultAvailableFromOtherThread()) {}
+            }
+        @endcode */
+    class SpinDelay
+    {
+        // Members
+    private:
+        /** The internal counter. */
+        int counter;
+        
+        // Interface
+    public:
+        /** Default constructor */
+        SpinDelay() : counter(0) {}
+        /** Wait and count. If the counter is too large, then we relinguish our thread time slice
+            @return true always, this is made for chaining with the test to ensure */
+        bool wait();
+    };
+
+
+
 #if HAS_STD_ATOMIC == 1
 
     /** When you expect a value to be accessed or modified atomically, you can either use the SharedDataReader, SharedDataWriter or SharedDataReaderWriter on the value, if it's uint32.
@@ -1074,14 +1134,19 @@ namespace Threading
         // Interface
     public:
         /** Get direct access to the object.
-            This is unsafe, since there is no memory barrier involved in accessing the object */
-        inline volatile T & unsafeAccess() { return obj.load(std::memory_order_relaxed); }
+            This is unsafe, since there is no complete memory barrier involved in accessing the object */
+        inline T unsafeAccess() const volatile { return obj.load(std::memory_order_relaxed); }
 
         /** Read the value atomically (and return a copy). */
-        inline T read() const { return obj.load(std::memory_order_consume); }
+        inline T read() const volatile { return obj.load(std::memory_order_consume); }
+        /** Ensure synchronization (full barrier) from all thread while reading this variable.
+            You usually don't need such requirement. */
+        inline T readSync() const volatile { return obj.load(std::memory_order_acquire); }
 
         /** Save a new value atomically. */
-        inline void save(T newValue) { obj.store(newValue, std::memory_order_release); }
+        inline void save(T newValue) volatile { obj.store(newValue, std::memory_order_release); }
+        /** Unsafe storing. This is using the lowest possible memory barrier for storing. */
+        inline void unsafeStore(T newValue) volatile { obj.store(newValue, std::memory_order_relaxed); }
 
         /** Swap the current value with the one given, returning the previous one, atomically.
             Perform this operation atomically:
@@ -1090,22 +1155,32 @@ namespace Threading
                 obj = newValue;
                 return oldValue;
             @endcode */
-        inline T swap(const T & value) { return obj.exchange(value, std::memory_order_seq_cst); }
+        inline T swap(const T & value) volatile { return obj.exchange(value, std::memory_order_seq_cst); }
+        /** Swap the current value with the one given, returning the previous one, atomically.
+            This version does not ensure that all threads see the operations happening in the same order, only
+            that no re-ordering is allowed before and after this operation for the current thread only.
+            Perform this operation atomically:
+            @code
+                T oldValue = obj;
+                obj = newValue;
+                return oldValue;
+            @endcode */
+        inline T unsafeSwap(const T & value) volatile { return obj.exchange(value, std::memory_order_acq_rel); }
 
         /** Increments this value atomically
             @return ++obj */
-        inline T operator++() { return obj.fetch_add(1, std::memory_order_acq_rel) + 1; }
+        inline T operator++() volatile { return obj.fetch_add(1, std::memory_order_acq_rel) + 1; }
 
         /** Atomically decrements this value, returning the new value. */
-        inline T operator--() { return obj.fetch_sub(1, std::memory_order_acq_rel) - 1; }
+        inline T operator--() volatile { return obj.fetch_sub(1, std::memory_order_acq_rel) - 1; }
 
         /** Atomically adds the given amount
             @return obj + amountToAdd */
-        inline T operator +=(const T & amountToAdd) { return obj.fetch_add(amountToAdd, std::memory_order_acq_rel) + amountToAdd; }
+        inline T operator +=(const T & amountToAdd) volatile { return obj.fetch_add(amountToAdd, std::memory_order_acq_rel) + amountToAdd; }
 
         /** Atomically substracts the given amount
             @return obj - amountToSubstract */
-        inline T operator -=(const T & amountToSubstract) { return obj.fetch_sub(amountToSubstract, std::memory_order_acq_rel) - amountToSubstract; }
+        inline T operator -=(const T & amountToSubstract) volatile { return obj.fetch_sub(amountToSubstract, std::memory_order_acq_rel) - amountToSubstract; }
 
         /** The expected CAS (Compare And Set) method.
             Perform this operation atomically:
@@ -1120,13 +1195,13 @@ namespace Threading
 
             It's typically used like this:
             @code
-                while (!atomic.compareAndSet(newValue, comparand)) comparand = atomic.read();
+                while (!atomic.compareAndSet(comparand, newValue)) comparand = atomic.read();
             @endcode
             @returns true on successful comparison and value change, else value is not modified.
-            @warning This method actually requires you loop on the CAS (it's based on the weak form)
+            @warning This method actually requires you loop on the CAS (it's based on the weak form), so it's allowed to fail if "this" is like comparand
             @warning To avoid ABA problem, you should prefer the reference based version
         */
-        inline bool compareAndSet(const T & newValue, T comparand, const bool weak) { return obj.compare_exchange_weak(comparand, newValue); }
+        inline bool compareAndSet(const T & comparand, const T & newValue, const bool weak) volatile { return obj.compare_exchange_weak(comparand, newValue); }
         /** CAS with update of comparand if it fails.
             This is used to avoid ABA problem.
             Perform this operation atomically:
@@ -1142,11 +1217,19 @@ namespace Threading
 
             It's typically used like this:
             @code
-                while (!atomic.compareAndSet(newValue, comparand));
+                while (!atomic.compareAndSet(comparand, newValue));
             @endcode
-            @warning This form is unlikely to be generally useable
-            */
-        inline bool compareAndSet(const T & newValue, T & comparand, const bool weak) { return obj.compare_exchange_weak(comparand, newValue); }
+            @warning This method actually requires you loop on the CAS (it's based on the weak form), so it's allowed to fail if "this" is like comparand
+            @warning Due to many compiler bugs, you can not do that:
+            @code
+                while (!atomic.compareAndSet(atomic.read(), newValue));
+            @endcode
+            Please do instead:
+            @code
+                comparand = atomic.read();
+                while(!atomic.compareAndSet(comparand, newValue));  // The temporary is required
+            @endcode */
+        inline bool compareAndSet(T & comparand, const T & newValue, const bool weak) volatile { return obj.compare_exchange_weak(comparand, newValue); }
         /** The expected CAS (Compare And Set) method.
             Perform this operation atomically:
             @code
@@ -1160,12 +1243,12 @@ namespace Threading
 
             It's typically used like this:
             @code
-                while (!atomic.compareAndSet(newValue, comparand)) comparand = atomic.read();
+                while (!atomic.compareAndSet(comparand, newValue)) comparand = atomic.read();
             @endcode
             @returns true on successful comparison and value change, else value is not modified.
             @warning To avoid ABA problem, you should prefer the reference based version
         */
-        inline bool compareAndSet(const T & newValue, T comparand) { return obj.compare_exchange_strong(comparand, newValue); }
+        inline bool compareAndSet(const T & comparand, const T & newValue) volatile { T c = comparand; return obj.compare_exchange_strong(c, newValue); }
         /** CAS with update of comparand if it fails.
             This is used to avoid ABA problem.
             Perform this operation atomically:
@@ -1178,8 +1261,12 @@ namespace Threading
                 comparand = read();
                 return false;
             @endcode
-            */
-        inline bool compareAndSet(const T & newValue, T & comparand) { return obj.compare_exchange_strong(comparand, newValue); }
+            It's typically used like this: 
+            @code
+                while (!atomic.compareAndSet(comparand, newValue)) {}
+            @endcode
+            @returns true on successful comparison and value change, else value is not modified. */
+        inline bool compareAndSet(T & comparand, const T & newValue) volatile { return obj.compare_exchange_strong(comparand, newValue); }
 
         // Construction and destruction
     public:
@@ -1208,6 +1295,10 @@ namespace Threading
         // Not defined as it has no sense to use post increment and atomic variables
         T operator++ (int);
     };
+    
+    
+    
+    
 #else
     /** @internal The internal virtual table function that's selected in the atomic class to avoid runtime cost based on choosing the right function */
     template <int size>
@@ -1409,13 +1500,18 @@ namespace Threading
     public:
         /** Get direct access to the object.
             This is unsafe, since there is no memory barrier involved in accessing the object */
-        inline volatile T & unsafeAccess() { return obj; }
+        inline T unsafeAccess() const volatile { return obj; }
 
         /** Read the value atomically (and return a copy). */
-        inline T read() const { return from(FuncTable<sizeof(T)>::read((volatile typename FuncTable<sizeof(T)>::Type &)obj)); }
+        inline T read() const volatile { return from(FuncTable<sizeof(T)>::read((volatile typename FuncTable<sizeof(T)>::Type &)obj)); }
+        /** Ensure synchronization (full barrier) from all thread while reading this variable.
+            You usually don't need such requirement. */
+        inline T readSync() const volatile { return from(FuncTable<sizeof(T)>::read((volatile typename FuncTable<sizeof(T)>::Type &)obj)); }
 
         /** Save a new value atomically. */
-        inline void save(T newValue) { (void)swap(newValue); }
+        inline void save(T newValue) volatile { (void)swap(newValue); }
+        /** Unsafe storing. This is using the lowest possible memory barrier for storing. */
+        inline void unsafeStore(T newValue) volatile { (void)swap(newValue); }
 
         /** Swap the current value with the one given, returning the previous one, atomically.
             Perform this operation atomically:
@@ -1424,23 +1520,33 @@ namespace Threading
                 obj = newValue;
                 return oldValue;
             @endcode */
-        inline T swap(const T & value) { return from(FuncTable<sizeof(T)>::swap((volatile typename FuncTable<sizeof(T)>::Type &)obj, *(typename FuncTable<sizeof(T)>::Type *)&value)); }
+        inline T swap(const T & value) volatile { return from(FuncTable<sizeof(T)>::swap((volatile typename FuncTable<sizeof(T)>::Type &)obj, *(typename FuncTable<sizeof(T)>::Type *)&value)); }
+        /** Swap the current value with the one given, returning the previous one, atomically.
+            This version does not ensure that all threads see the operations happening in the same order, only
+            that no re-ordering is allowed before and after this operation for the current thread only.
+            Perform this operation atomically:
+            @code
+                T oldValue = obj;
+                obj = newValue;
+                return oldValue;
+            @endcode */
+        inline T unsafeSwap(const T & value) volatile { return from(FuncTable<sizeof(T)>::swap((volatile typename FuncTable<sizeof(T)>::Type &)obj, *(typename FuncTable<sizeof(T)>::Type *)&value)); }
 
 
         /** Increments this value atomically
             @return ++obj */
-        inline T operator++() { return from(FuncTable<sizeof(T)>::inc((volatile typename FuncTable<sizeof(T)>::Type&)obj)); }
+        inline T operator++() volatile { return from(FuncTable<sizeof(T)>::inc((volatile typename FuncTable<sizeof(T)>::Type&)obj)); }
 
         /** Atomically decrements this value, returning the new value. */
-        inline T operator--() { return from(FuncTable<sizeof(T)>::dec((volatile typename FuncTable<sizeof(T)>::Type&)obj)); }
+        inline T operator--() volatile { return from(FuncTable<sizeof(T)>::dec((volatile typename FuncTable<sizeof(T)>::Type&)obj)); }
 
         /** Atomically adds the given amount
             @return obj + amountToAdd */
-        inline T operator +=(const T & amountToAdd) { return from(FuncTable<sizeof(T)>::add((volatile typename FuncTable<sizeof(T)>::Type&)obj, *(typename FuncTable<sizeof(T)>::SignedType *)&amountToAdd)); }
+        inline T operator +=(const T & amountToAdd) volatile { return from(FuncTable<sizeof(T)>::add((volatile typename FuncTable<sizeof(T)>::Type&)obj, *(typename FuncTable<sizeof(T)>::SignedType *)&amountToAdd)); }
 
         /** Atomically substracts the given amount
             @return obj - amountToSubstract */
-        inline T operator -=(const T & amountToSubstract) { return from(FuncTable<sizeof(T)>::add((volatile typename FuncTable<sizeof(T)>::Type&)obj, -*(typename FuncTable<sizeof(T)>::SignedType*)&amountToSubstract)); }
+        inline T operator -=(const T & amountToSubstract) volatile { return from(FuncTable<sizeof(T)>::add((volatile typename FuncTable<sizeof(T)>::Type&)obj, -*(typename FuncTable<sizeof(T)>::SignedType*)&amountToSubstract)); }
 
         /** The expected CAS (Compare And Set) method.
             Perform this operation atomically:
@@ -1459,7 +1565,7 @@ namespace Threading
             @endcode
             @returns true on successful comparison and value change, else value is not modified.
         */
-        inline bool compareAndSet(const T & newValue, const T & comparand) { return FuncTable<sizeof(T)>::compareAndSet((volatile typename FuncTable<sizeof(T)>::Type&)obj, *(typename FuncTable<sizeof(T)>::Type *)&newValue, *(typename FuncTable<sizeof(T)>::Type *)&comparand); }
+        inline bool compareAndSet(const T & comparand, const T & newValue, const bool = false) volatile { return FuncTable<sizeof(T)>::compareAndSet((volatile typename FuncTable<sizeof(T)>::Type&)obj, *(typename FuncTable<sizeof(T)>::Type *)&newValue, *(typename FuncTable<sizeof(T)>::Type *)&comparand); }
 
         // Construction and destruction
     public:
@@ -1485,12 +1591,325 @@ namespace Threading
 
         // Prevent some operations
     private:
-        // Not defined as it has no sense to use post increment and atomic variables
+        // Not defined as it makes no sense to use post increment and atomic variables
         T operator-- (int);
-        // Not defined as it has no sense to use post increment and atomic variables
+        // Not defined as it makes no sense to use post increment and atomic variables
         T operator++ (int);
     };
 #endif
+
+
+    /** A very simple multiple producer, single consumer queue that's lock-free, wait-free.
+        This queue does memory allocations for storing data (it's unlimited by design), but
+        since it has no control on the memory allocator, it's not necessarly lock-free.
+        The queue owns the objects passed it (and delete them with delete) for the remaining objects.
+        However, when enqueued objects are dequeued, this queue does not own them anymore.
+        The basic idea being that if you can reach your object you are responsible for its lifetime.
+     
+        This algorithm used is based on this page: http://www.1024cores.net/home/lock-free-algorithms/queues/intrusive-mpsc-node-based-queue
+        The fast version is an optimization that's not 100% correct (it's not linearizable when the queue is empty) but still behaves correctly. */
+    template <typename T>
+    class MultipleProducerSingleConsumerQueue
+    {
+        // Type definition and enumeration
+    private:
+        /** The internal node definition */
+        struct Node
+        {
+            /** The node object */
+            T *                         obj;
+            /** The next node pointer */
+            Atomic<Node *>              next;
+            
+            /** Forward constructor */
+            Node(T * obj = 0) : obj(obj), next(0) {}
+        };
+        
+        // Members
+    private:
+        /** The head of the queue */
+        Atomic<Node *> head;
+        /** The tail of the queue */
+        Atomic<Node *> tail;
+
+#ifndef FastMPSCQ
+        /** A dumb node that's used to detect inconsistency in the queue */
+        Node            null;
+#endif
+    
+        // Interface
+    public:
+        /** Default construction. */
+#ifndef FastMPSCQ
+        MultipleProducerSingleConsumerQueue() : head(&null), tail(&null) {}
+#else
+        MultipleProducerSingleConsumerQueue() : head(new Node()), tail(head.unsafeAccess()) {}
+#endif
+
+        /** Simple destructor assumes producers and consumer thread are done */
+        ~MultipleProducerSingleConsumerQueue()
+        {
+            while (T * tmp = this->dequeue()) { delete tmp; }
+#ifdef FastMPSCQ
+            delete (Node*)head.unsafeAccess();
+#endif
+        }
+        
+        /** Check if the queue is possibly empty.
+            @warning This is only a guess, since there is no way to ensure this check atomically. */
+        bool isPossiblyEmpty() const volatile { return head.unsafeAccess() == tail.unsafeAccess(); }
+        
+        /** Enqueue an object to this queue. There might be multiple producer calling this method 
+            at any time.
+            @param input  A pointer to a new allocated element that's stored in the queue
+            @return true if the queue was previously empty */
+        bool enqueue(T* input) volatile
+        {
+            Node * node = new Node(input);
+            Node * prev = head.unsafeSwap(node);
+            // Here, there might be an inconsistency in dequeue that'll be resolved when on next dequeue.
+            prev->next.save(node);
+            return prev == &null;
+        }
+
+#ifndef FastMPSCQ
+        /** Get the first element stored from the queue.
+            If there is contention, this actually waits and retry until contention is resolved.
+            This can not deadlock as there'll always be advancement from the other thread, and it'll ends up
+            in a given element, or 0 if the queue is empty.
+            In the worst case, this will relinguish its remaining thread's timeslice. 
+            @return 0 if the queue is empty, or the stored pointer if any available */
+        T* dequeue() volatile
+        {
+            T * ret;
+            if (!tryDequeue(ret))
+            {   // Contention, let's wait a bit
+                SpinDelay spin;
+                while (spin.wait() && !tryDequeue(ret)) {}
+            }
+            return ret;
+        }
+        
+        /** Try to dequeue from the queue.
+            This will dequeue from the queue if it's possible to do so.
+            In that case, ret will be modified to point to the first element queued to the queue. 
+            @return false in case of contention (meaning that the operation must be re-attempted), true on succcessful dequeueing
+            @warning You must delete by yourself the returned pointer */
+        bool tryDequeue(T* & ret) volatile
+        {
+            Node * tailNode = tail.unsafeAccess();
+            Node * next = tailNode->next.readSync();
+            ret = 0;
+            
+            if (tailNode == &null)
+            {
+                if (!next)
+                {   // Here, if enqueue happens, we'll not see the element.
+                    return (head.readSync() == tailNode); // if it's the case, the queue is empty, else contention is going on.
+                }
+                // All these operations below works because there is a single consumer
+                tail.save(next);
+                tailNode = next;
+                next = next->next.readSync();
+            }
+            if (next)
+            {
+                ret = tailNode->obj;
+                tail.save(next);
+                delete tailNode;
+                return true;
+            }
+            
+            // Then make sure the queue is consistent when it's empty
+            Node * headNode = head.unsafeAccess();
+            if (headNode == tailNode)
+            {   // Empty queue, need to push again the "null" node
+                null.next.save(0);
+                Node * prev = head.unsafeSwap(const_cast<Node*>(&null));
+                prev->next.save(const_cast<Node*>(&null));
+                next = tailNode->next.readSync();
+                if (next)
+                {
+                    ret = tailNode->obj;
+                    tail.save(next);
+                    delete tailNode;
+                    return true;
+                }
+            }
+            
+            // If another thread enqueued here, then we'll not see the element unless we chech again.
+            return headNode == tail.unsafeAccess(); // If it's the case, the queue is really empty
+        }
+#else
+        /** Get the first element stored from the queue. 
+            @return 0 if the queue is empty, or gives you back the pointer to the stored element if any available
+            @warning You must delete by yourself the returned pointer
+            @note It's possible to get back 0 when called while a producer thread has not updated the single element yet.  */
+        T* dequeue() volatile
+        {
+            Node * tailNode = tail.unsafeAccess();
+            Node * next = tailNode->next.readSync();
+
+            if (next == 0) return 0;
+
+            T* output = next->obj;
+            tail.save(next);
+            delete tailNode;
+            return output;
+        }
+#endif
+        // Prevent copying
+    private:
+        MultipleProducerSingleConsumerQueue(const MultipleProducerSingleConsumerQueue & );
+        void operator = (const MultipleProducerSingleConsumerQueue & );
+    };
+    
+    /** A multiple producer, multiple consumer lock-free, wait-free circular buffer (queue).
+        This queue does not do any memory allocation once constructed (the complete size is required for construction).
+        You can only store pointer in it (or plain old data). 
+        The pointed objects are not owned (so you must dequeue them and delete them yourself if you need leak-free code).
+        
+        The algorithm comes from http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue (public domain), 
+        althrough the code is completely genuine */
+    template<typename T>
+    class MultipleProducerMultipleConsumerQueue
+    {
+        // Type definition and enumeration
+    private:
+        /** The internal node array */
+        struct Node
+        {
+            /** The node data */
+            T                     data;
+            /** The position of the node in the circular buffer */
+            Atomic<size_t>        pos;
+        };
+
+        // Members
+    private:
+        // We have to adjust the position for each member so they don't intersect a cache line (even if the queue is bigger), it's more efficient as it
+        // avoids stalling a core while synchronizing cache lines
+        // Hence we have to consume a padding here
+        uint8               padding0[64];
+        /** The queue item's maximum count (that is one less the allocated buffer size) */
+        const size_t        itemCount;
+        /** The circular buffer */
+        Node * const        buffer;
+        // And here
+        uint8               padding1[64];
+        /** The writing position in the queue */
+        Atomic<size_t>      writingPos;
+        // And here
+        uint8               padding2[64];
+        /** The reading position in the queue */
+        Atomic<size_t>      readingPos;
+        // And here
+        uint8               padding3[64];
+    
+    
+        // Interface
+    public:
+        /** Dequeue data from the queue 
+            @param data     On output, it's filled with the dequeued data upon success (else it's not modified)
+            @return true if the queue was not empty and dequeueing went as expected */
+        bool dequeue(T & data) volatile
+        {
+            size_t readPos = readingPos.unsafeAccess();
+
+            while (true)
+            {
+                Node *   node     = &buffer[ readPos & itemCount ];
+                size_t   nodePos  = node->pos.readSync();
+                ssize_t  diff     = (ssize_t)(nodePos - readPos - 1);
+
+                // Check if the slot is full (that is, the reading pos is at the same position as the node stored position)
+                if (diff == 0)
+                {
+                    // We need to update the reading position
+                    // Upon change, we ensure that what we've read is correct before updating the reading position.
+                    // We use the weak variant because we loop (so spurious results are handled correctly)
+                    if (readingPos.compareAndSet(readPos, readPos + 1, true))
+                    {
+                        data = node->data;
+                        // Set the sequence to the next position (a complete cycle later)
+                        node->pos.save(readPos + itemCount + 1);  // For example, for a 4 items queue, this will store 0, 1 (full), 4 (empty), 5 (full), 8 (empty), etc...
+                        return true;
+                    }
+                }
+                // If the reading position is higher than the node position, then the queue is empty
+                else if (diff < 0) return false;
+                // This can only happen under concurrent reading pressure, but it's safe
+                else readPos = readingPos.unsafeAccess();
+            }
+
+            // This can not happen
+            Assert(false);
+            return false;
+        }
+    
+    
+        /** Enqueue the given data in the queue.
+            @param data The data to enqueue
+            @return false if the queue is full */
+        bool enqueue(const T & data) volatile
+        {
+            // writingPos only wraps at MAX(writingPos) instead we use a mask to convert the sequence to an array index
+            // this is why the ring buffer must be a size which is a power of 2. this also allows the sequence to double as a ticket/lock.
+            size_t  writePos = writingPos.unsafeAccess();
+
+            while (true)
+            {
+                Node*  node     = &buffer[ writePos & itemCount ];
+                size_t nodePos  = node->pos.readSync(); // Ensure all thread see consistant value (if the node was returned to the queue)
+                ssize_t diff    = (ssize_t)(nodePos - writePos);
+
+                // Check if the slot is empty (that is, the reading pos is at the same position as the node)
+                if (diff == 0)
+                {
+                    // We need to update the writing position
+                    // Upon change, we ensure that what we've read is correct before updating the reading position.
+                    // We use the weak variant because we loop (so spurious results are handled correctly)
+                    if (writingPos.compareAndSet(writePos, writePos + 1, true))
+                    {
+                        node->data = data;
+                        // Increment the position so dequeue will accept it
+                        node->pos.save(writePos + 1);
+                        return true;
+                    }
+                }
+                // If the node position is before the writing position, then the queue is full (all slot used)
+                else if (diff < 0) return false;
+                // This can only happen under concurrent writing pressure, but it's safe
+                else writePos = writingPos.unsafeAccess();
+            }
+
+            // This can not happen
+            Assert(false);
+            return false;
+        }
+
+
+        // Construction and destruction
+    public:
+        /** Construct a MPMC queue.
+            @param size     The number of slot in the circular buffer. It must be a power of 2 */
+        MultipleProducerMultipleConsumerQueue(const size_t size) : itemCount(size - 1), buffer(new Node[size])
+        {
+            // The queue size must be a power of two
+            Assert( (size & itemCount) == 0 && size );
+
+            // Set the queue items initial positions
+            for (size_t i = 0; i < size; ++i) buffer[i].pos.unsafeStore(i);
+        }
+
+        /** Destruction */
+        ~MultipleProducerMultipleConsumerQueue() { delete[] buffer; }
+
+        // Prevent copying
+    private:
+        MultipleProducerMultipleConsumerQueue(const MultipleProducerMultipleConsumerQueue&);
+        void operator=(const MultipleProducerMultipleConsumerQueue&);
+    };
 
 #define HasAtomicClass 1
 #endif

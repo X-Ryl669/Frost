@@ -157,7 +157,12 @@ namespace BSC
         /** Set the features to use for compression and decompression
             @param features     The set of additional features.
             If the specified features make unlogical/impossible combination, later call to the methods will return NotSupported error */
-        EBSC(int features = defaultFeatures) : features(features) {}
+        EBSC(int features = defaultFeatures) : features(features)
+        {
+#if defined(_OPENMP) && defined(__INTEL_COMPILER)
+            kmp_set_warnings_off();
+#endif
+        }
     };
 
 }

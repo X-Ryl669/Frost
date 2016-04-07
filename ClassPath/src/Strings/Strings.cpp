@@ -317,6 +317,35 @@ namespace Strings
         return ret;
     }
 
+    const uint8 * checkUTF8(const uint8 * s)
+    {
+        while (*s)
+        {
+            if (*s < 0x80) s++; // Basic ASCII
+            else if ((s[0] & 0xE0) == 0xC0)
+            { // 110XXXXx 10xxxxxx
+                // Could be overlong
+                if ((s[1] & 0xC0) != 0x80 || (s[0] & 0xFE) == 0xC0) return s;
+                s += 2;
+            } else if ((s[0] & 0xF0) == 0xE0)
+            { // 1110XXXX 10Xxxxxx 10xxxxxx
+                if ((s[1] & 0xC0) != 0x80 || (s[2] & 0xC0) != 0x80 || (s[0] == 0xE0 && (s[1] & 0xE0) == 0x80) // Is overlong?
+                ||  (s[0] == 0xED && (s[1] & 0xE0) == 0xA0) // Has surrogate ?
+                ||  (s[0] == 0xEF && s[1] == 0xBF && (s[2] & 0xFE) == 0xBE)) // Or invalid code point like FFFE or FFFF
+                    return s;
+                s += 3;
+            } else if ((s[0] & 0xF8) == 0xF0)
+            { // 11110XXX 10XXxxxx 10xxxxxx 10xxxxxx
+                if ((s[1] & 0xC0) != 0x80 || (s[2] & 0xC0) != 0x80 || (s[3] & 0xC0) != 0x80 || (s[0] == 0xF0 && (s[1] & 0xF0) == 0x80) // Is overlong ?
+                ||  (s[0] == 0xF4 && s[1] > 0x8F) || s[0] > 0xF4) // Invalid code point like > 10FFFF
+                    return s;
+                s += 4;
+            }
+            else return s; // Invalid sequence anyway for UTF-8
+        }
+        return 0;
+    }
+
     void copyAndZero(void * dest, int destSize, const void * src, int srcSize)
     {
         if (!dest || !destSize) return;

@@ -38,7 +38,7 @@ namespace File
         };
 
         /** The file filter array */
-        typedef Container::WithCopyConstructor<FileFilter>::Array   FileFilters;
+        typedef Container::NotConstructible<FileFilter>::IndexList   FileFilters;
 
         /** When using the low-level system, you can provide your own EntryFound
             structure that'll be called each time a new entry is found in the folder

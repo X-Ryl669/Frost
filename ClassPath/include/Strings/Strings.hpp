@@ -98,17 +98,21 @@ namespace Strings
 
         /** Find the specific needle in the string.
             This is a very simple O(n*m) search.
-            @return the position of the needle, or getLength() if not found. */
+            @return the position of the needle, or getLength() if not found.
+            @warning For historical reasons, Strings::FastString::Find returns -1 if not found */
         const unsigned int Find(const VerySimpleReadOnlyString & needle, unsigned int pos = 0) const;
         /** Find any of the given set of chars
-            @return the position of the needle, or getLength() if not found. */
+            @return the position of the needle, or getLength() if not found.
+            @warning For historical reasons, Strings::FastString::findAnyChar returns -1 if not found */
         const unsigned int findAnyChar(const char * chars, unsigned int pos = 0, int nlen = 0) const { int len = pos; if (!nlen && chars) nlen = (int)strlen(chars); while(len < length && data && memchr(chars, data[len], nlen) == NULL) len++; return len; }
         /** Find first char that's not in the given set of chars
-            @return the position of the needle, or getLength() if not found. */
+            @return the position of the needle, or getLength() if not found.
+            @warning For historical reasons, Strings::FastString::invFindAnyChar returns -1 if not found */
         const unsigned int invFindAnyChar(const char * chars, unsigned int pos = 0, int nlen = 0) const { int len = pos; if (!nlen && chars) nlen = (int)strlen(chars); while(len < length && data && memchr(chars, data[len], nlen) != NULL) len++; return len; }
         /** Find the specific needle in the string, starting from the end of the string.
             This is a very simple O(n*m) search.
-            @return the position of the needle, or getLength() if not found. */
+            @return the position of the needle, or getLength() if not found.
+            @warning For historical reasons, Strings::FastString::reverseFind returns -1 if not found */
         const unsigned int reverseFind(const VerySimpleReadOnlyString & needle, unsigned int pos = (unsigned int)-1) const;
         /** Count the number of times the given substring appears in the string */
 		const unsigned int Count(const VerySimpleReadOnlyString & needle) const;
@@ -230,6 +234,8 @@ namespace Strings
     public:
         /** Default constructor */
         VerySimpleReadOnlyString(tCharPtr _data = 0, const int _length = -1) : data(_data), length(_length == -1 ? findLength(data) : _length) { }
+        /** Convertion constructor, the given object must live after around this lifetime */
+        VerySimpleReadOnlyString(const FastString & other) : data((tCharPtr)(const char*)other), length(other.getLength()) { }
         /** The destructor */
         ~VerySimpleReadOnlyString() {}
         /** Copy constructor */
@@ -351,6 +357,12 @@ namespace Strings
     /** Convert a wide char string to a UTF-8 FastString */
     extern FastString convert(const ReadOnlyUnicodeString & string);
 
+    /** Check for a valid UTF-8 sequence. This ensures no overlong (shortest form is mandatory) nor surrogate nor invalid code points are using in encoding.
+        @param string   The UTF-8 string to check
+        @return 0 on correctly encoded UTF-8 string, or a pointer to the first byte that fails encoding on error */
+    const uint8 * checkUTF8(const uint8 * string);
+
+
     /** Copy the source to the destination, padding the destination with 0 if required.
         On output, the destination ends with a 0 in all case */
     void copyAndZero(void * dest, int destSize, const void * src, int srcSize);
@@ -386,7 +398,7 @@ namespace Strings
         /** Enlarge the array */
         inline void Enlarge(size_t amount = 0)
         {
-            if (!amount) amount = allocatedSize ? allocatedSize + (allocatedSize >> 1) : 2;
+            if (!amount) amount = allocatedSize >= 2 ? allocatedSize + (allocatedSize >> 1) : 2;
             size_t newAllocatedSize = allocatedSize + amount;
             TPtr * newArray = (TPtr*)realloc(array, newAllocatedSize * sizeof(array[0]));
             if (!newArray) { Clear(); return; }
@@ -449,6 +461,12 @@ namespace Strings
                 if (newArray) { array = newArray; allocatedSize /= 2; }
             }
         }
+        /** Remove an object by first searching into the array.
+            This is just a wrapper around indexOf and Remove.
+            @param objectToSearch   The object to look for in the array
+            @return true if the object was found and removed */
+        inline bool removeItem(const T & objectToSearch) throw() { size_t pos = indexOf(objectToSearch); if (pos < currentSize) { Remove(pos); return true; } return false; }
+
         /** Forget an string from the array.
             The string is not deleted, and as such, will cause a memory leak unless you've taken the reference beforehand.
             @param index Zero based index of the object to remove
@@ -660,7 +678,7 @@ namespace Strings
                 __PRETTY_FUNCTION__);
 #endif
                 // Try GCC type first, since it's the most specific : "LocalVariableImpl<T>::getName() [ with T = yourTypeHere ]"
-                Strings::FastString finalType = templateType.fromFirst("=").upToFirst("]").Trimmed();
+                Strings::FastString finalType = templateType.fromFirst("=").upToFirst(";").upToFirst("]").Trimmed();
                 // Else, try to use the templated argument itself: "LocalVariableImpl<yourTypeHere>::getName()"
                 if (!finalType) finalType = templateType.fromFirst("<").upToFirst(">").Trimmed();
                 return finalType;

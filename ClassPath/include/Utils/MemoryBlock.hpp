@@ -146,6 +146,21 @@ namespace Utils
 #endif
         /** Check if two memory block are identical */
         const bool operator == (const MemoryBlock & other) const;
+        /** Copy MemoryBlock */
+        MemoryBlock & operator = (const MemoryBlock & other) { if (this != &other) return *(new(this) MemoryBlock(other)); return *this; }
+
+        // Movable interface
+    public:
+        /** This is required for moving the buffer instead of copying.
+            @sa getMovable method and operator = */
+        struct Movable { uint8 * b; uint32 s; uint32 as; Movable(uint8 * b, uint32 s, uint32 as = 0) : b(b), s(s), as(as ? as : s) {} };
+        /** This is used when the buffer needs to be transfered (moved) to another memory block.
+            This avoids allocating a buffer, and copying it again.
+            Typically, you'll use this with operator =
+            @warning After calling this, this object is not usable anymore. */
+        Movable getMovable() const { Movable ret(buffer, size, allocSize); const_cast<MemoryBlock*>(this)->buffer = 0; const_cast<MemoryBlock*>(this)->size = const_cast<MemoryBlock*>(this)->allocSize = 0; return ret; }
+        /** Move MemoryBlock */
+        MemoryBlock & operator = (const MemoryBlock::Movable & other) { buffer = other.b; size = other.s; allocSize = other.as; return *this; }
 
         // Construction and destruction
     public:

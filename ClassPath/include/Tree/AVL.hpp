@@ -404,6 +404,7 @@ namespace Tree
 
             // As usual with other containers, you have a getSize() method, and a Clear() method
             @endcode
+            @sa Tests::AVLTreeTests
         */
         template < typename T, typename KeyType, class Policy = Comparator::DefaultComparator, typename DeleterT = NoDeletion<T, KeyType> >
         class Tree

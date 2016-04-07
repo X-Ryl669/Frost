@@ -31,12 +31,14 @@
 #include <sys/statvfs.h>
 #include <wordexp.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #endif
 
 #if defined(_MAC)
 #include <sys/param.h>
 #include <sys/ucred.h>
 #include <sys/mount.h>
+#include <dirent.h>
 #endif
 
 namespace File
@@ -595,14 +597,14 @@ namespace File
     }
 
     // Get the number of contained files/items inside this item.
-    uint32 Info::getEntriesCount() const
+    uint32 Info::getEntriesCount(const String & extension) const
     {
         if (!isDir() || isLink()) return 1; // We don't follow link in this function
 
 #ifdef _WIN32
         // On directories, under windows, it's not possible to get the file count without iterating it, so let's do it
         WIN32_FIND_DATAW data = {0};
-        Strings::ReadOnlyUnicodeString fileName = Strings::convert(getFullPath() + "\\*");
+        Strings::ReadOnlyUnicodeString fileName = Strings::convert(getFullPath() + "\\*" + extension);
 
         HANDLE hFind = FindFirstFileW(fileName.getData(), &data);
         if (hFind == INVALID_HANDLE_VALUE) return 0;
@@ -619,9 +621,10 @@ namespace File
         if (finder == 0) return 0;
 
         uint32 count = 0;
+        struct dirent * ent = 0;
         // Then read the directory
-        while (readdir(finder) != NULL)
-            count++;
+        if (extension) while ((ent = readdir(finder)) != NULL) count+= String(ent->d_name).fromLast(".", true) == extension;
+        else           while (readdir(finder) != NULL) count++;
         closedir(finder);
         /*
         struct stat status = {0};
@@ -748,6 +751,185 @@ namespace File
         return ""; // No metadata or unknown
 #endif
     }
+
+    // Get a compressed version of the metadata informations.
+    uint32 File::Info::getMetaDataEx(uint8 * buffer, const size_t len) const
+    {
+#if defined(_POSIX)
+        // Compression is posix only
+        struct stat status = {0};
+        if (lstat(getFullPath(), &status) != 0) return 0;
+
+        if (type != Regular && type != Link && type != Directory && type != Device) return 0;
+        if (sizeof(status.st_mode) == 2 && sizeof(status.st_nlink) == 2 && sizeof(status.st_size) == 8)
+        {
+            size_t cur = 0;
+            uint16 metaInf = 0; // This metaInf field is stored to tell how big are the next fields
+                                // It's a bit field like this:
+                                // [15 14 13 12 11 10 9 8  7 6 5 4 3 2 1 0]
+                                // Bit [15] file size is smaller than 2^32 and stored as 32 bits integer
+                                // Bit [14] file size is smaller than 2^16 and stored as 16 bits integer
+                                // Bit [13] uid is smaller than 2^16 and stored as 16 bits integer (else 32 bits)
+                                // Bit [12] gid is smaller than 2^16 and stored as 16 bits integer (else 32 bits)
+                                // Bit [11] ctime is the same as mtime, thus skipped (not saved)
+                                // Bit [10] atime is later than mtime, and (atime - mtime) is smaller than 2^32 and stored as 32 bits integer
+                                // Bit [ 9] atime is later than mtime, and (atime - mtime) is smaller than 2^16 and stored as 16 bits integer
+                                // Bit [ 8] nlink is higher than one (in that case, the dev_t and ino_t value are saved after this field)
+                                // Bit [ 7] dev_t value is smaller than 2^16 and stored as 16 bits integer (else 32 bits)
+                                // Bit [ 6] ino_t value is smaller than 2^32 and stored as 32 bits integer
+                                // Bit [ 5] ino_t value is smaller than 2^16 and stored as 16 bits integer
+                                // Bit [ 4] for char or block type, rdev_t is smaller than 2^16 and stored as 16 bits integer (else 32 bits)
+                                // Bit [3-0] reserved, must be 0
+            metaInf |= (1<<15) * (status.st_size < 0x100000000ULL);
+            metaInf |= (1<<14) * (status.st_size < 0x10000);
+            metaInf |= (1<<13) * (status.st_uid < 0x10000);
+            metaInf |= (1<<12) * (status.st_gid < 0x10000);
+            metaInf |= (1<<11) * (status.st_ctime == status.st_mtime);
+            uint64 timeSinceModif = (uint64)(status.st_atime - status.st_mtime);
+            metaInf |= (1<<10) * (timeSinceModif < 0x100000000ULL);
+            metaInf |= (1<< 9) * (timeSinceModif < 0x10000);
+
+            metaInf |= (1<< 8) * (status.st_nlink > 1);
+            metaInf |= (1<< 7) * (status.st_dev < 0x10000);
+            metaInf |= (1<< 6) * (status.st_ino < 0x100000000ULL);
+            metaInf |= (1<< 5) * (status.st_ino < 0x10000);
+            metaInf |= (1<< 4) * ((S_ISCHR(status.st_mode) || S_ISBLK(status.st_mode)) * status.st_rdev < 0x10000);
+
+            #define Adv(elem)   if (buffer && cur + sizeof(elem) <= len) memcpy(&buffer[cur], &elem, sizeof(elem)); cur += sizeof(elem)
+            // Store meta information and mode
+            Adv(metaInf);
+            Adv(status.st_mode);
+
+            #define AdvCond(Bit, elem, cast)  if ((metaInf & (1<<Bit)) == 0) { cast s = (cast)elem; Adv(s); }
+
+            // Store size with the minimum amount of bytes possible
+            AdvCond(15, status.st_size, uint64)
+            else AdvCond(14, status.st_size, uint32)
+            else { uint16 size = (uint16)status.st_size; Adv(size); }
+
+            // Store uid and gid efficiently
+            AdvCond(13, status.st_uid, uint32)
+            else { uint16 uid = (uint16)status.st_uid; Adv(uid); }
+            AdvCond(12, status.st_gid, uint32)
+            else { uint16 gid = (uint16)status.st_gid; Adv(gid); }
+
+            // Store times
+            Adv(status.st_mtime);
+            AdvCond(11, status.st_ctime, uint64)
+            AdvCond(10, timeSinceModif, uint64)
+            else AdvCond(9, timeSinceModif, uint32)
+            else { uint16 tsm = (uint16)timeSinceModif; Adv(tsm); }
+
+            // Store nlink & dev_t/ino_t
+            if ((metaInf & (1<<8)) != 0)
+            {
+                AdvCond(7, status.st_dev, uint32)
+                else { uint16 d = (uint16)status.st_dev; Adv(d); }
+
+                AdvCond(6, status.st_ino, uint64)
+                else AdvCond(5, status.st_ino, uint32)
+                else { uint16 i = (uint16)status.st_ino; Adv(i); }
+                status.st_nlink = 2; // We don't really care about the number of links, it just has to be higher than 1 so we can find such files and figure out the hardlinked items this way
+            }
+            if (S_ISCHR(status.st_mode) || S_ISBLK(status.st_mode))
+            {   // Device type
+                AdvCond(4, status.st_rdev, uint32)
+                else { uint16 d = (uint16)status.st_rdev; Adv(d); }
+            }
+            if (S_ISLNK(status.st_mode))
+            {
+                char _buffer[1024] = {0};
+                ssize_t linkSize = readlink(getFullPath(), _buffer, ArrSz(_buffer));
+                if (linkSize <= 0) return 0; // Can't read this symbolic link, so we can't save it in metadata
+                _buffer[linkSize] = 0;
+                if (buffer && cur + linkSize <= len) memcpy(&buffer[cur], _buffer, linkSize);
+                cur += linkSize;
+            }
+
+            #undef AdvCond
+            #undef Adv
+            return cur;
+        }
+#endif
+        // Default to non-compressed form
+        const String & res = getMetaData();
+        if (buffer && len >= res.getLength()) memcpy(buffer, (const char*)res, res.getLength());
+        return res.getLength();
+    }
+    // Expand the compressed metadata buffer received from call to getMetaDataEx.
+    String File::Info::expandMetaData(const uint8 * buffer, const size_t len)
+    {
+#if defined(_POSIX)
+        struct stat status = {0};
+        if (buffer && sizeof(status.st_mode) == 2 && sizeof(status.st_nlink) == 2 && sizeof(status.st_size) == 8)
+        {
+            size_t cur = 0;
+            uint16 metaInf = 0;
+            #define Rd(X) if (cur + sizeof(X) <= len) memcpy(&X, &buffer[cur], sizeof(X)); cur += sizeof(X)
+            Rd(metaInf);
+            Rd(status.st_mode);
+
+            #define RdCond(Bit, elem, cast)  if ((metaInf & (1<<Bit)) == 0) { cast s = 0; Rd(s); elem = s; }
+            #define RdCondE(elem, cast) { cast s = 0; Rd(s); elem = s; }
+
+            // Read size with the minimum amount of bytes possible
+            RdCond(15, status.st_size, uint64)
+            else RdCond(14, status.st_size, uint32)
+            else RdCondE(status.st_size, uint16)
+
+            // Read uid and gid efficiently
+            RdCond(13, status.st_uid, uint32)
+            else RdCondE(status.st_uid, uint16)
+            RdCond(12, status.st_gid, uint32)
+            else RdCondE(status.st_gid, uint16)
+
+            // Read times
+            Rd(status.st_mtime);
+            RdCond(11, status.st_ctime, uint64)
+            else status.st_ctime = status.st_mtime;
+            int64 timeSinceModif = -1;
+            RdCond(10, timeSinceModif, uint64)
+            else RdCond(9, timeSinceModif, uint32)
+            else RdCondE(timeSinceModif, uint16)
+            status.st_atime = (time_t)(timeSinceModif + status.st_mtime);
+
+            // Store nlink & dev_t/ino_t
+            if ((metaInf & (1<<8)) != 0)
+            {
+                RdCond(7, status.st_dev, uint32)
+                else RdCondE(status.st_dev, uint16)
+
+                RdCond(6, status.st_ino, uint64)
+                else RdCond(5, status.st_ino, uint32)
+                else RdCondE(status.st_ino, uint16)
+            }
+            status.st_nlink = (metaInf & (1<<8)) > 0 ? 2 : 1; // We don't care if it's higher than 2 anyway
+            if (S_ISCHR(status.st_mode) || S_ISBLK(status.st_mode))
+            {   // Device type
+                RdCond(4, status.st_rdev, uint32)
+                else RdCondE(status.st_rdev, uint16)
+
+                return String::Print("PT%c%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX/%llX", S_ISCHR(status.st_mode) ? 'H' : 'L', (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime, (uint64)status.st_rdev);
+            }
+            if (S_ISLNK(status.st_mode))
+            {
+                char _buffer[1024] = {0};
+                memcpy(_buffer, &buffer[cur], len - cur);
+                _buffer[len - cur] = 0;
+                return String::Print("PS%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX/%s", (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime, _buffer);
+            }
+            // Every other case should get a standard output
+            return String::Print("P%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX", (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime);
+ 
+            #undef RdCondE
+            #undef RdCond
+            #undef Rd
+        }
+#endif
+        // On any other platform, the extended metadata is still a string
+        return String(buffer, len);
+    }
+
     // Set the metadata information from an opaque buffer.
     bool File::Info::setMetaData(String metadata)
     {
@@ -1179,10 +1361,16 @@ namespace File
         {
             if (forceReadOnly) return 0;
             if (blocking) return new Stream(getFullPath(), "wb");
+#if WantAsyncFile == 1
             return new AsyncStream(getFullPath(), AsyncStream::ReadWrite);
+#else
+            return 0;
+#endif
         }
         if (blocking) return new Stream(getFullPath(), !forceReadOnly && checkPermission(Writing) ? (overwrite ? "wb" : "r+b") : "rb");
+#if WantAsyncFile == 1
         else return new AsyncStream(getFullPath(), !forceReadOnly && checkPermission(Writing) ? AsyncStream::ReadWrite : AsyncStream::Read);
+#endif
         return 0;
     }
 
@@ -1831,6 +2019,7 @@ namespace File
         priv = 0;
     }
 
+#if WantAsyncFile == 1
 #if defined(_POSIX)
     void aioCompleted( union sigval sigval )
     {
@@ -2347,7 +2536,7 @@ namespace File
         }
 
         // Then wait for the asked amount of time
-        bool ret = eventReady.Wait((Threading::TimeOut)(int)timeout);
+        bool ret = eventReady.Wait((Threading::TimeOut::Type)(int)timeout);
         timeout.success(); // If we timed out, this will be marked as such too
         return ret;
 #endif
@@ -2423,6 +2612,6 @@ namespace File
         triggerCount = 0;
         pool = 0;
     }
-
+#endif
 
 }

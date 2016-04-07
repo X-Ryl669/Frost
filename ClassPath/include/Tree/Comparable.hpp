@@ -11,9 +11,10 @@ namespace Comparator
 	/** The comparison result */
 	enum CompareType
 	{
-		Less	= -1,
-		Equal	=  0,
-		Greater =  1
+        Less    = -1,           //!< The first value is less than the second one
+        Equal   =  0,           //!< The first value is comparable with the second one
+        Greater =  1,           //!< The first value is greater than the second one
+        NotDecided = 0xBADC0DE, //!< There is not enough information to decide how the comparison would result
 	};
 
     /** This is a default comparator using operator < */
@@ -44,21 +45,18 @@ namespace Comparator
         class for type that aren't obvious to compare (like a String or a Variant)
 	*/
 	template <class KeyType, class Policy = DefaultComparator>
-	class Comparable
+    struct Comparable
 	{
-	public:
+        /** The result type we are using */
     	typedef CompareType Result;
 
-		// Interface
-	public:
 		/** Compare this item against the given key */
-		inline Result Compare(const KeyType & _key) const { return Policy::Equal(_key, key) ? Equal : (Policy::LessThan(_key, key) ? Less : Greater);	}
-
+        inline Result Compare(const KeyType & _key) const { return BasicCompare(_key); }
+        /** Basic compare that's never undecided */
+        inline Result BasicCompare(const KeyType & _key) const { return Policy::Equal(_key, key) ? Equal : (Policy::LessThan(_key, key) ? Less : Greater); }
 		/** Return the key in this comparator */
-		inline KeyType Key() const { return Key; }
+        inline KeyType Key() const { return key; }
 
-		// Constructors
-	public:
 		/** No default constructor, must provide a key */
 		Comparable(KeyType  _key) : key(_key) {}
 
@@ -66,6 +64,46 @@ namespace Comparator
 		/** The key used in this comparator */
 		KeyType  key;
 	};
+
+    /** Comparable type with reserved key value.
+        This is used to match unknown pattern at runtime. Obviously, the reserved key value will never be compared correctly.
+        By default, this implementation supports two reserved pattern, '#' is used to match numbers-like (that is any sequence
+        of these chars "-0123456789."), and '"' is used to match any text up to the delimiter.
+
+        When used with URL, it allows O(log(N)) routing tables searching, with placeholder capture if any in the TS tree.
+        If you need something else, just copy/paste and adapt this code */
+    template <class KeyType, KeyType N = (KeyType)'#', KeyType T = (KeyType)'"', KeyType D = (KeyType)'/', class Policy = DefaultComparator>
+    struct ReservedComparable
+    {
+        typedef CompareType Result;
+        typedef KeyType K;
+
+        /** Compare this item against the given key */
+        inline Result Compare(const KeyType & _key) const
+        {
+            if (Policy::Equal(key, N) &&
+                (    Policy::Equal(_key, (K)'-') || Policy::Equal(_key, (K)'.') || Policy::Equal(_key, (K)'0') || Policy::Equal(_key, (K)'1') || Policy::Equal(_key, (K)'2')
+                  || Policy::Equal(_key, (K)'3') || Policy::Equal(_key, (K)'4') || Policy::Equal(_key, (K)'5') || Policy::Equal(_key, (K)'6') || Policy::Equal(_key, (K)'7')
+                  || Policy::Equal(_key, (K)'8') || Policy::Equal(_key, (K)'9')))
+                return NotDecided;
+            if (Policy::Equal(key, T) && !Policy::Equal(_key, D))
+                return NotDecided;
+            return BasicCompare(_key);
+        }
+        /** Basic compare that's never undecided */
+        inline Result BasicCompare(const KeyType & _key) const { return Policy::Equal(_key, key) ? Equal : (Policy::LessThan(_key, key) ? Less : Greater); }
+
+        /** Return the key in this comparator */
+        inline KeyType Key() const { return key; }
+
+        /** No default constructor, must provide a key */
+        ReservedComparable(KeyType key) : key(key) {}
+
+    private:
+        /** The key used in this comparator */
+        KeyType  key;
+    };
+
 }
 
 #endif

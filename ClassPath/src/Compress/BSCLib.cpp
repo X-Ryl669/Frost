@@ -120,8 +120,13 @@ namespace Compression
         Utils::HeapBlock buffer(blockSize + BSC::HeaderSize);
         if (!buffer) return setError(NotEnoughMemory);
 
-        // We skip the file signature, since we have no idea if this will be used for the file.
+#if defined(EBSC_OPENMP) && 0   // Not sure this makes any sense here
+        int numThreads = omp_get_max_threads();
+        if (numThreads >= nBlocks) numThreads = nBlocks;
 
+        #pragma omp parallel num_threads(numThreads) if(numThreads > 1)
+#endif        
+        // We skip the file signature, since we have no idea if this will be used for the file.
         bool dryRun = out == 0;
         size_t requiredOut = 0;
         int8 recordSize = 1, sortingContext = 1;
