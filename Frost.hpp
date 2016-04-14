@@ -221,9 +221,9 @@ namespace Frost
         @sa purgeBackup */
     enum PurgeStrategy
     {
-        Fast            = 1,      //!< The fast strategy for pruning old backup, that's not space efficient.
+        Fast            = 100,    //!< The fast strategy for pruning old backup, that's not space efficient.
         FindLostChunk   = Fast,   //!< Find lost chunk and remove them from the database index. If multichunk contains only garbage collected chunks, it's deleted.
-        Slow            = 2,      //!< The slow strategy optimize for space, but it's not compute efficient.
+        Slow            = 0,      //!< The slow strategy optimize for space, but it's not compute efficient.
         MergeMultiChunk = Slow,   //!< Find lost chunk and remove them from the database index. Recreate complete multichunk out of the remaining one,
                                   //!< downloading them, removing the useless chunk from them, and uploading complete multichunk again.
     };
@@ -442,11 +442,11 @@ namespace Frost
             /** Set the size for this block (not the header size) obviously */
             void setSize(const uint64 s) { blockSize = (s+3)/4; }
             /** Dump the header (for debugging purpose only) */
-            void dump()
+            String dump() const
             {
                 /** The type to name macro */
                 static const char * TypeToName[] = { "Catalog", "Chunk", "ChunkList", "Multichunk", "FilterArgument", "FileTree", "Metadata", "Extended" };
-                fprintf(stdout, "[t:%s,s:%llu]", TypeToName[type], getSize());
+                return String::Print("[t:%s,s:%llu]", TypeToName[type], getSize());
             }
 
             /** Default construction */
@@ -508,17 +508,18 @@ namespace Frost
             /** Write the structure to the given memory pointer */
             void write(uint8 * ptr) { header.setSize(getSize()); memcpy(ptr, this, header.getSize()); }
             /** Dump the catalog offset (for debugging purpose) */
-            void dump()
+            String dump() const
             {
-                header.dump();
-                fprintf(stdout, " Catalog rev%u %s\n", revision, (const char*)Time::Time(time).toDate());
-                fprintf(stdout, " Off prev: %llu\n", previous.fileOffset());
-                fprintf(stdout, " Off chunk: %llu\n", chunks.fileOffset());
-                fprintf(stdout, " Off chunklist: %llu (%u lists)\n", chunkLists.fileOffset(), chunkListsCount);
-                fprintf(stdout, " Off mchunk: %llu (%u mchunks)\n", multichunks.fileOffset(), multichunksCount);
-                fprintf(stdout, " Off filetree: %llu\n", fileTree.fileOffset());
-                fprintf(stdout, " Off filterArg: %llu\n", optionFilterArg.fileOffset());
-                fprintf(stdout, " Off metadata: %llu\n", optionMetadata.fileOffset());
+                String ret = header.dump();
+                ret += String::Print(" Catalog rev%u %s\n", revision, (const char*)Time::Time(time).toDate());
+                ret += String::Print(" Off prev: %llu\n", previous.fileOffset());
+                ret += String::Print(" Off chunk: %llu\n", chunks.fileOffset());
+                ret += String::Print(" Off chunklist: %llu (%u lists)\n", chunkLists.fileOffset(), chunkListsCount);
+                ret += String::Print(" Off mchunk: %llu (%u mchunks)\n", multichunks.fileOffset(), multichunksCount);
+                ret += String::Print(" Off filetree: %llu\n", fileTree.fileOffset());
+                ret += String::Print(" Off filterArg: %llu\n", optionFilterArg.fileOffset());
+                ret += String::Print(" Off metadata: %llu\n", optionMetadata.fileOffset());
+                return ret;
             }
 
             /** Default constructor */
@@ -614,6 +615,13 @@ namespace Frost
             inline void Clear() { if (mapped) (void)chunks.getMovable(); else chunks.Clear(); }
             /** Find a chunk ID from its checksum (return -1 if not found) */
             uint32 findChunk(Chunk & chunk) const { size_t pos = chunks.indexOfSorted(chunk, 0); return pos == chunks.getSize() ? (uint32)-1 : chunks[pos].UID; }
+            /** Dump the chunks (not the inner content, it's too much work) */
+            String dump() const
+            {
+                String ret = header.dump() + String::Print(" Chunks rev: %u, count: %u\n", revision, (uint32)chunks.getSize());
+                for (size_t i = 0; i < chunks.getSize(); i++) ret += String::Print("  Chunk UID: %u, multichunk ID: %u, size: %u\n", chunks[i].UID, chunks[i].multichunkID, chunks[i].size);
+                return ret;
+            }
 
             Chunks(const uint32 revision = 0) : header(DataHeader::Chunk), revision(revision), mapped(false) {}
             ~Chunks() { if (mapped) (void)chunks.getMovable(); }
@@ -685,6 +693,14 @@ namespace Frost
                  }
                  return (size_t)-1;
             }
+            /** Dump this list */
+            String dump() const
+            {
+                String ret = header.dump();
+                ret += String::Print(" Chunklist with UID: %u (chunks count: %u, offsets count: %u)\n", UID, (uint32)chunksID.getSize(), (uint32)offsets.getSize());
+                for (size_t i = 0; i < chunksID.getSize(); i++) ret += String::Print("  Chunk %u with UID: %u and offset %u\n", (uint32)i, chunksID[i], offsets[i]);
+                return ret;
+            }
 
             ChunkList(const uint32 UID = 0, const bool withOffset = false) : header(DataHeader::ChunkList), UID(UID), offset(withOffset ? 1 : 0) {}
         };
@@ -715,6 +731,12 @@ namespace Frost
             void write(uint8 * ptr) { memcpy(ptr, this, getSize()); }
             /** Get the file base name for this multichunk */
             String getFileName() const;
+
+            /** Dump this list */
+            String dump() const
+            {
+                return header.dump() + String::Print(" Multichunk UID: %u, chunklist ID: %u, argIndex: %u, checksum: %s\n", UID, listID, filterArgIndex, (const char*)Helpers::fromBinary(checksum, sizeof(checksum), false));
+            }
 
             Multichunk(const uint16 UID = 0) : header(DataHeader::Multichunk, (uint32)getSize()), UID(UID), listID(0), filterArgIndex(0) { memset(checksum, 0, ArrSz(checksum)); }
         };
@@ -767,6 +789,13 @@ namespace Frost
             const String & getArgument(const uint16 index) { return arguments[(size_t)index]; }
             /** Clear the arguments */
             void Reset() { modified = false; arguments.Clear(); }
+            /** Dump the object */
+            String dump() const
+            {
+                String ret = header.dump();
+                return ret + String::Print(" modified: %s\n ", modified ? "true" : "false") + arguments.Join("\n ") + "\n";
+            }
+
 
             FilterArguments() : header(DataHeader::FilterArgument), modified(false) { }
         };
@@ -791,16 +820,25 @@ namespace Frost
             /** Load the structure from the given memory pointer */
             bool load(const uint8 * ptr, const uint64 size)
             {
+                info.Clear();
+                if (!loadReadOnly(ptr, size)) return false;
+                modified = false;
+                return true;
+            }
+            /** Load the structure from the given memory pointer.
+                @warning We are reusing the name interface for appending instead of reloading */
+            bool loadReadOnly(const uint8 * ptr, const uint64 size)
+            {
                 if (size <= sizeof(header)) return false; // Check if we can read the header
                 memcpy(this, ptr, sizeof(header));
                 if (size < header.getSize()) return false;
 
-                Strings::FastString args((const char*)(ptr + sizeof(header)), (int)header.getSize());
-                info.Clear();
+                Strings::FastString args((const char*)(ptr + sizeof(header)));
                 info.appendLines(args, "\n");
-                modified = false;
+                modified = true;
                 return true;
             }
+
             /** Write the structure to the given memory pointer */
             void write(uint8 * ptr)
             {
@@ -813,6 +851,12 @@ namespace Frost
             String findKey(const String & key) const { for (size_t i = 0; i < info.getSize(); i++) if (info[i].upToFirst(":") == key) return info[i]; return ""; }
             /** Reset a metadata object */
             void Reset() { modified = false; info.Clear(); }
+            /** Dump the object */
+            String dump() const
+            {
+                String ret = header.dump();
+                return ret + " " + info.Join("\n ") + "\n";
+            }
 
             MetaData() : header(DataHeader::Metadata), modified(false) { }
         };
@@ -921,10 +965,17 @@ namespace Frost
                     memcpy(ptr + sizeof(Fixed) + fixed->metadataSize, baseName, fixed->baseNameSize);
                 }
 
+                /** This is required for sorting and searching */
                 bool operator != (const Item & other)
                 {
                     return (fixed && !other.fixed) || (!fixed && other.fixed)
                            || memcmp(fixed, other.fixed, sizeof(*fixed)) != 0 || memcmp(metaData, other.metaData, fixed->metadataSize) != 0 || memcmp(baseName, other.baseName, fixed->baseNameSize) != 0;
+                }
+
+                /** Dump the current item */
+                String dump() const
+                {
+                    return String::Print(" Item parent ID: %u, chunklist ID: %u, basename: %s, metadata: %s\n", getParentID(), getChunkListID(), (const char*)getBaseName(), (const char*)getMetaData());
                 }
 
                 Item(const FileTree & parent) : fixed(0), metaData(0), baseName(0), readOnly(parent.readOnly) {}
@@ -1031,6 +1082,14 @@ namespace Frost
             }
             /** Clear this file tree */
             inline void Clear() { items.Clear(); }
+            /** Dump the object */
+            String dump() const
+            {
+                String ret = header.dump();
+                ret += String::Print(" Readonly: %s, Item count: %u\n", readOnly ? "true": "false", (uint32)items.getSize());
+                for (size_t i = 0; i < items.getSize(); i++) ret += items[i].dump();
+                return ret;
+            }
 
             FileTree(const uint32 revision = 0, const bool readOnly = true) : header(DataHeader::FileTree), revision(revision), readOnly(readOnly) {}
         };
@@ -1057,6 +1116,12 @@ namespace Frost
             void load(const uint8 * ptr) { memcpy(this, ptr, getSize()); }
             /** Write the structure to the given memory pointer */
             void write(uint8 * ptr) { memcpy(ptr, this, getSize()); }
+            /** Dump this object */
+            String dump() const
+            {
+                return String::Print(" Version: %u\n Catalog offset: %lld\n CipheredMasterKey: %s\n", version, catalogOffset.fileOffset(), (const char*)Helpers::fromBinary(cipheredMasterKey, sizeof(cipheredMasterKey), false));
+            }
+
 
             /** Default construction */
             MainHeader() : version(2) { memcpy(magic.text, "Frst", 4); memset(cipheredMasterKey, 0, ArrSz(cipheredMasterKey)); }
@@ -1127,8 +1192,12 @@ namespace Frost
             uint32 getCurrentRevision() const { return readOnly ? fileTreeRO.revision : fileTree.revision; }
             /** Get the filter arguments */
             FilterArguments & getFilterArguments() { return arguments; }
+            /** Get the filtering argument for a multichunk */
+            String getFilterArgumentForMultichunk(const uint16 ID) { Multichunk * mc = getMultichunk(ID); return mc ? arguments.getArgument(mc->filterArgIndex) : ""; }
             /** Get the metadata */
             MetaData & getMetaData() { return metadata; }
+            /** Get the first metadata from the chained list */
+            MetaData getFirstMetaData();
             /** Get the ciphered master key */
             Utils::MemoryBlock getCipheredMasterKey() const { return Utils::MemoryBlock(header ? header->cipheredMasterKey : 0, header ? ArrSz(header->cipheredMasterKey) : 0); }
             /** Find a chunk ID from its checksum (return -1 if not found) */
@@ -1138,6 +1207,14 @@ namespace Frost
 
             /** Get the current catalog */
             const Catalog * getCatalog() const { return catalog; }
+            /** Get the catalog for a given revision */
+            const Catalog * getCatalogForRevision(const uint32 rev) const
+            {
+                if (rev > catalog->revision) return 0;
+                const Catalog * c = catalog;
+                while (c && c->revision != rev) { if (!Map(c, c->previous)) return 0; }
+                return c;
+            }
 
             /** Allocate a multichunk ID */
             uint16 allocateMultichunkID() const { return maxMultichunkID + 1; }
@@ -1146,16 +1223,29 @@ namespace Frost
             /** Allocate a chunk ID */
             uint32 allocateChunkID() const { return maxChunkID + 1; }
 
+            // For statistics only
+            /** Get the number of multichunks */
+            uint32 getMultichunkCount() const { return (uint32)(multichunksRO.getSize() + multichunks.getSize()); }
+            /** Get the chunklists hashtable for fast access */
+            ChunkLists * getChunkLists() { if (readOnly) return 0; return &chunkList; }
+            /** Get the multichunk hashtable for fast access */
+            Multichunks* getMultichunks() { if (readOnly) return 0; return &multichunks; }
+            /** Dump the current information for all items in this index */
+            String dumpIndex(const uint32 rev) const;
+
             /** Map a structure at the given position */
             template <typename T>
             bool Map(const T *& s, const Offset & offset) const { if (offset.fileOffset() < file->fullSize()) { s = (T*)(file->getBuffer() + offset.fileOffset()); return true; } return false; }
             /** Load a structure that can't be mapped. */
             template <typename T>
             bool Load(T & s, const Offset & offset) const { return s.load(file->getBuffer() + offset.fileOffset(), file->fullSize() - offset.fileOffset()); }
+            /** Load a read-only structure that can't be mapped. */
+            template <typename T>
+            bool LoadRO(T & s, const Offset & offset) const { return s.loadReadOnly(file->getBuffer() + offset.fileOffset(), file->fullSize() - offset.fileOffset()); }
 
             // Write operations
             /** Append a chunk to the internal chunk array (common and private version) */
-            bool appendChunk(Chunk & chunk);
+            bool appendChunk(Chunk & chunk, const uint32 forceUID = 0);
             /** Append a multichunk to this file (and its chunk list)
                 @param mchunk   A pointer to a new allocated multichunk that is owned
                 @param list     A pointer to a new allocated list that is owned
@@ -1169,7 +1259,7 @@ namespace Frost
 
 
             /** Start a new revision for this backup file */
-            bool startNewRevision();
+            bool startNewRevision(const unsigned revision = 0);
             /** Create a new file from scratch.
                 This is not done at construction, because we must be able to tell the difference
                 between opening and creating (non-existent file is not enough to distinguish)
@@ -1179,6 +1269,8 @@ namespace Frost
             // Generic operations
             /** Close the file. */
             String close();
+            /** Tell the backup was empty, so don't save anything and avoid growing the file with useless filetree and catalogs */
+            inline void backupWasEmpty() { readOnly = true; }
         };
     }
 

@@ -14,6 +14,12 @@ namespace Utils
             out += Strings::FastString::Print("%02X", (unsigned int)array[i]);
     }
 
+    /** Dump the given byte array to string as an hexadecimal string */
+    static Strings::FastString dumpToHexString(const uint8 * const array, const uint32 length)
+    {
+        Strings::FastString ret; dumpToHexString(ret, array, length); return ret;
+    }
+
     /** Produce a nice hexdump of the given byte array.
         @param out          The hexdump is appended to this string
         @param array        The input buffer of length bytes

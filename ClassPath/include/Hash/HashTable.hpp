@@ -58,21 +58,17 @@ namespace Container
     struct PODSelect
     {
         // The keys array (as keys might not be POD)
-        typedef typename Container::WithCopyConstructor<KeyType>::IndexList  KeyArrayT;
         typedef const KeyType * Type;
-        static bool saveKey(const KeyType & key, Type & nodeKey, KeyArrayT & keyArray)
+        static bool saveKey(const KeyType & key, Type & nodeKey)
         {
             KeyType * keyCopy = new KeyType(key);
             if (!keyCopy) return false;
-            keyArray.Append(keyCopy);
             nodeKey = keyCopy;
             return true;
         }
-        static bool removeKey(Type nodeKey, KeyArrayT & keyArray)
+        static bool removeKey(Type & nodeKey)
         {
-            size_t keyIndex = keyArray.indexOf(const_cast<KeyType*>(nodeKey));
-            if (keyIndex == keyArray.getSize()) return false; // Can't find the key
-            keyArray.Remove(keyIndex);
+            delete0(const_cast<KeyType*&>(nodeKey));
             return true;
         }
         static const KeyType & accessKey(Type nodeKey) { return *nodeKey; }
@@ -85,12 +81,12 @@ namespace Container
         // The keys array (as keys might not be POD)
         typedef typename Container::WithCopyConstructor<KeyType>::IndexList  KeyArrayT;
         typedef KeyType Type;
-        static bool saveKey(const KeyType & key, Type & nodeKey, KeyArrayT &)
+        static bool saveKey(const KeyType & key, Type & nodeKey)
         {
             nodeKey = key;
             return true;
         }
-        static bool removeKey(Type nodeKey, KeyArrayT & keyArray) { return true; }
+        static bool removeKey(Type & nodeKey) { nodeKey = 0; return true; }
         static const KeyType & accessKey(Type & nodeKey) { return nodeKey; }
         static bool isValid(Type nodeKey) { return true; }
     };
@@ -129,9 +125,6 @@ namespace Container
 
         // Type definition and enumeration
     public:
-        /** The keys array (as keys might not be POD) */
-        typedef typename Container::WithCopyConstructor<KeyType>::IndexList  KeyArrayT;
-
         template <bool val, class First, class Other> struct TypeSelect { typedef Other Type; };
         template <class First, class Other> struct TypeSelect<true, First, Other> { typedef First Type; };
         typedef typename TypeSelect<hasCopyConst, const HashTable &, Unbuildable>::Type CopyTypeT;
@@ -144,31 +137,28 @@ namespace Container
         template <> struct PODSelect<true>
         {
             typedef KeyType Type;
-            static bool saveKey(const KeyType & key, Type & nodeKey, KeyArrayT & keyArray)
+            static bool saveKey(const KeyType & key, Type & nodeKey)
             {
                 nodeKey = key;
                 return true;
             }
-            static bool removeKey(Type nodeKey, KeyArrayT & keyArray) { return true; }
+            static bool removeKey(Type & nodeKey) { nodeKey = 0; return true; }
             static const KeyType & accessKey(Type & nodeKey) { return nodeKey; }
             static bool isValid(Type nodeKey) { return true; }
         };
         template <> struct PODSelect<false>
         {
             typedef const KeyType * Type;
-            static bool saveKey(const KeyType & key, Type & nodeKey, KeyArrayT & keyArray)
+            static bool saveKey(const KeyType & key, Type & nodeKey)
             {
                 KeyType * keyCopy = new KeyType(key);
                 if (!keyCopy) return false;
-                keyArray.Append(keyCopy);
                 nodeKey = keyCopy;
                 return true;
             }
-            static bool removeKey(Type nodeKey, KeyArrayT & keyArray)
+            static bool removeKey(Type & nodeKey)
             {
-                uint32 keyIndex = keyArray.indexOf(const_cast<KeyType*>(nodeKey));
-                if (keyIndex == keyArray.getSize()) return false; // Can't find the key
-                keyArray.Remove(keyIndex);
+                delete0(const_cast<KeyType * &>(nodeKey));
                 return true;
             }
             static const KeyType & accessKey(Type nodeKey) { return *nodeKey; }
@@ -252,8 +242,6 @@ namespace Container
         float       loadFactor;
         /** The hash table entries are stored here */
         Entry **    entryTable;
-        /** The keys array */
-        KeyArrayT   keyArray;
 
         // Construction / Destruction
     public:
@@ -323,7 +311,6 @@ namespace Container
 
             threshold = (uint32)((float)capacity * loadFactor + 0.5f);
             modCount = count = 0;
-            if (!withPODKey) keyArray.Clear();
         }
         /** Is the hash table empty ? */
         inline bool    isEmpty() const  { return count == 0; }
@@ -358,7 +345,7 @@ namespace Container
             if (!e) return false;
 
             // Append the key in the array
-            if (!PODKey::saveKey(key, e->key, keyArray)) { free(e); return false; }
+            if (!PODKey::saveKey(key, e->key)) { free(e); return false; }
             e->value = value; e->next = entryTable[index]; entryTable[index] = e;
             count++; return true;
         }
@@ -368,7 +355,6 @@ namespace Container
         /** Remove a key entry from the table.
             @param key The key to look for
             @return The linked value with the key, or 0 if not found
-            @warning Removing is still a O(N) operation if the key type is not a POD, as we are scanning the key array to remove the entry key
             @warning You must clean the returned object depending on the chosen hash policy */
         T *  extractValue(const KeyType & key)
         {
@@ -384,7 +370,7 @@ namespace Container
                 if (HashPolicy::hashKey(PODKey::accessKey(e->key)) == hash && HashPolicy::compareKeys(PODKey::accessKey(e->key), key))
                 {
                     // Delete the key in the key array
-                    if (!PODKey::removeKey(e->key, keyArray)) return 0;
+                    if (!PODKey::removeKey(e->key)) return 0;
 
                     T * value;
                     modCount++;
@@ -404,8 +390,7 @@ namespace Container
 
         /** Remove a key from the table.
             @param key The key to look for
-            @return true on successful removing of the object, false if not found
-            @warning Removing is still a O(N) operation if the key type is not a POD, as we are scanning the key array to remove the entry key */
+            @return true on successful removing of the object, false if not found */
         bool removeValue(const KeyType & key)
         {
             typename HashPolicy::HashKeyT hash = HashPolicy::hashKey(key);
@@ -420,7 +405,7 @@ namespace Container
                 if (HashPolicy::hashKey(PODKey::accessKey(e->key)) == hash && HashPolicy::compareKeys(PODKey::accessKey(e->key), key))
                 {
                     // Delete the key in the key array
-                    if (!PODKey::removeKey(e->key, keyArray)) return false;
+                    if (!PODKey::removeKey(e->key)) return false;
 
                     T * value;
                     modCount++;

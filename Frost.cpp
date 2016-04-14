@@ -224,21 +224,21 @@ namespace Frost
     namespace FileFormat
     {
         // Start a new revision for this backup file
-        bool IndexFile::startNewRevision()
+        bool IndexFile::startNewRevision(const unsigned rev)
         {
-            const uint32 revision = catalog->revision + 1;
+            const uint32 revision = rev ? rev : catalog->revision + 1;
             if (readOnly) return false;
             fileTree.revision = local.revision = revision;
             metadata.Reset();
-            metadata.Append(String::Print(TRANS("Revision %u created on %s"), revision, (const char*)Time::LocalTime::Now().toDate()));
+            if (!rev) metadata.Append(String::Print(TRANS("Revision %u created on %s"), revision, (const char*)Time::LocalTime::Now().toDate()));
             return true;
         }
 
         // Append a chunk to this index file
-        bool IndexFile::appendChunk(Chunk & chunk)
+        bool IndexFile::appendChunk(Chunk & chunk, const uint32 forceUID)
         {
             if (readOnly) return false;
-            chunk.UID = maxChunkID++ + 1;
+            if (!forceUID) chunk.UID = maxChunkID++ + 1;
             local.chunks.insertSorted(chunk);
             consolidated.chunks.insertSorted(chunk);
             return true;
@@ -274,6 +274,64 @@ namespace Frost
             }
             return false;
         }
+
+        /** Dump the current information for all items in this index */
+        String IndexFile::dumpIndex(uint32 rev) const
+        {
+            rev = rev == 0 ? getCurrentRevision() : rev;
+            String ret = String::Print(TRANS("Revision: %u\n=>Header object\n"), rev);
+            ret += header->dump();
+            ret += TRANS("\n=> Catalog object\n");
+            // Start with the catalog
+            const Catalog * cat = getCatalogForRevision(rev);
+            if (!cat) return ret + TRANS("Catalog not found, stopping\n");
+            ret += cat->dump();
+            // Now deal with metadata
+            ret += TRANS("\n=> Metadata\n");
+            MetaData met;
+            if (cat->optionMetadata.fileOffset() && Load(met, cat->optionMetadata))
+                ret += met.dump();
+            // Then filter arguments
+            ret += TRANS("\n=> Filter arguments\n");
+            FilterArguments fa;
+            if (cat->optionFilterArg.fileOffset() && Load(fa, cat->optionFilterArg))
+                ret += fa.dump();
+
+            // Then with the fileTree
+            ret += TRANS("\n=> File tree\n");
+            FileTree ft(rev, true);
+            if (!Load(ft, cat->fileTree)) return ret += TRANS("File tree not found, stopping\n");
+            ret += ft.dump();
+
+            // Then the chunk lists
+            ret += TRANS("\n=> Chunk lists\n");
+            ChunkList cl;
+            Offset chunkListOffset = cat->chunkLists;
+            ret += String::Print(" ChunkList count: %u\n", cat->chunkListsCount);
+            for (uint32 i = 0; i < cat->chunkListsCount; i++)
+            {
+                if (Load(cl, chunkListOffset)) ret += cl.dump();
+                chunkListOffset.fileOffset(chunkListOffset.fileOffset() + cl.getSize());
+            }
+
+            // Read all previous multichunks now
+            ret += TRANS("\n=> Multichunks\n");
+            const Multichunk * mc;
+            Offset mcOffset = cat->multichunks;
+            ret += String::Print(" Multichunks count: %u\n", cat->multichunksCount);
+            for (uint32 i = 0; i < cat->multichunksCount; i++)
+            {
+                if (Map(mc, mcOffset)) ret += mc->dump();
+                mcOffset.fileOffset(mcOffset.fileOffset() + mc->getSize());
+            }
+
+            // Then do the multchunks array
+            ret += TRANS("\n=> Chunks\n");
+            Chunks chunks;
+            if (LoadRO(chunks, cat->chunks)) ret += chunks.dump();
+            return ret;
+        }
+
 
         // Create a new file from scratch.
         String IndexFile::createNew(const String & filePath, const Utils::MemoryBlock & cipheredMasterKey, const String & backupPath)
@@ -463,9 +521,11 @@ namespace Frost
             if (!initialCatalog && initialSize > header->getSize()) initialCatalog = initialSize - Catalog::getSize();
 
             // Make sure we can allocate such size now on file
+            Offset prevOptMetadata = catalog->optionMetadata, prevFilterArg = catalog->optionFilterArg;
             if (!file->map(0, file->fullSize() + requiredAdditionalSize))
                 return String::Print(TRANS("Cannot allocate %llu more bytes for the index file, is disk full?"), requiredAdditionalSize);
             uint8 * filePtr = file->getBuffer();
+            // Starting from this point, the previous mapping are not more valid, so we can't refer to them
 
 
             uint32 prevRev = initialCatalog ? (*MapAs(Catalog, filePtr, initialCatalog)).revision : 0;
@@ -507,13 +567,13 @@ namespace Frost
             {
                 cat.optionFilterArg.fileOffset(wo);
                 arguments.write(filePtr + wo); wo += arguments.getSize();
-            } else cat.optionFilterArg = catalog->optionFilterArg;
+            } else cat.optionFilterArg = prevFilterArg;
             // Check if we need to write the metadata
             if (metadata.modified)
             {
                 cat.optionMetadata.fileOffset(wo);
                 metadata.write(filePtr + wo); wo += metadata.getSize();
-            } else cat.optionMetadata = catalog->optionMetadata;
+            } else cat.optionMetadata = prevOptMetadata;
 
             cat.previous.fileOffset(initialCatalog);
             // Now we can write the catalog
@@ -556,6 +616,20 @@ namespace Frost
                 c = MapAs(Catalog, filePtr, c->previous.fileOffset());
             }
             return 0;
+        }
+
+        MetaData IndexFile::getFirstMetaData()
+        {
+            const Catalog * c = catalog;
+            // Find the first catalog
+            while (c && c->previous.fileOffset()) Map(c, c->previous);
+            // Then extract the metadata from it
+            MetaData ret;
+
+            // All error would lead to returning the metadata object anyway
+            if (c->optionMetadata.fileOffset())
+                Load(ret, c->optionMetadata.fileOffset());
+            return ret;
         }
     }
   #undef MapAs
@@ -687,13 +761,12 @@ namespace Frost
         typedef Utils::ScopePtr<FileFormat::ChunkList> & ChunkListT;
 #endif
 
-        bool closeMultiChunk(const String & backupTo, File::MultiChunk & multiChunk, ChunkListT multiChunkID, uint64 * totalOutSize, ProgressCallback & callback, uint64 & previousMultiChunkID, CompressorToUse actualComp)
+        bool closeMultiChunkBin(String & chunkPath, File::MultiChunk & multiChunk, uint64 * totalOutSize, ProgressCallback & callback, CompressorToUse actualComp, KeyFactory::KeyT & chunkHash)
         {
             bool worthTelling = multiChunk.getSize() > 2*1024*1024;
             if (worthTelling && !callback.progressed(ProgressCallback::Backup, TRANS("Closing multichunk"), 0, 0, 0, 0, ProgressCallback::KeepLine))
                 return false;
             // We need this for the nonce
-            KeyFactory::KeyT chunkHash;
             multiChunk.getChecksum(chunkHash);
 
             const String & multiChunkHash = Helpers::fromBinary(chunkHash, ArrSz(chunkHash), false);
@@ -738,13 +811,22 @@ namespace Frost
 
                 ::Stream::MemoryBlockStream compressedData(compressedStream.getBuffer(), compressedStream.fullSize());
                 if (totalOutSize) *totalOutSize += compressedStream.fullSize();
-                ::Stream::OutputFileStream chunkFile(backupTo + multiChunkHash + ".#");
+                chunkPath += multiChunkHash + ".#";
+                ::Stream::OutputFileStream chunkFile(chunkPath);
                 if (!Helpers::AESCounterEncrypt(chunkHash, compressedData, chunkFile))
                     return false;
             }
 
             if (worthTelling && !callback.progressed(ProgressCallback::Backup, TRANS("Multichunk closed"), 0, 0, 0, 0, ProgressCallback::KeepLine))
                 return false;
+            return true;
+        }
+
+        bool closeMultiChunk(const String & backupTo, File::MultiChunk & multiChunk, ChunkListT multiChunkID, uint64 * totalOutSize, ProgressCallback & callback, uint64 & previousMultiChunkID, CompressorToUse actualComp)
+        {
+            KeyFactory::KeyT chunkHash;
+            String backPath = backupTo;
+            if (!closeMultiChunkBin(backPath, multiChunk, totalOutSize, callback, actualComp, chunkHash)) return false;
 
 #if KeepPreviousVersionFormat == 1
 
@@ -1254,7 +1336,7 @@ namespace Frost
         // Then iterate all children with this parent
         for (size_t i = 0; i < fileTree->items.getSize(); i++)
         {
-            if (fileTree->items[i].fixed && fileTree->items[i].fixed->parentID == parentIndex)
+            if (fileTree->items[i].fixed && fileTree->items[i].fixed->parentID == (parentIndex+1))
                 entryList.Append(i);
         }
         return parentIndex+1;
@@ -1271,6 +1353,27 @@ namespace Frost
 
         Utils::OwnPtr<FileFormat::FileTree> fileTree = Helpers::indexFile.getFileTree(revID);
         if (!fileTree) return false;
+
+        IndexArray entries;
+
+        uint32 dirID = createActualEntryListInDir(dirPath, entries, fileTree);
+        if (dirID == 0 || entries.getSize() == 0) return false;
+
+        // Then find all files and directory and sort them
+        for (size_t i = 0; i < entries.getSize(); i++)
+            fileList.storeValue(fileTree->getItemFullPath(entries[i]), new FileMDEntry(entries[i], fileTree->items[entries[i]].getMetaData()), true);
+        return true;
+    }
+
+    /** Create a list of files in a directory based on the Entry's in the database.
+        @param dirPath  The directory path to look for
+        @param fileList On output, contains a sorted list of files and directories path in the specified directory
+        @param revID    The maximum revision ID to include
+        @return The directory ID if found, or 0 on error */
+    bool createFileListInDir(const String & dirPath, PathIDMapT & fileList, Utils::OwnPtr<FileFormat::FileTree> & fileTree)
+    {
+        fileList.clearTable();
+        if (!fileTree) return true;
 
         IndexArray entries;
 
@@ -1508,14 +1611,14 @@ namespace Frost
         String               prevParentFolder;
         MatchExcludedFiles   excludes;
 
-#if KeepPreviousVersionFormat == 1
         PathIDMapT           prevFilesInDir;
-#else
+#if KeepPreviousVersionFormat != 1
         uint32               prevParentID;
         Utils::OwnPtr<FileFormat::FileTree> fileTree, prevFileTree;
         Utils::MemoryBlock   metadataTmp;
         Utils::ScopePtr<FileFormat::Multichunk> compMultichunk, encMultichunk;
         Utils::ScopePtr<FileFormat::ChunkList> compMultichunkList, encMultichunkList;
+        bool                 worthSaving;
 #endif
 
         // Check if a file has content to save
@@ -1875,14 +1978,19 @@ namespace Frost
             }
         }
 #else
-        // Returns the previous chunklist ID for the file if it's the same or 0 if not
-        uint32 checkDifferentFile(File::Info & info, const String & strippedFilePath, const String & metadata)
+        // Returns true if the file is different (else fills the previous chunklist ID if applicable)
+        bool checkDifferentFile(File::Info & info, const String & strippedFilePath, const String & metadata, uint32 & prevChunkListID)
         {
-            if (!prevFileTree) return 0;
+            if (!prevFileTree) return true;
             uint32 prevItemID = prevFileTree->findItem(strippedFilePath);
-            if (prevItemID == prevFileTree->notFound()) return 0;
+            if (prevItemID == prevFileTree->notFound()) return true;
 
-            return info.hasSimilarMetadata(prevFileTree->getItem(prevItemID)->getMetaData(), File::Info::AllButAccessTime, &metadata) ? prevFileTree->getItem(prevItemID)->getChunkListID() : 0;
+            if (info.hasSimilarMetadata(prevFileTree->getItem(prevItemID)->getMetaData(), File::Info::AllButAccessTime, &metadata))
+            {
+                prevChunkListID = prevFileTree->getItem(prevItemID)->getChunkListID();
+                return false;
+            }
+            return true;
         }
 
         virtual bool fileFound(File::Info & info, const String & strippedFilePath)
@@ -1953,15 +2061,25 @@ namespace Frost
                     WARN_CB(ProgressCallback::Backup, info.name, TRANS("File found in subdir before dir was seen: ") + strippedFilePath);
                     return false;
                 }
+
+                // Check if we have remaining entries in the file list (in that case, this means they were deleted)
+                if (prevFilesInDir.getSize()) worthSaving = true;
+
                 prevParentID = parentID;
                 prevParentFolder = parentFolder;
+
+                String relativeParentPath = File::General::normalizePath(strippedFilePath + "/../").normalizedPath(Platform::Separator, false);
+                createFileListInDir(relativeParentPath, prevFilesInDir, prevFileTree);
             }
+
+            // Remove this file from the the previous file list because we've seen it now
+            prevFilesInDir.removeValue(strippedFilePath);
 
             // We'll need the parent directory ID to link with
 
             // Check if the entry already exists in the database
-            uint32 prevChunkListID = checkDifferentFile(info, strippedFilePath, metadata);
-            if (prevChunkListID)
+            uint32 prevChunkListID = 0;
+            if (!checkDifferentFile(info, strippedFilePath, metadata, prevChunkListID))
             {
                 // The file already exists in the previous file tree, so we'll skip chunking and all other process, just copy the relevant informations
                 fileTree->appendItem(&FileFormat::FileTree::Item::createNew(false).setMetaData(metadataTmp.getConstBuffer(), (uint16)metadataTmp.getSize())
@@ -1971,6 +2089,7 @@ namespace Frost
             }
             else
             {
+                worthSaving = true;
                 if (info.isLink() || info.isDevice() || info.isDir())
                 {
                     fileTree->appendItem(&FileFormat::FileTree::Item::createNew(false).setMetaData(metadataTmp.getConstBuffer(), (uint16)metadataTmp.getSize())
@@ -2060,6 +2179,9 @@ namespace Frost
             if (!finishMultiChunk(compMultiChunk, compMultichunkList, compPreviousMCID, Helpers::Default)) return false;
             if (!finishMultiChunk(encMultiChunk, encMultichunkList, encPreviousMCID, Helpers::None)) return false;
 
+            // Do we have any deleted file ?
+            if (prevFilesInDir.getSize()) worthSaving = true;
+
             // If we found something to analyze, then the backup worked
             if (totalInSize)
             {
@@ -2079,6 +2201,8 @@ namespace Frost
                     return false;
                 }
             }
+            // If there was no noticeable changes, don't record this backup
+            if (!worthSaving) Helpers::indexFile.backupWasEmpty();
             return callback.progressed(ProgressCallback::Backup, TRANS("Done"), 0, 0, 0, 0, ProgressCallback::FlushLine);
         }
 
@@ -2105,7 +2229,7 @@ namespace Frost
               compMultiChunkListID(0), encMultiChunkListID(0), compPreviousMCID(0), encPreviousMCID(0), prevParentFolder("*")
 #if KeepPreviousVersionFormat == 1
 #else
-              , prevParentID(0), fileTree(Helpers::indexFile.getFileTree(revID)), prevFileTree(Helpers::indexFile.getFileTree(revID - 1))
+              , prevParentID(0), fileTree(Helpers::indexFile.getFileTree(revID)), prevFileTree(Helpers::indexFile.getFileTree(revID - 1)), worthSaving(false)
 #endif
         {
 #if KeepPreviousVersionFormat == 1
@@ -2877,6 +3001,440 @@ namespace Frost
         Database::SQLFormat::optimizeTables(0);
         return "";
     }
+#else
+    // Purge old backups
+    String purgeBackup(const String & chunkFolder, ProgressCallback & callback, const PurgeStrategy strategy, const unsigned int upToRevision)
+    {
+        // First, we need to figure out the chunks that are in the given revision but in no other revision (orphans)
+        if (!callback.progressed(ProgressCallback::Purge, TRANS("...scanning..."), 0, 1, 0, 1, ProgressCallback::KeepLine))
+            return TRANS("Error with output");
+
+        /* The basic algorithm here is to build 3 arrays of chunks successively
+           The first chunk array (All) contains the current status of the index file (that is including all revisions' chunks)
+           The second chunk array (B) is build by concatenating the chunk in revisions up to given one
+           The third chunk array (C) is build by concatenating the chunk in revision starting from the given one + 1 to the last version.
+           Finally a last chunk array is build so that it contains chunks in (B) that are not in (C)
+           While doing so, all multichunks infering this list is remembered.
+
+           For each remembered multichunk, we assert a "remove" value, that is equal to the number of chunks to remove in this
+           multichunk divided by the number of chunks in the multichunk.
+           If this ratio is 1.0 then we can remove the multichunk.
+           Else, we simple sort the list of multichunks by this ratio.
+
+           The multichunk with the biggest ratio will be repacked first until all multichunk are respecting the given strategy threshold.
+
+           Finally, a new index file is rewritten with the remaining stuff from the initial file. */
+        typedef Container::PlainOldData<uint32>::Array UIDArray;
+        typedef Container::PlainOldData<uint16>::Array MCUIDArray;
+        UIDArray chunksInPrev, chunksInNext;
+        UIDArray chunkListsToRemove;
+        unsigned int rev = 1;
+        while (rev <= upToRevision)
+        {
+            Utils::OwnPtr<FileFormat::FileTree> ft(Helpers::indexFile.getFileTree(rev));
+            if (!ft) { ++rev; continue; } // The first revisions might be missing already in the archive already
+
+            for (uint32 file = 0; file < ft->notFound(); file++) // Not found is also the size of the items list
+            {
+                uint32 chunkListID = ft->getItem(file)->getChunkListID();
+                chunkListsToRemove.Append(chunkListID);
+                // Then query this list of chunks for all chunks ID to account for
+                FileFormat::ChunkList * cl = Helpers::indexFile.getChunkList(chunkListID);
+
+                if (cl)
+                {
+                    for (size_t i = 0; i < cl->chunksID.getSize(); i++)
+                        chunksInPrev.Append(cl->chunksID[i]);
+                }
+            }
+            ++rev;
+        }
+        if (!chunksInPrev.getSize())  // No chunks found ? We're done
+            return "";
+
+        while (rev <= Helpers::indexFile.getCurrentRevision())
+        {
+            Utils::OwnPtr<FileFormat::FileTree> ft(Helpers::indexFile.getFileTree(rev));
+            if (!ft)
+                return TRANS("Could not find the given revision: ") + rev;
+
+            for (uint32 file = 0; file < ft->notFound(); file++) // Not found is also the size of the items list
+            {
+                uint32 chunkListID = ft->getItem(file)->getChunkListID();
+                // Then query this list of chunks for all chunks ID to account for
+                FileFormat::ChunkList * cl = Helpers::indexFile.getChunkList(chunkListID);
+
+                if (cl)
+                {
+                    for (size_t i = 0; i < cl->chunksID.getSize(); i++)
+                        chunksInNext.Append(cl->chunksID[i]);
+                }
+            }
+            ++rev;
+        }
+
+
+        if (!callback.progressed(ProgressCallback::Purge, TRANS("...building list of chunks to remove..."), 0, 1, 0, 1, ProgressCallback::KeepLine))
+            return TRANS("Error with output");
+
+        // Ok, now the compute the remaining chunk array (the chunks that need removing)
+        struct CompareUint32
+        {
+            static inline int compareData(const uint32 a, const uint32 b) { return a < b ? -1 : a==b ? 0 : 1; }
+        } comp;
+        Container::Algorithms<UIDArray>::sortContainer(chunksInPrev, comp);
+        Container::Algorithms<UIDArray>::sortContainer(chunksInNext, comp);
+
+        UIDArray removeChunks, keepChunks;
+        MCUIDArray multichunkToRework;
+
+        const uint32 allChunks = (uint32)Helpers::indexFile.getTotalChunks().chunks.getSize();
+        for (size_t i = 0; i < chunksInPrev.getSize(); i++)
+        {
+            const uint32 chunkUID = chunksInPrev.getElementAtUncheckedPosition(i);
+            if (chunksInNext.indexOfSorted(chunkUID) == chunksInNext.getSize())
+            { // This chunk was not found in the later revision, and can be removed
+                const FileFormat::Chunk * chunk = Helpers::indexFile.findChunk(chunkUID);
+                if (!chunk)
+                    return TRANS("Unexpected: Chunk not found with UID ") + chunkUID;
+                if (removeChunks.indexOfSorted(chunkUID) == removeChunks.getSize())
+                {
+                    removeChunks.insertSorted(chunkUID);
+                    multichunkToRework.appendIfNotPresent(chunk->multichunkID);
+                }
+            } else if (keepChunks.indexOfSorted(chunkUID) == keepChunks.getSize())
+            {   // Remember the chunks we must keep
+                keepChunks.insertSorted(chunkUID);
+            }
+        }
+
+        // Ok, great, now we have the list of chunks to remove, let's find out the multichunks where to remove them
+        if (!callback.progressed(ProgressCallback::Purge, TRANS("... found orphans chunks ..."), 0, 0, (uint32)removeChunks.getSize(), allChunks, ProgressCallback::FlushLine))
+            return TRANS("Error with output");
+
+        // Then analyze and sort all multichunks for finding out which one to rework first
+        struct MCSortRank
+        {
+            float rank; // The higher to 1.0, the more important it is to remove
+            uint16 id; // When the former are the same, sort on the lowest ID first
+            bool operator == (const MCSortRank & k) const { return memcmp(this, &k, sizeof(*this)) == 0; }
+            bool operator <= (const MCSortRank & k) const { return (rank < k.rank) || (rank == k.rank && id <= k.id); }
+
+            MCSortRank(const float rank = 0, const uint16 id = 0) : rank(rank), id(id) {}
+        };
+        typedef Container::PlainOldData<MCSortRank>::Array MultichunkUsageT;
+        MultichunkUsageT multichunksSorter;
+        for (size_t i = 0; i < multichunkToRework.getSize(); i++)
+        {
+            FileFormat::Multichunk * mc = Helpers::indexFile.getMultichunk(multichunkToRework[i]);
+            if (!mc) return TRANS("Unexpected: Multichunk not found with UID ") + (uint32)multichunkToRework[i];
+
+            FileFormat::ChunkList * cl = Helpers::indexFile.getChunkList(mc->listID);
+            uint32 removedChunksCount = 0;
+            for (size_t c = 0; c < cl->chunksID.getSize(); c++)
+            {
+                if (removeChunks.indexOfSorted(cl->chunksID[c]) != removeChunks.getSize()) removedChunksCount++;
+            }
+
+            multichunksSorter.insertSorted(MCSortRank((float)removedChunksCount / cl->chunksID.getSize(), multichunkToRework[i]));
+        }
+
+        if (!callback.progressed(ProgressCallback::Purge, TRANS("... found affected multichunks ..."), 0, 0, (uint32)multichunksSorter.getSize(), Helpers::indexFile.getMultichunkCount(), ProgressCallback::FlushLine))
+            return TRANS("Error with output");
+
+        // From now on, we'll start to build a new IndexFile starting from the next revision after purging.
+        FileFormat::IndexFile newIndex;
+        String initialBackupPath = Helpers::indexFile.getFirstMetaData().getBackupPath();
+        String tempIndexPath = chunkFolder+"/__purgeIndex.frost";
+        String error = newIndex.createNew(tempIndexPath, Helpers::indexFile.getCipheredMasterKey(), initialBackupPath);
+        if (error) return error;
+
+
+        // Ok, now we have a sorted list of multichunks (from 0 (no chunks to remove) to 1 (all chunks to remove))
+        // Let's act accordingly now to remove or rework the given multichunks.
+        // We want to be atomic here, so we'll not remove any multichunk yet until we are sure the new (purged) index file is good
+        // So we store the list of multichunks to remove (they'll be removed if no error happened before leaving this method)
+
+        // We must have a kind of "previousMultichunkID => newMultichunkID" map because after merging they'll have a new UID
+        // Hopefully, the new ID is always equal to a previous one, and there should be less (or exactly as many) multichunks after purging.
+        // So, we simply use an index for the ID in the multichunkToRework array.
+        MCUIDArray multichunksToRemove;
+        // 2 multichunks need to be stored in the cache
+        Helpers::MultiChunkCache cache(64*1024*1024);
+
+        // The multichunks we are working with
+        Utils::ScopePtr<FileFormat::Multichunk>  compMultichunk(new FileFormat::Multichunk), encMultichunk(new FileFormat::Multichunk);
+        Utils::ScopePtr<FileFormat::ChunkList>  compMultichunkList(new FileFormat::ChunkList(0, true)), encMultichunkList(new FileFormat::ChunkList(0, true));
+        File::MultiChunk compMC, encMC;
+        FileFormat::ChunkLists &  newChunkList = *newIndex.getChunkLists();
+        FileFormat::Multichunks & newMultichunks = *newIndex.getMultichunks();
+
+        // RAII for cleaning any multichunk we have created upon failing purging
+        struct CleanMultichunksOnExit
+        {
+            Strings::StringArray    createdMultichunks;
+            void success() { createdMultichunks.Clear(); }
+            void appendMC(const String & path) { createdMultichunks.Append(path); }
+            ~CleanMultichunksOnExit() { for (size_t i = 0; i < createdMultichunks.getSize(); i++) File::Info(createdMultichunks[i], true).remove(); }
+        } mcGuard;
+
+        float purgeThreshold = (int)strategy / 100.0f;
+        for (size_t i = multichunksSorter.getSize(); i; --i)
+        {
+            MCSortRank & rank = multichunksSorter.getElementAtUncheckedPosition(i-1);
+            // Special case: all chunks must be removed
+            if (rank.rank == 1.0f)
+            {
+                multichunksToRemove.Append(rank.id);
+                multichunksSorter.Remove(i-1);
+                i = multichunksSorter.getSize();
+                continue;
+            }
+
+            // If we've reached the expected strategy goal, we stop the (hard) work.
+            if (rank.rank <= purgeThreshold) break;
+            // Ok, we need to rework a multichunk here
+            // We have opened 2 multichunks (one for compression + encryption, one for the encryption only) already
+            // We'll be selecting the multichunk to store into depending on the filtering used for the current multichunk.
+            FileFormat::Multichunk * currentMC = Helpers::indexFile.getMultichunk(rank.id);
+            if (!currentMC) return TRANS("Error: Could not find multichunk with ID: ") + rank.id;
+            String filterMode = Helpers::indexFile.getFilterArgumentForMultichunk(rank.id);
+
+            bool shouldCompress = filterMode.fromTo(":", ":") != "none";
+            Utils::ScopePtr<FileFormat::Multichunk> & outMC = !shouldCompress ? encMultichunk : compMultichunk;
+            Utils::ScopePtr<FileFormat::ChunkList> &  outCL = !shouldCompress ? encMultichunkList : compMultichunkList;
+            File::MultiChunk &      destMC = !shouldCompress ? encMC : compMC;
+
+            // If UID not assigned yet, let's assigned it now, we are reusing an existing multichunk
+            if (outCL->UID == 0) { outCL->UID = currentMC->listID; outMC->UID = currentMC->UID; outMC->listID = outCL->UID; }
+
+            // Then we'll open the chunklist refered by this multichunk and for each chunk in the list assert if it's used
+            // or not. If it's used, we'll extract the chunk and add to the current multichunk.
+            FileFormat::ChunkList * cl = Helpers::indexFile.getChunkList(currentMC->listID);
+            if (!cl)    return TRANS("Errror: Could not find the list of chunks with ID: ") + currentMC->listID;
+
+            for (size_t c = 0; c < cl->chunksID.getSize(); c++)
+            {
+                const uint32 chunkID = cl->chunksID.getElementAtUncheckedPosition(c);
+                if (removeChunks.indexOfSorted(chunkID) == removeChunks.getSize())
+                {
+                    // We should keep this chunk
+                    const FileFormat::Chunk * chunk = Helpers::indexFile.findChunk(chunkID);
+                    if (!chunk) return TRANS("Error: Could not find the chunk with ID: ") + chunkID;
+
+                    // Copy data to the new multichunk
+                    //=================================================
+                    File::Chunk * chunkData = Helpers::extractChunkBin(error, chunkFolder, currentMC->getFileName(), rank.id, cl->offsets.getElementAtUncheckedPosition(c), chunk->checksum, filterMode, cache, callback);
+                    if (!chunkData) return TRANS("Error: Could not extract chunk data for ID: ") + chunkID;
+
+                    // If the current multichunk is full, we have to close it, compress it and encrypt it, and open a new one.
+                    if (!destMC.canFit(chunkData->size))
+                    {
+                        // Close this multichunk, and apply filters
+                        KeyFactory::KeyT chunkHash;
+                        String chunkFile = chunkFolder;
+                        if (!Helpers::closeMultiChunkBin(chunkFile, destMC, 0, callback, shouldCompress ? Helpers::Default : Helpers::None, chunkHash))
+                            return TRANS("Error: Closing multichunk failed");
+
+                        mcGuard.appendMC(chunkFile);
+                        outMC->filterArgIndex = Helpers::indexFile.getFilterArguments().getArgumentIndex(filterMode);
+                        memcpy(outMC->checksum, chunkHash, ArrSz(chunkHash));
+
+                        uint16 mcID = outMC->UID;
+                        if (mcID == currentMC->UID)
+                        {
+                            // This should never happen, since we are removing chunks, we should be able to fit at least the same number of chunks in a multichunk
+                            return TRANS("Error: We should be able to reassign ID for multichunks");
+                        }
+                        newChunkList.storeValue(outMC->listID, outCL.Forget());
+                        newMultichunks.storeValue(mcID, outMC.Forget());
+                        // Reset it now for next chunk
+                        outCL = new FileFormat::ChunkList(0, true);
+                        outMC = new FileFormat::Multichunk;
+                        destMC.Reset();
+                        // Need to make sure the multichunk ID for this chunk is different from the one we started with
+                        outCL->UID = currentMC->listID; outMC->UID = currentMC->UID; outMC->listID = outCL->UID;
+                    }
+                    size_t offsetInMC = destMC.getSize();
+                    uint8 * chunkBuffer = destMC.getNextChunkData(chunkData->size, chunkData->checksum);
+                    if (!chunkBuffer) return TRANS("Error: Could not get a free buffer to store the chunk with ID: ") + chunkID;
+
+                    memcpy(chunkBuffer, chunkData->data, chunkData->size);
+                    //================ Done ===========================
+
+                    // Then deal with meta information here
+                    // We should also store the chunkID for all written chunks in order to map them to new multichunkID to a list.
+                    // To avoid consuming useless memory, we mutate the chunk's MultichunkID directly in the current index file's consolidated array to the new value.
+                    outCL->appendChunk(chunkID, offsetInMC);
+                    // Trick here is correct, because we know the chunk is in memory and not on the file
+                    const_cast<FileFormat::Chunk*>(chunk)->multichunkID = outMC->UID;
+                }
+            }
+
+
+            // This is finally repeated until all multichunks are processed (only in case of slow purging strategy or level below threshold)
+            if (!callback.progressed(ProgressCallback::Purge, String::Print(TRANS("Processed multichunk %s with ratio %g"), (const char*)currentMC->getFileName(), rank.rank), 0, 0, multichunksSorter.getSize() - i, multichunksSorter.getSize(), ProgressCallback::KeepLine))
+                return TRANS("Interrupted in output");
+
+            // Mark this multichunk so it's removed
+            multichunksToRemove.Append(rank.id);
+        }
+
+        if (!callback.progressed(ProgressCallback::Purge, TRANS("Done processed multichunks...                                                  "), 0, 0, multichunksSorter.getSize(), multichunksSorter.getSize(), ProgressCallback::KeepLine))
+            return TRANS("Interrupted in output");
+
+        // Finally, close all remaining multichunks
+        KeyFactory::KeyT chunkHash;
+        if (encMC.getSize())
+        {
+            String chunkFile = chunkFolder;
+            if (!Helpers::closeMultiChunkBin(chunkFile, encMC, 0, callback, Helpers::None, chunkHash))
+                return TRANS("Error: Closing multichunk failed");
+
+            mcGuard.appendMC(chunkFile);
+            encMultichunk->filterArgIndex = getFilterArgumentIndex(Helpers::None);
+            memcpy(encMultichunk->checksum, chunkHash, ArrSz(chunkHash));
+
+            newChunkList.storeValue(encMultichunk->listID, encMultichunkList.Forget());
+            uint16 encID = encMultichunk->UID;
+            newMultichunks.storeValue(encID, encMultichunk.Forget());
+        }
+        if (compMC.getSize())
+        {
+            String chunkFile = chunkFolder;
+            if (!Helpers::closeMultiChunkBin(chunkFile, compMC, 0, callback, Helpers::Default, chunkHash))
+                return TRANS("Error: Closing multichunk failed");
+
+            mcGuard.appendMC(chunkFile);
+            compMultichunk->filterArgIndex = getFilterArgumentIndex(Helpers::Default);
+            memcpy(compMultichunk->checksum, chunkHash, ArrSz(chunkHash));
+
+            newChunkList.storeValue(compMultichunk->listID, compMultichunkList.Forget());
+            uint16 compID = compMultichunk->UID;
+            newMultichunks.storeValue(compID, compMultichunk.Forget());
+        }
+
+        // In the new index file, the first revision will be 1 (and not revisionID + 1)
+        // So, first add the chunks for the next revisions. Because we want to be smart, we'll only pack a single chunk array in the file for the first
+        // revision, it'll then be a mix of the chunks used in the next revisions plus the actual revisionID+1's chunks
+        for (size_t i = 0; i < keepChunks.getSize(); i++)
+        {
+            const uint32 chunkUID = keepChunks.getElementAtUncheckedPosition(i);
+            const FileFormat::Chunk * chunk = Helpers::indexFile.findChunk(chunkUID);
+            newIndex.appendChunk(const_cast<FileFormat::Chunk &>(*chunk), chunkUID); // We force the UID as we don't want to mutate all chunklists later on
+        }
+        // Ok, let's append all remaining chunk for this revision
+        uint32 maxRev = Helpers::indexFile.getCurrentRevision() - upToRevision;
+        for (uint32 rev = upToRevision+1; rev <= Helpers::indexFile.getCurrentRevision(); rev++)
+        {
+            FileFormat::Chunks chunks;
+            const FileFormat::Catalog * catalog = Helpers::indexFile.getCatalogForRevision(rev);
+            if (!catalog)
+                return TRANS("Error while fetching catalog for revision: ") + rev;
+            if (!Helpers::indexFile.LoadRO(chunks, catalog->chunks))
+                return TRANS("Error while fetching chunks for revision: ") + rev;
+            // Chunks to save for this revision
+            for (size_t c = 0; c < chunks.chunks.getSize(); c++)
+                newIndex.appendChunk(const_cast<FileFormat::Chunk &>(chunks.chunks[c]), chunks.chunks[c].UID);
+
+            // We need to copy the ChunkLists, Multichunks, Metadata, FileTree, FilterArgument
+            // So copy the chunklists for this revision too
+            //    First: Read all chunk lists now
+            FileFormat::Offset clOff = catalog->chunkLists;
+            for (uint32 i = 0; i < catalog->chunkListsCount; i++)
+            {
+                Utils::ScopePtr<FileFormat::ChunkList> cl = new FileFormat::ChunkList();
+                if (!cl) return TRANS("Out of memory for chunklist");
+                if (!Helpers::indexFile.Load(*cl, clOff)) return TRANS("Error: Could not load chunk list");
+
+                // Then save them in the new file
+                if (!newIndex.getChunkLists()->storeValue(cl->UID, cl)) return TRANS("Error: Could not store the chunk list in new list");
+                clOff.fileOffset(clOff.fileOffset() + cl->getSize());
+                cl.Forget();
+            }
+
+            // Need to load all the chunk list from the file tree too
+            FileFormat::FileTree ft(rev, true);
+            if (!Helpers::indexFile.Load(ft, catalog->fileTree)) return TRANS("Error: Could not load the file tree for revision: ") + rev;
+            for (size_t i = 0; i < ft.items.getSize(); i++)
+            {
+                uint32 clID = ft.items[i].getChunkListID();
+                if (!clID) continue;
+                FileFormat::ChunkList * cl = Helpers::indexFile.getChunkList(clID);
+                if (!cl) return TRANS("Error: Could not find the chunk list for file: ") + ft.items[i].getBaseName();
+
+                // Then save them in the new file
+                if (!newIndex.getChunkLists()->storeValue(cl->UID, new FileFormat::ChunkList(*cl))) return TRANS("Error: Could not store the chunk list in new list");
+                clOff.fileOffset(clOff.fileOffset() + cl->getSize());
+            }
+
+            // Then read all previous multichunks now
+            FileFormat::Offset mcOff = catalog->multichunks;
+            for (uint32 i = 0; i < catalog->multichunksCount; i++)
+            {
+                Utils::ScopePtr<FileFormat::Multichunk> mc = new FileFormat::Multichunk();
+                if (!mc) return TRANS("Out of memory for multichunk");
+                if (!Helpers::indexFile.Load(*mc, mcOff)) return TRANS("Error: Could not load multichunk");
+
+                // Then save them in the new file
+                if (!newIndex.getMultichunks()->storeValue(mc->UID, mc)) return TRANS("Error: Could not store the multichunk in new table");
+                mcOff.fileOffset(mcOff.fileOffset() + mc->getSize());
+                mc.Forget();
+            }
+
+            // Next do the metadata
+            if (catalog->optionMetadata.fileOffset())
+            {
+                if (!Helpers::indexFile.LoadRO(newIndex.getMetaData(), catalog->optionMetadata)) TRANS("Error: Could not load metadata for revision: ") + rev;
+                newIndex.getMetaData().modified = true;
+            }
+            // Then filter arguments
+            if (catalog->optionFilterArg.fileOffset())
+            {
+                if (!Helpers::indexFile.Load(newIndex.getFilterArguments(), catalog->optionFilterArg)) TRANS("Error: Could not load filterarg for revision: ") + rev;
+                newIndex.getFilterArguments().modified = true;
+            }
+            // Finally save the file tree
+            if (!Helpers::indexFile.Load(*newIndex.getFileTree(rev - upToRevision), catalog->fileTree)) TRANS("Error: Could not load the file tree for revision: ") + rev;
+
+            if (!callback.progressed(ProgressCallback::Purge, TRANS("... done saving of revision ..."), 0, 0, (uint32)rev - upToRevision, maxRev, ProgressCallback::FlushLine))
+                return TRANS("Error with output");
+
+            // Ok, let's save this revision back to the nex index file
+            error = newIndex.close();
+            if (error) return error;
+            // Reopen for a new revision
+            error = newIndex.readFile(tempIndexPath, true);
+            if (error) return error;
+            // Start a new revision in this file
+            if (!newIndex.startNewRevision(rev - upToRevision + 1)) return TRANS("Could not start new revision :") + (rev - upToRevision + 1);
+        }
+
+        newIndex.backupWasEmpty();
+        error = newIndex.close();
+        if (error) return error;
+
+        // Great, it should be finished by now, let's remove the initial index file, and useless multichunks
+        if (!dumpState)
+        {
+            for (size_t i = 0; i < multichunksToRemove.getSize(); i++)
+            {
+                uint16 mcID = multichunksToRemove[i];
+                FileFormat::Multichunk * mc = Helpers::indexFile.getMultichunk(mcID);
+                if (mc) File::Info(chunkFolder + mc->getFileName(), true).remove();
+            }
+            Helpers::indexFile.close();
+            File::Info(tempIndexPath, true).moveTo(chunkFolder + DEFAULT_INDEX);
+        }
+
+        if (!callback.progressed(ProgressCallback::Purge, TRANS("... purge finished and saved ..."), 0, 0, maxRev, maxRev, ProgressCallback::FlushLine))
+            return TRANS("Error with output");
+
+        mcGuard.success();
+        return "";
+    }
+
+
 #endif
 
     // Restore a backup to the given folder
@@ -3116,16 +3674,13 @@ int showHelpMessage(const Frost::String & error = "")
            "  Actions:\n"
            "\t--restore dir [rev]\tRestore the revision (default: last) to the given directory (either backup or restore mode is supported)\n"
            "\t--backup dir\t\tBackup the given directory (either backup or restore mode is supported)\n"
-#if KeepPreviousVersionFormat == 1
            "\t--purge [rev]\t\tPurge the given remote backup directory up to the given revision number (use --list to find out)\n"
-#else
-           //!< @todo
-#endif
            "\t--list [range]\t\tList the current backup in the specified index (required) and time range in UTC (in the form 'YYYYMMDDHHmmSS YYYYMMDDHHmmSS')\n"
            "\t--filelist [range]\tList the current backup in the specified index (required) and time range in UTC, including the file list in this revision\n"
            "\t--cat path [rev]\tLocate the file for the given path and optional revision number (remote is required), extract it to the standard output\n"
            "\t--test [name]\t\tRun the test with the given name -developer only- use -v for more verbose mode, 'help' to get a list of available tests\n"
            "\t--password pw\t\tSet the password so it's not queried on the terminal. Avoid this if launched from prompt as it'll end in your bash's history\n"
+           "\t--dump\t\tDump the object content for the specified index (required). This is a kind of index file check done manually ;-)\n"
            "\t--help [security]\tGet help on the security features and advices of Frost\n"
            "  Required parameters for backup, purge and restore:\n"
            "\t--remote url\t\tThe URL (can be a directory) to save/restore backup to/from\n"
@@ -3451,7 +4006,6 @@ int checkTests(Strings::StringArray & options)
             fprintf(stderr, "Success\n");
             return EXIT_SUCCESS;
         }
-#if KeepPreviousVersionFormat == 1
         else if (testName == "purge")
         {
             // Delete a big file to figure out what happens to the final directory
@@ -3477,17 +4031,20 @@ int checkTests(Strings::StringArray & options)
             {
                 Frost::Helpers::compressor = Frost::Helpers::BSC;
                 File::MultiChunk::setMaximumSize(25*1024*1024);
-            }
-            if (arg == "big")
+            } else if (arg == "big")
             {
                 File::MultiChunk::setMaximumSize(25*1024*1024);
             }
             result = Frost::backupFolder("test/", "./testBackup/", revisionID, console, arg == "bsc" ? Frost::Slow : Frost::Fast);
             if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
 
+            Frost::finalizeDatabase();
+            result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
             if (Frost::listBackups() != 2) ERR("This test needs to be run after a roundtrip test\n");
 
             // Then purge the database from the last revision
+            Frost::finalizeDatabase();
+            result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
             result = Frost::purgeBackup("./testBackup/", console, Frost::Slow, 1);
             if (result) ERR("Can't purge the last backup: %s\n", (const char*)result);
 
@@ -3495,7 +4052,6 @@ int checkTests(Strings::StringArray & options)
             fprintf(stderr, "Success\n");
             return EXIT_SUCCESS;
         }
-#endif
         else if (testName == "fs")
         {
             File::Info("./test/").remove();
@@ -3929,6 +4485,19 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         Frost::finalizeDatabase();
         return EXIT_SUCCESS;
     }
+    if (action == "dump")
+    {
+        Frost::String result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
+        if (result) ERR("Can't re-open the database: %s\n", (const char*)result);
+        if (!cipheredMasterKey.getSize()) ERR("Bad readback of the ciphered master key\n");
+        for (uint32 i = 1; i <= revisionID; i++)
+        {
+            fprintf(stderr, "%s", (const char*)Frost::Helpers::indexFile.dumpIndex(i));
+        }
+        Frost::finalizeDatabase();
+        return EXIT_SUCCESS;
+    }
+
 
     // From now, all other actions require a password
     if (!optionsMap["remote"]) return showHelpMessage("Bad argument for " + action + ", remote missing (that's where the backup is saved)");
@@ -3949,7 +4518,6 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         memset(password, 0, passLen);
     } else { pass = *optionsMap["password"]; optionsMap.removeValue("password"); }
 
-#if KeepPreviousVersionFormat == 1
     if (action == "purge")
     {
         // Purge the directory now for useless chunks
@@ -3967,7 +4535,10 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         if (params[0] && (int)params[0]) revisionID = params[0];
         else ERR("No revision ID given. I won't purge the complete backup set implicitely, purge aborted\n");
 
-        Frost::PurgeStrategy strategy = optionsMap["strategy"] ? (*optionsMap["strategy"] == "slow" ? Frost::Slow : Frost::Fast) : Frost::Fast;
+        Frost::String strategyTxt = optionsMap["strategy"] ? *optionsMap["strategy"] : "100";
+        if (strategyTxt == "slow") strategyTxt = "0";
+
+        Frost::PurgeStrategy strategy = (Frost::PurgeStrategy)(int)strategyTxt; // Convert to a threshold value here
         result = Frost::purgeBackup(*optionsMap["remote"], console, strategy, revisionID);
         if (result) ERR("Can't purge the backup: %s\n", (const char*)result);
 
@@ -3976,7 +4547,6 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
 
         return EXIT_SUCCESS;
     }
-#endif
     if (action == "backup")
     {
         // Ok, start the system now
@@ -4010,7 +4580,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         if (result) ERR("Can't read or initialize the database: %s\n%s", (const char*)(Frost::DatabaseModel::databaseURL + "/" DEFAULT_INDEX), (const char*) result);
 
         // Then backup the folder
-        Frost::PurgeStrategy strategy = optionsMap["strategy"] ? (*optionsMap["strategy"] == "slow" ? Frost::Slow : Frost::Fast) : Frost::Fast;
+        Frost::PurgeStrategy strategy = optionsMap["strategy"] ? (*optionsMap["strategy"] == "slow" ? Frost::Slow : Frost::Fast) : Frost::Fast; // Strategy set to 0 should reopen the previous backup set
         result = Frost::backupFolder(backup, remote, revisionID, console, strategy);
         if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
 
@@ -4199,11 +4769,10 @@ int main(int argc, char ** argv)
     if ((ret = handleAction(options, "list")) != BailOut) return ret;
     if ((ret = handleAction(options, "filelist")) != BailOut) return ret;
     if ((ret = handleAction(options, "cat")) != BailOut) return ret;
-#if KeepPreviousVersionFormat == 1
     if ((ret = handleAction(options, "purge")) != BailOut) return ret;
-#endif
     if ((ret = handleAction(options, "backup")) != BailOut) return ret;
     if ((ret = handleAction(options, "restore")) != BailOut) return ret;
+    if ((ret = handleAction(options, "dump"))       != BailOut) return ret;
 
     return showHelpMessage("Either backup, purge or restore mode required");
 }
