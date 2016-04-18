@@ -407,7 +407,7 @@ $ mount [...]</pre>
 <pre>$ Frost --help; Frost --help security; Frost --help regex; Frost --test help</pre>
 <br/><br/>
 <p>To mount your backup set locally via FUSE:</p>
-<pre>$ make frost_fuse; ./frost_fuse /where/to/mount --remote /mnt/remote [optional: --keyvault /path/to/keyVault]</pre>
+<pre>$ make build/Frostfuse; ./Frostfuse /where/to/mount --remote /mnt/remote [optional: --keyvault /path/to/keyVault]</pre>
 <pre>$ cd /where/to/mount; cd [rev number]; echo "Enjoy!";</pre>
 <br/><br/>
 
@@ -546,7 +546,7 @@ ratio</a>.</p>
 <h2>FUSE implementation</h2>
 <h3>Requirements</h3>
 <p>If you have FUSE installed on your system (API version 26 or later), including the headers, then you can build the Frostfuse program by running:</p>
-<pre>$ make Frostfuse</pre>
+<pre>$ make build/Frostfuse</pre>
 <p>If completed successfully, you should be able to mount your backup set as a FUSE filesystem.</p>
 <p>The implementation mounts a read-only access to your backup set that is organized as follow:</p>
 <ul>
