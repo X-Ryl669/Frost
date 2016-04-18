@@ -28,9 +28,12 @@ CXXSOURCES = \
 ./ClassPath/src/Utils/Dump.cpp \
 ./ClassPath/src/Utils/MemoryBlock.cpp \
 ./ClassPath/src/Variant/UTIImpl.cpp \
-./Frost.cpp \
+
 
 # find path -name "*.cpp"
+MAINCXX = \
+./Frost.cpp \
+
 CSOURCES = \
 ClassPath/src/Strings/BString/bstrlib.c \
 ClassPath/src/Compress/easyzlib.c
@@ -59,7 +62,8 @@ SRC = $(CXXSOURCES) $(CSOURCES)
 OBJ = $(CXXSOURCES:.cpp=.o) $(CSOURCES:.c=.o)
 OBJ_CXX_BUILD = $(foreach object, $(CXXSOURCES:.cpp=.o),$(addprefix build/, $(object)))
 OBJ_C_BUILD = $(foreach object, $(CSOURCES:.c=.o),$(addprefix build/, $(object)))
-OBJ_BUILD = $(OBJ_CXX_BUILD) $(OBJ_C_BUILD)
+MAIN_OBJ_BUILD = $(foreach object, $(MAINCXX:.cpp=.o),$(addprefix build/, $(object)))
+OBJ_BUILD = $(OBJ_CXX_BUILD) $(OBJ_C_BUILD) $(MAIN_OBJ_BUILD)
 SYSLD := $(shell echo `whereis g++ | cut -d\  -f 2`)
 REALLD ?= $(SYSLD)
 SHAREDLIBS = -lssl -lcrypto -lsqlite3
@@ -74,8 +78,8 @@ Q = @
 all: $(OUTPUT)
 
 
-$(OUTPUT): $(OBJ_BUILD) 
-	@echo Linking $@
+$(OUTPUT): $(OBJ_BUILD)
+	@echo "Linking $@"
 	$(Q)$(LDXX) -o $@ -lpthread $(LIBPATH) $(OBJ_BUILD) $(LIBS) $(SHAREDLIBS)
 	@echo Built Frost version: $$(cat $(BUILD_NUMBER_FILE))
 
@@ -93,8 +97,23 @@ $(OBJ_CXX_BUILD): $(CXXSOURCES)
 	$(Q)-mkdir -p $(dir $@)
 	$(Q)$(CXX) $(CXXFLAGS) $(DFLAGS) $(INCPATH) -c $(subst build/,,$(patsubst %.o,%.cpp,$@)) -o $@
 
+$(MAIN_OBJ_BUILD): $(CXXSOURCES)
+	@echo ">  Compiling $(notdir $*.cpp)"
+	$(Q)-mkdir -p $(dir $@)
+	$(Q)$(CXX) $(CXXFLAGS) $(DFLAGS) $(INCPATH) -c $(subst build/,,$(patsubst %.o,%.cpp,$@)) -o $@
+
+build/Frostfuse: build/Frostfuse.o
+	@echo "Linking $@"
+	$(Q)$(LDXX) -o $@ -lpthread $(LIBPATH) $(OBJ_CXX_BUILD) $(OBJ_C_BUILD) build/Frostfuse.o $(LIBS) $(SHAREDLIBS) `pkg-config fuse --libs`
+
+build/Frostfuse.o: ./Frost.cpp ./Frost.hpp $(CXXSOURCES)
+	@echo ">  Compiling $(notdir $*.c)"
+	$(Q)-mkdir -p $(dir $@)
+	$(Q)$(CXX) $(CXXFLAGS) $(DFLAGS) -DWithFUSE=1 `pkg-config fuse --cflags` $(INCPATH) -c ./Frost.cpp -o $@
 
 clean:
 	-rm $(OBJ_BUILD)
 	-rm -r build/ClassPath
 	-rm $(OUTPUT)
+	-rm build/Frostfuse.o
+	-rm build/Frostfuse
