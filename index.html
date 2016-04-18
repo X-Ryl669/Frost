@@ -83,7 +83,7 @@ right: 0px;
 	z-index: 3;
       }
        
-      #tab1:checked ~ .tab1, #tab2:checked ~ .tab2, #tab3:checked ~ .tab3, #tab4:checked ~ .tab4, #tab5:checked ~ .tab5 {
+      #tab1:checked ~ .tab1, #tab2:checked ~ .tab2, #tab3:checked ~ .tab3, #tab4:checked ~ .tab4, #tab5:checked ~ .tab5, #tab6:checked ~ .tab6 {
          display: block;
       }
       .tab-content{
@@ -224,7 +224,9 @@ hinge {
           <input type="radio" name="tabs" id="tab4">
           <label for="tab4" class='t'>Documentation</label>
           <input type="radio" name="tabs" id="tab5">
-          <label for="tab5" class='t'>Download</label>
+          <label for="tab5" class='t'>FUSE documentation</label>
+          <input type="radio" name="tabs" id="tab6">
+          <label for="tab6" class='t'>Download</label>
 <br style="clear:both; height: 0; padding: 0; margin: 0"/>
 
           <div id="tab-content1" class="tab-content animated fadeIn tab1">
@@ -252,9 +254,10 @@ Yet, the backup should be as small as possible, encrypted and indexed.
 <li>Snapshot mode (no full/iterative backup, each backup is consistent)</li>
 <li>No dependency (except OpenSSL for cryptography, SQLite3 for embedded database)</li>
 <li>Support for multiple compression type with pluggable filtering for best algorithm selection</li>
-<li>in v2: Data parity computation for fixing any byte corruption</li>
-<li>in v2: Support multiple file transfer protocol (currently using FUSE)</li>
-<li>in v2: FUSE mountable of any backup version</li> 
+<li>(NEW) FUSE mountable of any backup version</li> 
+<li>in v2.5: Add support for Zstd compression format</li>
+<li>in v3: Data parity computation for fixing any byte corruption</li>
+<li>in v3: Support multiple file transfer protocol (currently using FUSE)</li>
 </ul>
 <label for="tab4" style="text-decoration : underline; cursor: hand;">Show me how to use it.</label>
           </div>
@@ -400,7 +403,16 @@ $ mount [...]</pre>
 <pre>$ tar -cf shouldCompress.tar /path/to/compressibleFiles; tar -cf shouldNotCompress.tar /path/to/notCompressibleFiles</pre>
 <pre>$ Frost --test entropy shouldCompress.tar 2>&1 | grep '>>>'; Frost --test entropy shouldNotCompress.tar 2>&1 | grep '>>>';</pre>
 <br/><br/>
-<label for="tab5" style="text-decoration : underline; cursor: hand;">Ok, let me try this.</label>
+<p>Anytime, use --help to get help:</p>
+<pre>$ Frost --help; Frost --help security; Frost --help regex; Frost --test help</pre>
+<br/><br/>
+<p>To mount your backup set locally via FUSE:</p>
+<pre>$ make frost_fuse; ./frost_fuse /where/to/mount --remote /mnt/remote [optional: --keyvault /path/to/keyVault]</pre>
+<pre>$ cd /where/to/mount; cd [rev number]; echo "Enjoy!";</pre>
+<br/><br/>
+
+
+<label for="tab6" style="text-decoration : underline; cursor: hand;">Ok, let me try this.</label>
 
 <h2>Technical discussion</h2>
 <p>A good start to read is <a href="http://www.philippheckel.com/files/syncany-heckel-thesis.pdf">this thesis</a></p>
@@ -531,6 +543,46 @@ ratio</a>.</p>
           </div>
 
           <div id="tab-content5" class="tab-content animated fadeIn tab5">
+<h2>FUSE implementation</h2>
+<h3>Requirements</h3>
+<p>If you have FUSE installed on your system (API version 26 or later), including the headers, then you can build the Frostfuse program by running:</p>
+<pre>$ make Frostfuse</pre>
+<p>If completed successfully, you should be able to mount your backup set as a FUSE filesystem.</p>
+<p>The implementation mounts a read-only access to your backup set that is organized as follow:</p>
+<ul>
+<li>/ [root folder where you've mounted the backup set]
+   <ul>
+    <li>1 [first revision]
+       <ul><li><em>your file heres</em></li><li>...</li>
+       </ul>
+    </li>
+    <li>2 [second revision]
+       <ul><li><em>your file heres</em></li><li>...</li>
+       </ul>
+    </li>
+  </ul>
+</ul>
+<p>The arguments for this software are:</p>
+<pre>
+Frost Fuse specific options:
+	--password=<em>password</em>               The password to use to decypher the master key [BEWARE OF YOUR BASH HISTORY], this is optional
+	--remote=/path/to/remote          The path where the remote is stored
+	--index=/path/to/index            The path where the index file is stored (if empty, using remote path)
+	--keyvault=/path/to/keyvaultFile  The path where to the key vault file (if empty, using ~/.frost/keys)
+</pre>
+<h3>Performances</h3>
+<p>The implementation makes use of threads from FUSE. Yet, altrough file's metadata retrieval should be pretty fast (listing, getting the statistics, etc...), accessing file content requires decyphering and decompressing the 
+multichunks. This is as fast as the <code>Frost --restore</code> function, but because of the multithreading access, the multichunk cache could be missed for many chunks if accessed in parallel by numerous process.</p>
+<p>So far, it's still usable correctly without any noticeable slow down from any other archive based filesystem.</p>
+<h3>Limitations</h3>
+<p>File permission are not validated inside the backup set, so this means anyone could read from any file from the backup set provided she has access to the mount point.</p>
+<p>Similarly, even if the mount is read-only, the files appears with their initial attributes (and permissions), so it can be disturbing for other software to see files marked as "rw" and not be allowed to write to them.</p>
+<br/>
+<label for="tab6" style="text-decoration : underline; cursor: hand;">Ok, let me try this.</label>
+</div>
+
+
+          <div id="tab-content6" class="tab-content animated fadeIn tab6">
 <a href="https://github.com/X-Ryl669/Frost/archive/master.zip" >Source code for POSIX system (Linux and Mac OS X)</a>.<br/><br/>
 The solution might be buildable on Windows, with mingw or Microsoft compiler, but I have not tested this. In all case, there is no gui, so the backup would have to be run in a console.<br/>
 </div>
