@@ -3395,7 +3395,10 @@ namespace Frost
                 newIndex.getFilterArguments().modified = true;
             }
             // Finally save the file tree
-            if (!Helpers::indexFile.Load(*newIndex.getFileTree(rev - upToRevision), catalog->fileTree)) TRANS("Error: Could not load the file tree for revision: ") + rev;
+            Utils::OwnPtr<FileFormat::FileTree> newFT = newIndex.getFileTree(rev - upToRevision);
+            if (!Helpers::indexFile.Load(*newFT, catalog->fileTree)) TRANS("Error: Could not load the file tree for revision: ") + rev;
+            // Fix the file tree revision too
+            newFT->revision = rev - upToRevision; // We are shifting the revision number here, so we must account for it
 
             if (!callback.progressed(ProgressCallback::Purge, TRANS("... done saving of revision ..."), 0, 0, (uint32)rev - upToRevision, maxRev, ProgressCallback::FlushLine))
                 return TRANS("Error with output");
@@ -3680,7 +3683,7 @@ int showHelpMessage(const Frost::String & error = "")
            "\t--cat path [rev]\tLocate the file for the given path and optional revision number (remote is required), extract it to the standard output\n"
            "\t--test [name]\t\tRun the test with the given name -developer only- use -v for more verbose mode, 'help' to get a list of available tests\n"
            "\t--password pw\t\tSet the password so it's not queried on the terminal. Avoid this if launched from prompt as it'll end in your bash's history\n"
-           "\t--dump\t\tDump the object content for the specified index (required). This is a kind of index file check done manually ;-)\n"
+           "\t--dump\t\t\tDump the object content for the specified index (required). This is a kind of index file check done manually ;-)\n"
            "\t--help [security]\tGet help on the security features and advices of Frost\n"
            "  Required parameters for backup, purge and restore:\n"
            "\t--remote url\t\tThe URL (can be a directory) to save/restore backup to/from\n"
@@ -3704,8 +3707,8 @@ int showHelpMessage(const Frost::String & error = "")
 #else
            "\t--strategy [mode]    \tThe purging strategy. By default 'fast', when purging from previous revision, a new index file is created that's built from the cleaned index.\n"
            "\t                     \tHowever, multichunks are not rebuild to remove lost chunks. When using 'slow', multichunks are rebuilt too to remove lost chunks. This incurs reading\n"
-           "\t                     \tand writing many multichunk (which might not be desirable if storage is remote). This can also be used when backing up to reopen and append to the last\n"
-           "\t                     \tmultichunk from the last backup. This will reduce the number of multichunks created (but last set is mutated).\n"
+           "\t                     \tand writing many multichunk (which might not be desirable if storage is remote). If you enter a value x between 0 (slow) and 100 (fast), the multichunk will be\n"
+           "\t                     \tscanned and only get processed/cleaned if the number of chunks to remove is higher than x% from the number of chunks in the multichunks.\n"
 #endif
            "\t--exclude list.exc \tYou can specify a file containing the exclusion list for backup. This file is read line-by-line (one rule per line)\n"
            "\t                     \tIf a line starts by 'r/' the exclusion rule is considered as a regular expression otherwise the rule is matched if the analyzed file path contains the rule.\n"
@@ -3723,7 +3726,7 @@ int showHelpMessage(const Frost::String & error = "")
            "\t--entropy threshold\tBy default, multichunks are compressed before encryption. This behavior might be undesirable for hard to compress data (like mp3/jpg/mp4/etc),\n"
            "\t                     \tbecause compression will take time for nothing and will not save any more space. Frost can detect such case by computing entropy for the multichunk and only\n"
            "\t                     \tcompress it when its entropy is below the given threshold (default is 1.0 meaning everything will be below this threshold hence will get compressed)\n"
-           "\t                     \tIf you don't know what threshold to set for your data, you can use --test entropy with your data set, and get Frost to print the current entropy value for the test\n"
+           "\t                     \tIf you don't know what threshold to set for your data, you can use '--test entropy' with your data set, Frost will print the current entropy value for the test\n"
 
            ),
 #include "build/build-number.txt"
@@ -3766,7 +3769,7 @@ int showSecurityMessage()
            "  Space usage/Speed tradeoff configuration:\n"
            "\tWhile using version 1, we have spotted decrease in performance while the backup set is becoming large\n"
            "\tAfter profiling, the bottleneck happened in the database code where simple access to indexed data was\n"
-           "\textremely slow (up to few second). Starting with version 2, the new index file format is being used,\n"
+           "\textremely slow (up to few seconds). Starting with version 2, the new index file format is being used,\n"
            "\tand this has some impact on your Frost settings:\n"
            "\t1- New index is much smaller. We expect to fit the index file in memory for usual backup set size\n"
            "\t2- Access algorithm are all made 0(log N) when O(1) is not possible.\n"
@@ -4554,6 +4557,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         if (!File::Info(backup, true).doesExist() || !File::Info(backup, true).isDir())
             return showHelpMessage("Bad argument for backup, the --backup parameter is not a folder");
 
+#if KeepPreviousVersionFormat == 1
         // Check if it's the first time the backup is made
         if (!Database::SQLFormat::initialize(DEFAULT_INDEX, Frost::DatabaseModel::databaseURL, "", "", 0))
             ERR("Can't initialize the database with the given parameters.");
@@ -4567,6 +4571,14 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         {
             if (!File::Info(*optionsMap["keyvault"], true).doesExist())
                 ERR("The database exists, but the keyvault does not. Either delete the database, either set the path to the keyvault\n");
+#else
+        {
+            if (!File::Info(Frost::DatabaseModel::databaseURL).doesExist() && !File::Info(*optionsMap["keyvault"], true).doesExist())
+            {
+                result = Frost::getKeyFactory().createMasterKeyForFileVault(cipheredMasterKey, *optionsMap["keyvault"], pass, keyID);
+                if (result) ERR("Creating the master key failed: %s\n", (const char*)result);
+            }
+#endif
 
             result = Frost::initializeDatabase(backup, revisionID, cipheredMasterKey);
             if (!result)
@@ -4646,6 +4658,507 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
 #undef ERR
     return BailOut;
 }
+
+#if WithFUSE == 1
+
+#define FUSE_USE_VERSION 26
+#include <fuse.h>
+#include <fuse_opt.h>
+
+struct FrostFSOptions
+{
+    char *  remote;
+    char *  index;
+    char *  keyVault;
+    char *  password;
+    int     showVersion;
+    int     showHelp;
+    int     showDebug;
+    FrostFSOptions() : remote(0), index(0), keyVault(0), password(0), showVersion(0), showHelp(0), showDebug(0) {}
+};
+
+
+static struct fuse_opt frost_opts[] =
+{
+    {"--remote=%s",     offsetof(struct FrostFSOptions, remote), 0},
+    {"--index=%s",      offsetof(struct FrostFSOptions, index), 0},
+    {"--keyvault=%s",   offsetof(struct FrostFSOptions, keyVault), 0},
+    {"--password=%s",   offsetof(struct FrostFSOptions, password), 0},
+    {"--verbose",       offsetof(struct FrostFSOptions, showDebug), 1},
+    {"-h",              offsetof(struct FrostFSOptions, showHelp), 1},
+    {"-V",              offsetof(struct FrostFSOptions, showVersion),1},
+    {"--version",       offsetof(struct FrostFSOptions, showVersion),1},
+    FUSE_OPT_END
+};
+
+struct NullProgressCallback : public Frost::ProgressCallback
+{
+    typedef Frost::String String;
+
+    virtual bool progressed(const Action action, const String & currentFilename, const uint64 sizeDone, const uint64 totalSize, const uint32 index, const uint32 count, const FlushMode mode)
+    {
+        return true;
+    }
+
+    virtual bool warn(const Action action, const String & currentFilename, const String & message, const uint32 sourceLine = 0)
+    {
+        return true;
+    }
+};
+
+
+struct FrostFSOps
+{
+    typedef Frost::String String;
+    typedef Frost::FileFormat::FileTree   FileTree;
+    typedef Container::HashTable<FileTree, uint32> FileTreeMap;
+    /* We intend to have as many TLSIndex instances as there are threads.
+       So we use TLS to store the instances.
+       There is only a single IndexFile, but we cache the file tree based on revision in the TLS.
+       So we have a map of FileTree based on the revision. */
+
+
+
+    // Static Members
+public:
+    // Access to the members below requires locking
+//    static Threading::Lock                          lock;
+    static Frost::String                            indexFilePath; // Complete file path
+    static Frost::String                            remoteFolder; // Complete remote folder
+    static uint32                                   maxMultichunkSize;
+    static uint32                                   maxRevisionID;
+    static Threading::Thread::LocalVariable::Key    tls;
+    static FileTreeMap                              fileTrees;
+    static NullProgressCallback                     nullCB;
+
+    // Static interface (used by all threads)
+public:
+    struct TLSIndex
+    {
+        Frost::Helpers::MultiChunkCache cache;
+
+        static TLSIndex * constructTLSIndex(Threading::Thread::LocalVariable::Key, TLSIndex *) { return new TLSIndex; }
+        static void destructTLSIndex(TLSIndex * obj) { delete obj; }
+
+    private:
+        TLSIndex() : cache(maxMultichunkSize * 2)
+        {
+//            Threading::ScopedLock scope(FrostFSOps::lock);
+//            Frost::String error = indexFile.readFile(FrostFSOps::indexFilePath);
+//            if (error) fprintf(stderr, "Could not read the index file %s\n", (const char*)FrostFSOps::indexFilePath);
+
+        }
+
+    };
+    friend struct TLSIndex;
+
+    struct ReadCache
+    {
+        TLSIndex  *     index;
+        uint32          chunkListID;
+        ReadCache(TLSIndex * index, uint32 id) : index(index), chunkListID(id) {}
+    };
+
+
+
+    static TLSIndex * getTLS()
+    {
+        Threading::Thread::LocalVariable * var = Threading::Thread::getLocalVariable(tls);
+        if (!var)
+        {   // No locking here since this should be done on the main thread
+            TLSIndex * index = TLSIndex::constructTLSIndex(0, 0);
+            tls = Threading::Thread::appendLocalVariable(index, TLSIndex::constructTLSIndex, TLSIndex::destructTLSIndex);
+            var = Threading::Thread::getLocalVariable(tls);
+        }
+        GetLocalVariable(TLSIndex, index, tls);
+        return index;
+    }
+    static void cleanTLS()
+    {
+        Threading::Thread::removeLocalVariable(tls);
+    }
+
+    static int checkPath(const char * pathStr, String & filePath, FileTree *& ft, TLSIndex *& index)
+    {
+        index = getTLS();
+        if (!index) return -EIO;
+        if (pathStr[0] != '/') return -ENOENT;
+
+        String path(pathStr+1);
+        uint32 rev = path;
+        if (!rev) return -ENOENT;
+        filePath = "/" + path.fromFirst("/");
+        ft = FrostFSOps::fileTrees.getValue(rev);
+        if (!ft) return -ENOENT;
+        if (Frost::dumpState) fprintf(stdout, "checkPath: rev%u, path: %s\n", rev, (const char*)filePath);
+        return 0;
+    }
+
+    // Getattr is the only function that's serialized by FUSE.
+    static int getattr(const char* pathStr, struct stat* info)
+    {
+        bool isRoot = strcmp(pathStr, "/") == 0;
+        if (isRoot || String(pathStr).regExFit("^/[0-9]+$"))
+        {
+            info->st_mode = 040555; // We don't support anything else than read-only directory
+            info->st_size = 4096;
+            info->st_nlink = 3;
+            info->st_uid = fuse_get_context()->uid;
+            info->st_gid = fuse_get_context()->gid;
+            // Root folder ?
+            if (isRoot) return 0; // Could not fill any more stuff in the structure
+
+            // Root directory, let's create fake entries
+            uint32 rev = String(pathStr).fromFirst("/");
+
+            const Frost::FileFormat::Catalog * c = Frost::Helpers::indexFile.getCatalogForRevision(rev);
+            if (!c) return -ENOENT;
+
+            info->st_ctime = c->time;
+            info->st_mtime = c->time;
+            info->st_atime = c->time;
+            return 0;
+        }
+
+        TLSIndex * index; String path; FileTree * ft = 0;
+        int ret = checkPath(pathStr, path, ft, index);
+        if (ret) return ret;
+
+
+        uint32 itemID = ft->findItem(path);
+        if (itemID == ft->notFound()) return -ENOENT;
+        // Then get the associated item
+        Frost::FileFormat::FileTree::Item * item = ft->getItem(itemID);
+        // Read the stat structure
+        if (!item->fixed || !item->metaData) return -EIO;
+        if (Frost::dumpState) fprintf(stdout, "getattr path: %s [%s]\n", (const char*)path, (const char*)item->getMetaData());
+        return File::Info::expandMetaDataNative(item->metaData, item->fixed->metadataSize, info) ? 0 : -EIO;
+    }
+
+    static int readdir(const char* pathStr, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
+    {
+        if (strcmp(pathStr, "/") == 0)
+        {
+            // Need to save the revisions here
+            for (uint32 i = 1; i <= maxRevisionID; i++)
+            {
+                if (filler(buf, (const char*)String::Print("%u", i), 0, 0))
+                    return 0;
+            }
+            return 0;
+        }
+
+        TLSIndex * index; String path; FileTree * ft = 0;
+        int ret = checkPath(pathStr, path, ft, index);
+        if (ret) return ret;
+
+        uint32 itemID = ft->findItem(path);
+        if (itemID == ft->notFound()) return -ENOENT;
+
+        // Need to list all files for this folder
+        int count = 0;
+        for (size_t i = 0; i < ft->items.getSize(); i++)
+        {
+            if (ft->items[i].fixed && ft->items[i].fixed->parentID == (itemID+1))
+            {
+                if (filler(buf, (const char*)ft->items[i].getBaseName(), 0, 0))
+                    return 0;
+                count++;
+            }
+        }
+        if (Frost::dumpState) fprintf(stdout, "readdir path: %s [%d]\n", (const char*)path, count);
+        return 0;
+    }
+
+    static int open(const char *pathStr, struct fuse_file_info * fi)
+    {
+        TLSIndex * index; String path; FileTree * ft = 0;
+        int ret = checkPath(pathStr, path, ft, index);
+        if (ret) return ret;
+
+        uint32 itemID = ft->findItem(path);
+        if (itemID == ft->notFound()) return -ENOENT;
+
+        // Need to figure out the type of the file pointed by
+        FileTree::Item * item = ft->getItem(itemID);
+
+        int maxLinkIter = 0;
+        while (maxLinkIter < 30)
+        {
+            String metadata = item->getMetaData(), symlink;
+            File::Info info("dumb");
+            if (!info.analyzeMetaData(metadata, &symlink)) return -EIO;
+
+            if (info.isLink())
+            {
+                // Need to read the link
+                String linkedItem = File::General::normalizePath(ft->getItemFullPath(itemID) + symlink);
+                uint32 linkID = ft->findItem(linkedItem);
+                if (linkID == ft->notFound()) return -ENOENT;
+                item = ft->getItem(linkID);
+                maxLinkIter++;
+                continue;
+            }
+            if (info.isDir()) return -EISDIR;
+            if (!info.isFile()) return -EACCES;
+
+
+            fi->fh = (uint64)new ReadCache(index, item->getChunkListID());
+            if (Frost::dumpState) fprintf(stdout, "open path: %s [%u]\n", (const char*)path, item->getChunkListID());
+            return 0;
+        }
+        return -ELOOP;
+    }
+
+    static int release(const char *pathStr, struct fuse_file_info * fi)
+    {
+        // We actually don't care about the file to close, since we don't open it anyway.
+        if (!fi || !fi->fh) return 0;
+        ReadCache * rc = (ReadCache*)fi->fh;
+        if (Frost::dumpState) fprintf(stdout, "close path: %s [%u]\n", pathStr, rc->chunkListID);
+        delete rc;
+        return 0;
+    }
+
+
+
+    static int read(const char *pathStr, char *buf, size_t  size, off_t offset, struct fuse_file_info * fi)
+    {
+        if (!fi || !fi->fh) return -EIO;
+
+        ReadCache * rc = (ReadCache*)fi->fh;
+        if (Frost::dumpState) fprintf(stdout, "read path: %s [%lld to %lld]\n", pathStr, offset, offset + size);
+
+        // Now we have the chunk list, let's find the chunks required for this operation
+        const Frost::FileFormat::ChunkList * cl = Frost::Helpers::indexFile.getChunkList(rc->chunkListID);
+        // Skip the offset to find out which chunk to read from
+        size_t startIndex = 0;
+        for(; startIndex < cl->chunksID.getSize(); startIndex++)
+        {
+            const Frost::FileFormat::Chunk * chunk = Frost::Helpers::indexFile.findChunk(cl->chunksID[startIndex]);
+            if (!chunk) return -EIO;
+            if (offset < chunk->size) break;
+            offset -= chunk->size;
+        }
+
+        // Ok, now we have the first chunk to read, let's read it
+        int ret = 0;
+        String errorMessage;
+        while (size)
+        {
+            uint32 chunkID = cl->chunksID[startIndex];
+            const Frost::FileFormat::Chunk * chunk = Frost::Helpers::indexFile.findChunk(chunkID);
+            if (!chunk) return -EIO;
+
+            // Get the multichunk where this chunk is stored
+            const Frost::FileFormat::Multichunk * mchunk = Frost::Helpers::indexFile.getMultichunk(chunk->multichunkID);
+            if (!mchunk) return -EIO;
+
+            // We need the offset in the multichunk's chunklist so it's faster to restore
+            Frost::FileFormat::ChunkList * mcChunkList = Frost::Helpers::indexFile.getChunkList(mchunk->listID);
+            size_t chunkOffset = (size_t)-1;
+            if (mcChunkList) chunkOffset = mcChunkList->getChunkOffset(chunkID);
+
+            errorMessage = "";
+            File::Chunk * chunkF = Frost::Helpers::extractChunkBin(errorMessage, FrostFSOps::remoteFolder, mchunk->getFileName(), mchunk->UID, chunkOffset, chunk->checksum, Frost::Helpers::indexFile.getFilterArguments().getArgument(mchunk->filterArgIndex), rc->index->cache, FrostFSOps::nullCB);
+            if (!chunkF || errorMessage) return -EIO;
+
+            // Ok, if we got a chunk, let's save it
+            int minSize = min((int)(chunkF->size - offset), (int)size);
+            memcpy(&buf[ret], &chunkF->data[offset], minSize);
+
+            offset = 0;
+            size -= minSize;
+            ret += minSize;
+            startIndex++;
+        }
+
+        // Need to find the chunklist for the given file
+        return ret;
+    }
+
+    static int readlink(const char *pathStr, char* buf, size_t size)
+    {
+        TLSIndex * index; String path; FileTree * ft = 0;
+        int ret = checkPath(pathStr, path, ft, index);
+        if (ret) return ret;
+
+        uint32 itemID = ft->findItem(path);
+        if (itemID == ft->notFound()) return -ENOENT;
+        if (!buf || !size) return -EFAULT;
+
+        // Need to figure out the type of the file pointed by
+        FileTree::Item * item = ft->getItem(itemID);
+        String metadata = item->getMetaData(), symlink;
+        File::Info info("dumb");
+        if (!info.analyzeMetaData(metadata, &symlink)) return -EIO;
+
+        if (!info.isLink()) return -EINVAL;
+        // Buffer is not zero terminated
+        int nameSize = min((int)size-1, (int)symlink.getLength());
+        memcpy(buf, (const char*)symlink, nameSize);
+        buf[nameSize] = 0;
+        if (Frost::dumpState) fprintf(stdout, "readlink path: %s [%s]\n", (const char*)path, (const char*)symlink);
+        return 0;
+    }
+
+    static int statfs(const char *pathStr, struct statvfs *stat)
+    {
+//        TLSIndex * index; String path; FileTree * ft = 0;
+//        int ret = checkPath(pathStr, path, ft, index);
+//        if (ret) return ret;
+        // We are only interested in the last revision for the FS size
+        const Frost::FileFormat::Catalog * c = Frost::Helpers::indexFile.getCatalogForRevision(FrostFSOps::maxRevisionID);
+        if (!c) return -ENOENT;
+
+        stat->f_namemax = 1024; // We have to give something here, and we don't need to find the maximum file name here.
+        stat->f_fsid = 0;       // We don't know
+        stat->f_frsize = 512;   // We have to give something here too
+        stat->f_bsize = 512;    // We have to give something here too
+        stat->f_flag = ST_RDONLY; // True, we don't support write here
+        stat->f_bavail = stat->f_bfree = 0;
+
+        Frost::FileFormat::MetaData md;
+        if (c->optionMetadata.fileOffset() && !Frost::Helpers::indexFile.LoadRO(md, c->optionMetadata)) return -EIO;
+        const String & initialSize = md.findKey("InitialSize").fromFirst(": ");
+        if (initialSize) stat->f_blocks = (int64)initialSize / stat->f_bsize;
+        else stat->f_blocks = 0;
+        if (Frost::dumpState) fprintf(stdout, "statvfs path: %s [%u blocks]\n", (const char*)pathStr, (uint32)stat->f_blocks);
+        return 0;
+    }
+
+    static int chmod(const char* pathStr, mode_t mode)
+    {
+        // a noop since mtp doesn't support permissions. But we need to pretend
+        // to do it to make things like "cp -r" and the mac finder happy.
+        return 0;
+    }
+
+
+};
+
+Frost::String                            FrostFSOps::indexFilePath; // Complete file path
+Frost::String                            FrostFSOps::remoteFolder; // Complete remote folder
+uint32                                   FrostFSOps::maxMultichunkSize = 0;
+uint32                                   FrostFSOps::maxRevisionID = 0;
+Threading::Thread::LocalVariable::Key    FrostFSOps::tls;
+FrostFSOps::FileTreeMap                  FrostFSOps::fileTrees;
+NullProgressCallback                     FrostFSOps::nullCB;
+
+
+static struct fuse_operations frost_oper = { 0, };
+
+
+// FUSE system is implemented here
+int main(int argc, char ** argv)
+{
+    // Fill the operations we support
+    frost_oper.getattr  = FrostFSOps::getattr;
+    frost_oper.readdir  = FrostFSOps::readdir;
+    frost_oper.open     = FrostFSOps::open;
+    frost_oper.release  = FrostFSOps::release;
+    frost_oper.read     = FrostFSOps::read;
+    frost_oper.statfs   = FrostFSOps::statfs;
+    frost_oper.chmod    = FrostFSOps::chmod;
+    frost_oper.readlink = FrostFSOps::readlink;
+
+    FrostFSOptions options;
+
+    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+    if (fuse_opt_parse(&args, &options, frost_opts, 0)==-1)
+    {
+        fprintf(stderr, "Error parsing arguments\n");
+        return -1;
+    }
+
+    if (options.showHelp) fuse_opt_add_arg(&args, "-h");
+    if (options.showVersion) fuse_opt_add_arg(&args, "-V");
+    if (options.showDebug) { Frost::dumpState = true; fuse_opt_add_arg(&args, "-f"); }
+
+
+    if (options.showVersion)
+        printf("Frost Fuse version: 2 (build number %d)\n",
+#include "build/build-number.txt"
+        );
+
+    if (options.showHelp)
+    {
+        fuse_main(argc, argv, &frost_oper, 0);
+
+        printf("\nFrost Fuse specific options:\n"
+               "\t--password=<password>             The password to use to decypher the master key [BEWARE OF YOUR BASH HISTORY], this is optional\n"
+               "\t--remote=/path/to/remote          The path where the remote is stored\n"
+               "\t--index=/path/to/index            The path where the index file is stored (if empty, using remote path)\n"
+               "\t--keyvault=/path/to/keyvaultFile  The path where to the key vault file (if empty, using " DEFAULT_KEYVAULT ")\n");
+    }
+
+    if (!options.remote)
+    {
+        fprintf(stderr, "Remote is required, use -h to get help\n");
+        return 0;
+    }
+
+    FrostFSOps::remoteFolder = Frost::String(options.remote).normalizedPath();
+    FrostFSOps::indexFilePath = options.index ? options.index : Frost::String::Print("%s/" DEFAULT_INDEX, options.remote);
+    Frost::String keyVaultPath = options.keyVault ? options.keyVault : DEFAULT_KEYVAULT;
+
+    // Then open the index file
+    Frost::String result = Frost::Helpers::indexFile.readFile(FrostFSOps::indexFilePath, false);
+    if (result) { fprintf(stderr, "Can't read the index file given %s: %s\n", (const char*)FrostFSOps::indexFilePath, (const char*)result); return 1; }
+
+    Frost::String pass = options.password ? options.password : "";
+    if (!pass)
+    {
+        // Ask for password
+        char password[256];
+        size_t passLen = ArrSz(password);
+        if (!Platform::queryHiddenInput("Password:", password, passLen))
+        {
+            fprintf(stderr, "Can't query a password, do you have a terminal or console running ?\n");
+            return 1;
+        }
+
+        pass = password;
+        memset(password, 0, passLen);
+    }
+
+    Frost::MemoryBlock cipheredMasterKey = Frost::Helpers::indexFile.getCipheredMasterKey();
+    if (!cipheredMasterKey.getSize()) { fprintf(stderr, "Bad readback of ciphered master key\n"); return 1; }
+
+    // Ok, now, we have successfully read the master key, let's open the index file
+    FrostFSOps::maxRevisionID = Frost::Helpers::indexFile.getCurrentRevision();
+    result = Frost::getKeyFactory().loadPrivateKey(keyVaultPath, cipheredMasterKey, pass, "");
+    if (result) { fprintf(stderr, "Can't read the private key from the given keyvault %s: %s\n", (const char*)keyVaultPath, (const char*)result); return 1; }
+
+    // Read all filter argument to find out the maximum size for the multichunks (this is used for setting up the cache per thread)
+    const Frost::FileFormat::FilterArguments & fa = Frost::Helpers::indexFile.getFilterArguments();
+    for (size_t i = 0; i < fa.arguments.getSize(); i++)
+    {
+        uint32 maxSize = fa.arguments[i];
+        if (FrostFSOps::maxMultichunkSize < maxSize) FrostFSOps::maxMultichunkSize = maxSize;
+    }
+    // Then read and store all file trees for all revisions (cache mode)
+    const Frost::FileFormat::Catalog * c = 0;
+    for (uint32 rev = 1; rev <= FrostFSOps::maxRevisionID; rev++)
+    {
+        c = Frost::Helpers::indexFile.getCatalogForRevision(rev);
+        if (!c) { fprintf(stderr, "No catalog found for revision %u\n", rev); return 1; }
+        Frost::FileFormat::FileTree * ft = new Frost::FileFormat::FileTree(rev, true);
+        if (!ft) { fprintf(stderr, "Not enough memory\n"); return 1; }
+        if (!Frost::Helpers::indexFile.Load(*ft, c->fileTree)) { fprintf(stderr, "No file tree found for revision %u\n", rev); return 1; }
+        FrostFSOps::fileTrees.storeValue(rev, ft);
+    }
+
+    // Ok, we are ready to run
+    fprintf(stdout, "Let's go!\n");
+    (void)FrostFSOps::getTLS();
+
+    int ret = fuse_main(args.argc, args.argv, &frost_oper, 0);
+    // Clean TLS stuff now
+    FrostFSOps::cleanTLS();
+    return ret;
+}
+#else
 
 #if KeepPreviousVersionFormat == 1
 namespace Database { String constructFilePath(String fullPath, const String & URL); }
@@ -4776,3 +5289,4 @@ int main(int argc, char ** argv)
 
     return showHelpMessage("Either backup, purge or restore mode required");
 }
+#endif

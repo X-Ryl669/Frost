@@ -283,6 +283,13 @@ namespace File
             @param len      The length of the buffer in bytes
             @return A string describing the metadata that you can use with setMetaData, analyseMetaData and other methods */
         static String expandMetaData(const uint8 * buffer, const size_t len);
+        /** Expand the compressed metadata buffer received from call to getMetaDataEx into the system native structure.
+            @param buffer   A pointer to a buffer containing the compressed version of the metadata
+            @param len      The length of the buffer in bytes
+            @param cur      If given, will be set to the amount of bytes read from the buffer
+            @param stat     A pointer on the system structure
+            @return true if successfully expanded to the native structure, false on error (or if the system does not support it) */
+        static bool expandMetaDataNative(const uint8 * buffer, const size_t len, void * stat, size_t * cur = 0);
         /** Set the metadata information from an opaque buffer.
             This buffer is system dependent, and contains everything needed to restore the file's metadata.
             @sa getMetaData
@@ -294,8 +301,9 @@ namespace File
             to decide whether to do so or not at a later stage.
             @sa getMetaData and setMetaData
             @param metadata    The metadata to analyze
+            @param symlinkData If provided AND the metadata points to a symbolic link, then this is filled with the content of the link
             @return true if the parsing of the metadata succeeded */
-        bool analyzeMetaData(String metadata);
+        bool analyzeMetaData(String metadata, String * symlinkData = 0);
         /** Check if the given metadata match the current file.
             @param metadata    The metadata to compare with
             @param checkMask   The field to check against in the metadata

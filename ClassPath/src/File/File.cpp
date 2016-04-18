@@ -861,9 +861,38 @@ namespace File
     {
 #if defined(_POSIX)
         struct stat status = {0};
+        size_t cur = 0;
+        if (expandMetaDataNative(buffer, len, &status, &cur))
+        {
+            if (S_ISCHR(status.st_mode) || S_ISBLK(status.st_mode))
+            {   // Device type
+                return String::Print("PT%c%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX/%llX", S_ISCHR(status.st_mode) ? 'H' : 'L', (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime, (uint64)status.st_rdev);
+            }
+            if (S_ISLNK(status.st_mode))
+            {
+                char _buffer[1024] = {0};
+                memcpy(_buffer, &buffer[cur], len - cur);
+                _buffer[len - cur] = 0;
+                return String::Print("PS%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX/%s", (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime, _buffer);
+            }
+            // Every other case should get a standard output
+            return String::Print("P%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX", (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime);
+        }
+#endif
+        // On any other platform, the extended metadata is still a string
+        return String(buffer, len);
+    }
+    // Expand the compressed metadata buffer received from call to getMetaDataEx.
+    bool File::Info::expandMetaDataNative(const uint8 * buffer, const size_t len, void * stat, size_t * _cur)
+    {
+#if defined(_POSIX)
+        if (!stat) return false;
+        struct stat * _status = (struct stat*)stat;
+        struct stat & status = *_status;
         if (buffer && sizeof(status.st_mode) == 2 && sizeof(status.st_nlink) == 2 && sizeof(status.st_size) == 8)
         {
-            size_t cur = 0;
+            size_t tmp = 0;
+            size_t & cur = _cur ? *_cur : tmp;
             uint16 metaInf = 0;
             #define Rd(X) if (cur + sizeof(X) <= len) memcpy(&X, &buffer[cur], sizeof(X)); cur += sizeof(X)
             Rd(metaInf);
@@ -908,26 +937,18 @@ namespace File
             {   // Device type
                 RdCond(4, status.st_rdev, uint32)
                 else RdCondE(status.st_rdev, uint16)
-
-                return String::Print("PT%c%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX/%llX", S_ISCHR(status.st_mode) ? 'H' : 'L', (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime, (uint64)status.st_rdev);
-            }
-            if (S_ISLNK(status.st_mode))
-            {
-                char _buffer[1024] = {0};
-                memcpy(_buffer, &buffer[cur], len - cur);
-                _buffer[len - cur] = 0;
-                return String::Print("PS%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX/%s", (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime, _buffer);
+                return true;
             }
             // Every other case should get a standard output
-            return String::Print("P%llX/%llX/%X/%llX/%X/%X/%X/%llX/%llX/%llX", (uint64)status.st_dev, (uint64)status.st_ino, status.st_mode, (uint64)status.st_size, status.st_nlink, status.st_uid, status.st_gid, (uint64)status.st_ctime, (uint64)status.st_mtime, (uint64)status.st_atime);
+            return true;
  
             #undef RdCondE
             #undef RdCond
             #undef Rd
         }
 #endif
-        // On any other platform, the extended metadata is still a string
-        return String(buffer, len);
+        // On any other platform, it's not supported
+        return false;
     }
 
     // Set the metadata information from an opaque buffer.
@@ -1077,7 +1098,7 @@ namespace File
         return true;
     }
     // Analyze the metadata information from an opaque buffer.
-    bool File::Info::analyzeMetaData(String metadata)
+    bool File::Info::analyzeMetaData(String metadata, String * symlinkData)
     {
 #ifdef _WIN32
         // TODO Handle symlinks
@@ -1146,7 +1167,7 @@ namespace File
         if (S_ISSOCK(status.st_mode)) type = Socket;
 
         // Check if the object is a link
-        if (isSymLink) type = Link;
+        if (isSymLink) { type = Link; if (symlinkData) *symlinkData = otherData; }
 #endif
         return true;
     }

@@ -9,6 +9,8 @@
 #error You must configure OpenSSL with threads support to use this library
 #endif
 
+// For safety reasons, we don't define anymore the SSLv2 crypto scheme. Only TLSv1 is supported for now
+#define OPENSSL_NO_SSL2
 
 namespace Crypto
 {

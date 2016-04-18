@@ -926,6 +926,7 @@ namespace Frost
                 String getBaseName() const { if (!fixed || !baseName) return ""; return String(baseName, fixed->baseNameSize); }
                 /** Get the file's metadata (it's expanded here) */
                 String getMetaData() const { if (!fixed || !metaData) return ""; return File::Info::expandMetaData(metaData, fixed->metadataSize); }
+
                 /** Get the chunk list ID for this file (or 0 on error) */
                 uint32 getChunkListID() const { return fixed ? fixed->chunkListID : 0; }
                 /** Check if the base name for a file match this one */
