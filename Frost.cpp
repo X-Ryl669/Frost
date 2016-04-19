@@ -4580,8 +4580,11 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
                 ERR("The database exists, but the keyvault does not. Either delete the database, either set the path to the keyvault\n");
 #else
         {
-            if (!File::Info(Frost::DatabaseModel::databaseURL).doesExist() && !File::Info(*optionsMap["keyvault"], true).doesExist())
+            Frost::String indexFile = File::Info(Frost::DatabaseModel::databaseURL).isDir() ? Frost::DatabaseModel::databaseURL + DEFAULT_INDEX : Frost::DatabaseModel::databaseURL;
+            if (!File::Info(indexFile).doesExist())
             {
+                if (File::Info(*optionsMap["keyvault"], true).doesExist()) ERR("Index file not found while keyvault exist already. Remove the keyvault, or fix the index file path");
+
                 result = Frost::getKeyFactory().createMasterKeyForFileVault(cipheredMasterKey, *optionsMap["keyvault"], pass, keyID);
                 if (result) ERR("Creating the master key failed: %s\n", (const char*)result);
             }

@@ -110,7 +110,7 @@ build/Frostfuse: build/Frostfuse.o
 	$(Q)$(LDXX) -o $@ -lpthread $(LIBPATH) $(OBJ_CXX_BUILD) $(OBJ_C_BUILD) build/Frostfuse.o $(LIBS) $(SHAREDLIBS) `pkg-config fuse --libs`
 
 build/Frostfuse.o: ./Frost.cpp ./Frost.hpp $(CXXSOURCES)
-	@echo ">  Compiling $(notdir $*.c)"
+	@echo ">  Compiling $(notdir $*.cpp)"
 	$(Q)-mkdir -p $(dir $@)
 	$(Q)$(CXX) $(CXXFLAGS) $(DFLAGS) -DWithFUSE=1 `pkg-config fuse --cflags` $(INCPATH) -c ./Frost.cpp -o $@
 
