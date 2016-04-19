@@ -4951,7 +4951,7 @@ public:
         // Ok, now we have the first chunk to read, let's read it
         int ret = 0;
         String errorMessage;
-        while (size)
+        while (size && startIndex < cl->chunksID.getSize())
         {
             uint32 chunkID = cl->chunksID[startIndex];
             const Frost::FileFormat::Chunk * chunk = Frost::Helpers::indexFile.findChunk(chunkID);
