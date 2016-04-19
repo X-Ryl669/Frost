@@ -761,7 +761,7 @@ namespace File
         if (lstat(getFullPath(), &status) != 0) return 0;
 
         if (type != Regular && type != Link && type != Directory && type != Device) return 0;
-        if (sizeof(status.st_mode) == 2 && sizeof(status.st_nlink) == 2 && sizeof(status.st_size) == 8)
+        if (sizeof(status.st_mode) > 1  && sizeof(status.st_mode) <= 8 && sizeof(status.st_size) <= 8)
         {
             size_t cur = 0;
             uint16 metaInf = 0; // This metaInf field is stored to tell how big are the next fields
@@ -779,7 +779,8 @@ namespace File
                                 // Bit [ 6] ino_t value is smaller than 2^32 and stored as 32 bits integer
                                 // Bit [ 5] ino_t value is smaller than 2^16 and stored as 16 bits integer
                                 // Bit [ 4] for char or block type, rdev_t is smaller than 2^16 and stored as 16 bits integer (else 32 bits)
-                                // Bit [3-0] reserved, must be 0
+                                // Bit [3-2] for storing the size of the st_mode in 16 bits units
+                                // Bit [1-0] unused, must be zero
             metaInf |= (1<<15) * (status.st_size < 0x100000000ULL);
             metaInf |= (1<<14) * (status.st_size < 0x10000);
             metaInf |= (1<<13) * (status.st_uid < 0x10000);
@@ -794,6 +795,7 @@ namespace File
             metaInf |= (1<< 6) * (status.st_ino < 0x100000000ULL);
             metaInf |= (1<< 5) * (status.st_ino < 0x10000);
             metaInf |= (1<< 4) * ((S_ISCHR(status.st_mode) || S_ISBLK(status.st_mode)) * status.st_rdev < 0x10000);
+            metaInf |= ((sizeof(status.st_mode) / 2) - 1) << 2;
 
             #define Adv(elem)   if (buffer && cur + sizeof(elem) <= len) memcpy(&buffer[cur], &elem, sizeof(elem)); cur += sizeof(elem)
             // Store meta information and mode
@@ -889,17 +891,23 @@ namespace File
         if (!stat) return false;
         struct stat * _status = (struct stat*)stat;
         struct stat & status = *_status;
-        if (buffer && sizeof(status.st_mode) == 2 && sizeof(status.st_nlink) == 2 && sizeof(status.st_size) == 8)
+        if (buffer && sizeof(status.st_mode) > 1  && sizeof(status.st_mode) <= 8 && sizeof(status.st_size) <= 8)
         {
             size_t tmp = 0;
             size_t & cur = _cur ? *_cur : tmp;
             uint16 metaInf = 0;
             #define Rd(X) if (cur + sizeof(X) <= len) memcpy(&X, &buffer[cur], sizeof(X)); cur += sizeof(X)
             Rd(metaInf);
-            Rd(status.st_mode);
 
             #define RdCond(Bit, elem, cast)  if ((metaInf & (1<<Bit)) == 0) { cast s = 0; Rd(s); elem = s; }
             #define RdCondE(elem, cast) { cast s = 0; Rd(s); elem = s; }
+            switch((metaInf & 0xc) >> 2)
+            {
+            case 0: RdCondE(status.st_mode, uint16); break;
+            case 1: RdCondE(status.st_mode, uint32); break;
+            case 2: return false; // Invalid mode, this should not happen, since no 6-bytes-word exists
+            case 3: RdCondE(status.st_mode, uint64); break;
+            }
 
             // Read size with the minimum amount of bytes possible
             RdCond(15, status.st_size, uint64)
@@ -945,6 +953,34 @@ namespace File
             #undef RdCondE
             #undef RdCond
             #undef Rd
+        }
+        else
+        {
+            String metadata(buffer, len);
+            if (!metadata || metadata[0] != 'P') return false; // Can't restore non-posix metadata here. Sorry
+
+            // Need to split the metadata array
+            bool isSymLink = metadata[1] == 'S';
+            // bool isDevNode = metadata[1] == 'T';
+            // bool isCharDev = metadata[2] == 'H';
+
+            // We don't care about the dev/inode number itself, since we can't restore it.
+            // However, we are interested in matching hardlinks so let's extract this.
+            metadata.leftTrim("PSTHL");
+            String otherData = metadata.fromFirst("/").fromFirst("/");
+            String hardlinkHash = metadata.midString(0, metadata.getLength() - otherData.getLength() - 1);
+            // For now, we can't restore hardlinks, since we don't know the other part to link with
+
+            // Let's extract everything else
+            status.st_mode = (uint32)otherData.splitUpTo("/").parseInt(16);
+            status.st_size = (uint64)otherData.splitUpTo("/").parseInt(16);
+            status.st_nlink = (uint32)otherData.splitUpTo("/").parseInt(16);
+            status.st_uid = (uint32)otherData.splitUpTo("/").parseInt(16);
+            status.st_gid = (uint32)otherData.splitUpTo("/").parseInt(16);
+            status.st_ctime = (uint64)otherData.splitUpTo("/").parseInt(16);
+            status.st_mtime = (uint64)otherData.splitUpTo("/").parseInt(16);
+            status.st_atime = (uint64)otherData.splitUpTo("/").parseInt(16);
+            return true;
         }
 #endif
         // On any other platform, it's not supported

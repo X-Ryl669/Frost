@@ -97,10 +97,13 @@ $(OBJ_CXX_BUILD): $(CXXSOURCES)
 	$(Q)-mkdir -p $(dir $@)
 	$(Q)$(CXX) $(CXXFLAGS) $(DFLAGS) $(INCPATH) -c $(subst build/,,$(patsubst %.o,%.cpp,$@)) -o $@
 
-$(MAIN_OBJ_BUILD): $(CXXSOURCES)
+$(MAIN_OBJ_BUILD): $(CXXSOURCES) $(MAINCXX)
 	@echo ">  Compiling $(notdir $*.cpp)"
 	$(Q)-mkdir -p $(dir $@)
 	$(Q)$(CXX) $(CXXFLAGS) $(DFLAGS) $(INCPATH) -c $(subst build/,,$(patsubst %.o,%.cpp,$@)) -o $@
+
+Frostfuse: build/Frostfuse
+
 
 build/Frostfuse: build/Frostfuse.o
 	@echo "Linking $@"

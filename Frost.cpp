@@ -2255,6 +2255,11 @@ namespace Frost
         OverwritePolicy overwritePolicy;
         Helpers::MultiChunkCache cache;
 
+#if KeepPreviousVersionFormat != 1
+        Utils::OwnPtr<FileFormat::FileTree> tree;
+#endif
+
+
     public:
         /** Helper method that's extracting a file to the given stream */
         int restoreSingleFile(Stream::OutputStream & stream, String & errorMessage, uint64 chunkListID, const String & filePath, const uint64 fileSize, const uint32 current = 0, const uint32 total = 1)
@@ -2451,7 +2456,6 @@ namespace Frost
             @return 0 on success, -1 on error, 1 on warning */
         int restoreFile(const uint32 fileIndex, String & errorMessage, const uint32 current, const uint32 total)
         {
-            Utils::OwnPtr<FileFormat::FileTree> tree = Helpers::indexFile.getFileTree(Helpers::indexFile.getCurrentRevision());
             const String & filePath = tree->getItemFullPath(fileIndex);
             const FileFormat::FileTree::Item * item = tree->getItem(fileIndex);
 
@@ -2514,9 +2518,12 @@ namespace Frost
 
 #endif
 
-        RestoreFile(ProgressCallback & callback, const String & folderTrimmed, const String & backupFolder, OverwritePolicy policy, const size_t maxCacheSize)
+        RestoreFile(ProgressCallback & callback, const String & folderTrimmed, const String & backupFolder, OverwritePolicy policy, const size_t maxCacheSize, const uint32 revisionID)
             : callback(callback), folderTrimmed(folderTrimmed), backupFolder(backupFolder.normalizedPath(Platform::Separator, true)),
               overwritePolicy(policy), cache(maxCacheSize)
+#if KeepPreviousVersionFormat != 1
+            , tree(Helpers::indexFile.getFileTree(revisionID))
+#endif
         {}
     };
 
@@ -3465,7 +3472,7 @@ namespace Frost
 
         uint32 total = (uint32)fileList.getSize(), current = 0;
         String lastPath = "*";
-        RestoreFile restore(callback, folderTrimmed, restoreFrom, overwritePolicy, maxCacheSize);
+        RestoreFile restore(callback, folderTrimmed, restoreFrom, overwritePolicy, maxCacheSize, revisionID);
 
 #if KeepPreviousVersionFormat == 1
         // Need to find out all the directories required for this revision, in order to restore them
@@ -3636,7 +3643,7 @@ namespace Frost
         if (!entryMD.isFile()) return TRANS("This file path does not refer to a file. Only files could be extracted this way");
 
         String baseFolder = "";
-        RestoreFile restore(callback, baseFolder, restoreFrom, No, maxCacheSize);
+        RestoreFile restore(callback, baseFolder, restoreFrom, No, maxCacheSize, revisionID);
 #if KeepPreviousVersionFormat == 1
         DatabaseModel::Entry file;
         file.ID = *entry;
@@ -5099,7 +5106,7 @@ int main(int argc, char ** argv)
     }
 
     FrostFSOps::remoteFolder = Frost::String(options.remote).normalizedPath();
-    FrostFSOps::indexFilePath = options.index ? options.index : Frost::String::Print("%s/" DEFAULT_INDEX, options.remote);
+    FrostFSOps::indexFilePath = options.index ? Frost::String(options.index) : Frost::String::Print("%s/" DEFAULT_INDEX, options.remote);
     Frost::String keyVaultPath = options.keyVault ? options.keyVault : DEFAULT_KEYVAULT;
 
     // Then open the index file
