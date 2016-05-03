@@ -8,6 +8,7 @@
 #include "ClassPath/include/Strings/Strings.hpp"
 // And hash tables too
 #include "ClassPath/include/Hash/HashTable.hpp"
+#include "ClassPath/include/Hash/RobinHoodHashTable.hpp"
 // We need crypto code too for the key stuff
 #include "ClassPath/include/Crypto/OpenSSLWrap.hpp"
 
@@ -16,13 +17,8 @@
 // We need database querys too
 #include "ClassPath/include/Database/Query.hpp"
 
-#if KeepPreviousVersionFormat == 1
-#define DEFAULT_INDEX	  "__index.db"
-#define PROTOCOL_VERSION  "1.0"
-#else
   #define DEFAULT_INDEX	  "index.frost"
   #define PROTOCOL_VERSION  "2.0"
-#endif
 
 // Forward declare some class we'll be using to avoid including a lot of stuff in the header
 namespace File { class Chunk; class MultiChunk; }
@@ -34,14 +30,6 @@ namespace Frost
     typedef Utils::MemoryBlock MemoryBlock;
     /** The kind of String class we are using too */
     typedef Strings::FastString String;
-
-#if KeepPreviousVersionFormat == 1
-    /** For easier access to complex SQL queries */
-    typedef Database::Query::Select Select;
-    typedef Database::Query::UnsafeRowIterator RowIterT;
-    typedef Database::Query::Delete Delete;
-    typedef Database::Query::CreateTempTable CreateTempTable;
-#endif
 
 
     /** This class is used to build sessions keys out of the given user private key.
@@ -394,6 +382,7 @@ namespace Frost
         inline bool isZero(const uint8 (&a)[N]) { for (size_t i = 0; i < N; i++) if (a[i]) return false; return true; }
 
 
+
         // Starting from now, everything is typically packed
 #pragma pack(push, 1)
         /** The file's offset used */
@@ -556,9 +545,85 @@ namespace Frost
         /** This is used to search and sort the chunk array by UID for restoring, purging mainly */
         struct ChunkUIDSorter
         {
-            /** This is required for the array's sorting functions (we don't care about UID here) */
+            /** This is required for the array's sorting functions (we only care about UID here) */
             static int compareData(const Chunk & a, const Chunk & b) { return a.UID < b.UID ? -1 : (a.UID == b.UID ? 0 : 1); }
         };
+
+        typedef uint8 ChecksumType[20];
+
+        /** Implementation of the hashing policies for integers.
+            @param T    must be an integer type
+            You must provide a uint32 hashIntegerKey(T) overload for this to work */
+        struct IntegerHashingPolicyForChecksum
+        {
+            /** The type for the hashed key */
+            typedef uint32 HashKeyT;
+            /** Allow compiletime testing of the default value */
+            enum { DefaultAreZero = 1 };
+
+            /** Check if the initial keys are equal */
+            static bool isEqual(const ChecksumType key1, const ChecksumType key2) { return memcmp(key1, key2, sizeof(ChecksumType)) == 0; }
+            /** Compute the hash value for the given input */
+            static inline HashKeyT Hash(const ChecksumType x) { HashKeyT a; memcpy(&a, x, sizeof(a)); return !a ? 1 : a; } // No need to hash a checksum but 0 is forbidden here...
+            /** Get the default hash value (this is stored by default in the buckets), it's the value that's means that the hash is not computed yet. */
+            static inline HashKeyT defaultHash() { return 0; }
+        };
+
+        /** The hash table linked bucket type.
+            This implementation is not the fastest possible because of the missing cache access for getting hash and key, yet
+            it's optimized for constrained memory.
+            The idea here being that the Chunk array will not have to be sorted by checksum anymore (this is slow to append and to search).
+            Instead, we don't sort the chunk array anymore, and use this hash table to map checksums to index in the chunk array.
+            Because the hash table will have to fit in memory, it has to be as compact as possible.
+            So, we only store the index in the bucket, and recompute hash & key whenever required.
+            Fortunately, there is no computation required for Chunks, so it should be quite fast (except for cache miss on each test) */
+        struct SmallBucket
+        {
+            /** The hask key type we need */
+            typedef uint32 HashKeyT;
+            typedef ChecksumType Key;
+
+            /** This bucket data */
+            uint32           data;
+            /** This bucket hash */
+            uint32           hash;
+
+            /** Get the hash for this bucket */
+            inline HashKeyT getHash(void * opaque) const { return hash; }
+            /** Get the key for this bucket */
+            inline uint8* getKey(void * opaque) const { static ChecksumType k; const uint8 * cs = getChunk(opaque); if (!cs) memset(&k, 0, sizeof (k)); else memcpy(&k, cs, sizeof(k)); return k; }
+            /** Set the hash for this bucket */
+            inline void setHash(const HashKeyT h, void *) { hash = h; } // No op in our case
+            /** Set the key for this bucket */
+            inline void setKey(Key k, void *) { }
+            /** Reset the key to the default value */
+            inline void resetKey(void *) { }
+
+            /** Swap the content of this bucket with the given parameters.
+                @return On output, this key is set to k, this hash is set to h and data is set to value, and k is set to the previous key, h to the previous hash, value to the previous data */
+            inline void swapBucket(Key k, HashKeyT & h, uint32 & value)
+            {
+                HashKeyT tmpH = hash; hash = h; h = tmpH;
+                uint32 tmpD = data; data = value; value = tmpD;
+            }
+            /** Swap the bucket with another one */
+            inline void swapBucket(SmallBucket & o)
+            {
+                uint32 tmpD = data; data = o.data; o.data = tmpD;
+                HashKeyT tmpH = hash; hash = o.hash; o.hash = tmpH;
+            }
+
+
+            SmallBucket() : data(0), hash(0) {}
+
+        private:
+            /** Get the Chunk for the given index */
+            inline const uint8 * getChunk(void * opaque) const { Container::PlainOldData<Chunk>::Array * array = (Container::PlainOldData<Chunk>::Array *)opaque; return data < array->getSize() ? array->getElementAtUncheckedPosition(data).checksum : 0; }
+        };
+
+        /** The chunk index map (the one being used for mapping the chunk's checksum to their index in the chunk array) */
+        typedef Container::RobinHoodHashTable<uint32, ChecksumType, IntegerHashingPolicyForChecksum, SmallBucket> ChunkIndexMap;
+
 
 
         /** The chunks block */
@@ -1142,8 +1207,10 @@ namespace Frost
             Utils::OwnPtr<MainHeader>    header;
             /** The consolidated chunk array */
             Chunks          consolidated;
-            /** The local chunk array */
-            Chunks          local;
+            /** The chunk map table */
+            Utils::ScopePtr<ChunkIndexMap> chunkIndices;
+            /** The previous revision maximum chunk ID */
+            uint32          prevRevisionMaxChunkID;
             /** The maximum chunk id found */
             uint32          maxChunkID;
             /** Was the file opened as read only ? */
@@ -1202,7 +1269,7 @@ namespace Frost
             /** Get the ciphered master key */
             Utils::MemoryBlock getCipheredMasterKey() const { return Utils::MemoryBlock(header ? header->cipheredMasterKey : 0, header ? ArrSz(header->cipheredMasterKey) : 0); }
             /** Find a chunk ID from its checksum (return -1 if not found) */
-            uint32 findChunk(Chunk & chunk) const { return consolidated.findChunk(chunk); }
+            uint32 findChunk(Chunk & chunk) const;
             /** Search the chunks by UID */
             const Chunk * findChunk(const uint32 uid) const;
 
@@ -1233,6 +1300,12 @@ namespace Frost
             Multichunks* getMultichunks() { if (readOnly) return 0; return &multichunks; }
             /** Dump the current information for all items in this index */
             String dumpIndex(const uint32 rev) const;
+            /** Dump the current memory usage for this index */
+            String dumpMemStat() const;
+            /** Check if we need to resize the chunk index hash table */
+            bool shouldResizeChunkIndexMap() const { return chunkIndices ? chunkIndices->shouldResize() : false; }
+            /** Resize the chunk index map */
+            bool resizeChunkIndexMap();
 
             /** Map a structure at the given position */
             template <typename T>
@@ -1274,247 +1347,6 @@ namespace Frost
             inline void backupWasEmpty() { readOnly = true; }
         };
     }
-
-#if KeepPreviousVersionFormat == 1
-    /** The database model we are following. */
-    namespace DatabaseModel
-    {
-        /** The Index file metadata part */
-        struct IndexDescription : public Database::Table<IndexDescription>
-        {
-            BeginFieldDeclarationDelayEx(IndexDescription)
-                DeclareFieldEx(Version, Database::NotNullString, "1.0");
-                DeclareField(CipheredMasterKey, String);
-                DeclareField(InitialBackupPath, String);
-                DeclareField(CurrentRevisionID, unsigned int);
-                DeclareField(Description, String);
-            EndFieldDeclaration
-        };
-
-        /** A chunk declaration.
-            We don't use a blob for the checksum, because it's easier to debug with
-            a plain old hexadecimal string and the difference is size does not justify the cost */
-        struct Chunk : public Database::Table<Chunk>
-        {
-            BeginFieldDeclarationEx(Chunk)
-                DeclareField(ID, Database::LongIndex);
-                DeclareFieldWithIndex(Checksum, String, "", true);
-                DeclareField(Size, unsigned int);
-            EndFieldDeclaration
-        };
-
-        /** A logical list of chunks.
-            Because chunks will be reused in different files, the files links to this list */
-        struct ChunkList : public Database::Table<ChunkList>
-        {
-            BeginFieldDeclarationDelayEx(ChunkList)
-                DeclareField(ID, uint64);
-                DeclareFieldWithIndex(ChunkID, uint64, "0", false);
-                DeclareField(Offset, uint64);
-                DeclareField(Type, int); // This is used to avoid a useless query later on, 0 for file, 1 for multichunk
-            EndFieldDeclaration
-        };
-
-        /** The multichunk declaration (this is similar to a chunklist,
-            but stores the filtering information, and actual location in the remote folder of the data)  */
-        struct MultiChunk : public Database::Table<MultiChunk>
-        {
-            BeginFieldDeclarationEx(MultiChunk)
-                DeclareField(ID, Database::Index);
-                DeclareFieldWithIndex(ChunkListID, uint64, "0", true);
-                DeclareField(FilterListID, unsigned int);
-                DeclareField(FilterArgument, String);
-                DeclareField(Path, String);
-            EndFieldDeclaration
-        };
-
-        /** A file entry (this maps files to chunks) - deprecated */
-        struct File : public Database::Table<File>
-        {
-            BeginFieldDeclarationEx(File)
-                DeclareField(ID, Database::Index);
-                DeclareField(ChunkListID, uint64);
-                DeclareField(ParentDirectoryID, unsigned int);
-                DeclareField(Metadata, String);
-                DeclareFieldEx(Revision, unsigned int, "0");
-                DeclareField(Path, Database::NotNullString);
-            EndFieldDeclaration
-        };
-
-        /** A directory entry - deprecated */
-        struct Directory : public Database::Table<Directory>
-        {
-            BeginFieldDeclarationEx(Directory)
-                DeclareField(ID, Database::Index);
-                DeclareField(Path, Database::NotNullString);
-                DeclareField(ParentDirectoryID, unsigned int);
-                DeclareField(Metadata, String);
-                DeclareFieldEx(Revision, unsigned int, "0");
-            EndFieldDeclaration
-        };
-
-        /** A file or directory entry (this maps files to chunks).
-            This deprecates the previous Directory & File table that were only growing in size.
-
-            Typically, this tracks both the file type (directory or file) and the state (modified or deleted).
-
-            For example, here's a complete description of successive operations in backups:
-            @verbatim
-            Initial file tree:
-              root
-               |--- file1
-               |--- file2
-
-            this will lead on first backup these 3 entries:
-               - root (type d, rev 1, state m)
-               - file1 (type f, rev 1, state m)
-               - file2 (type f, rev 1, state m)
-            @endverbatim
-
-            Someone adds some files to the root folder:
-            @verbatim
-            New file tree:
-              root
-               |--- file1
-               |--- file2
-               |--- subdir
-                      |--- file3
-
-            this will lead on next backup these entries:
-               - root (type d, rev 1, state m)
-               - file1 (type f, rev 1, state m)
-               - file2 (type f, rev 1, state m)
-
-               - root (type d, rev 2, state m)    Due to change in modification time
-               - subdir (type d, rev 2, state m)
-               - file3 (type f, rev 2, state m)
-            @endverbatim
-
-            Then, someone deletes a file:
-            @verbatim
-            New file tree:
-              root
-               |--- file1
-               |--- subdir
-                      |--- file3
-
-            this will lead on next backup these entries:
-               - root (type d, rev 1, state m)
-               - file1 (type f, rev 1, state m)
-               - file2 (type f, rev 1, state m)
-
-               - root (type d, rev 2, state m)
-               - subdir (type d, rev 2, state m)
-               - file3 (type f, rev 2, state m)
-
-               - root (type d, rev 3, state m)    Due to change in modification time
-               - file2 (type f, rev 3, state d)
-            @endverbatim
-
-            Then someone deletes a dir:
-            @verbatim
-            New file tree:
-              root
-               |--- file1
-
-            this will lead on next backup these entries:
-               - root (type d, rev 1, state m)
-               - file1 (type f, rev 1, state m)
-               - file2 (type f, rev 1, state m)
-
-               - root (type d, rev 2, state m)
-               - subdir (type d, rev 2, state m)
-               - file3 (type f, rev 2, state m)
-
-               - root (type d, rev 3, state m)
-               - file2 (type f, rev 3, state d)
-
-               - root (type d, rev 4, state m)    Due to change in modification time
-               - subdir (type d, rev 4, state d)
-               - file3 (type f, rev 4, state d)
-            @endverbatim
-
-            Then, after some revisions, add another file with the same name as the previous one:
-            @verbatim
-            New file tree:
-              root
-               |--- file1
-               |--- subdir
-                      |--- file3
-
-            this will lead on next backup these entries:
-               - root (type d, rev 1, state m)
-               - file1 (type f, rev 1, state m)
-               - file2 (type f, rev 1, state m)
-
-               - root (type d, rev 2, state m)
-               - subdir (type d, rev 2, state m)
-               - file3 (type f, rev 2, state m)
-
-               - root (type d, rev 3, state m)
-               - file2 (type f, rev 3, state d)
-
-               - root (type d, rev 4, state m)
-               - subdir (type d, rev 4, state d)
-               - file3 (type f, rev 4, state d)
-               [...]
-               - root (type d, rev 6, state m)    Due to change in modification time
-               - subdir (type d, rev 6, state m)
-               - file3 (type f, rev 6, state m)
-            @endverbatim
-        */
-        struct Entry : public Database::Table<Entry>
-        {
-            BeginFieldDeclarationEx(Entry)
-                DeclareField(ID, Database::Index);
-                DeclareField(ChunkListID, uint64);
-                DeclareField(ParentEntryID, unsigned int);
-                DeclareField(Metadata, String);
-                DeclareFieldEx(Revision, unsigned int, "0");
-                DeclareFieldWithIndex(Path, Database::NotNullString, "", false);
-                DeclareFieldEx(Type, unsigned int, "0");   // 0 for File, 1 for Directory
-                DeclareFieldEx(State, unsigned int, "0");  // 0 for New/Modified, 1 for Deleted
-            EndFieldDeclaration
-        };
-
-        /** The revision iteration.
-            Each backup increment the revision number. If a file is modified in a revision,
-            the previous revision is not deleted (unless pruning is requested).
-            If a file is not modified in a revision, its revision number is not modified */
-        struct Revision : public Database::Table<Revision>
-        {
-            BeginFieldDeclarationEx(Revision)
-                DeclareField(ID, Database::Index);
-                DeclareField(TimeSinceEpoch, uint64);
-                DeclareField(RevisionTime, String);
-                DeclareFieldEx(FileCount, unsigned int, "0");
-                DeclareFieldEx(DirCount, unsigned int, "0");
-                DeclareFieldEx(InitialSize, uint64, "0");
-                DeclareFieldEx(BackupSize, uint64, "0");
-            EndFieldDeclaration
-        };
-
-        /** Declare the database format we are using */
-        struct FrostDB : public Database::Base<FrostDB>
-        {
-            BeginTableDeclaration(FrostDB)
-                DeclareTable(IndexDescription)
-                DeclareTable(Revision)
-                DeclareTable(Entry)
-                DeclareTable(MultiChunk)
-                DeclareTable(ChunkList)
-                DeclareTable(Chunk)
-            EndTableDeclarationRegister(FrostDB)
-        };
-
-        /** The database complete URL to use */
-        extern String databaseURL;
-
-        BeginDatabaseConnection
-            DeclareDatabaseWithComplexDBNameDynURL(FrostDB, "FrostDB", databaseURL, DEFAULT_INDEX)
-        EndDatabaseConnection
-    }
-#endif
 
     // The backup functions
     /** Backup the given folder.

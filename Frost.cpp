@@ -33,8 +33,21 @@ const int BailOut = 26748;
 namespace Frost
 {
 
-    bool dumpState = false, wasBackingUp = false, backupWorked = false;
+    bool dumpState = false, wasBackingUp = false, backupWorked = false, dumpTimeRequired = false, exitRequired = false;
     unsigned int previousRevID = 0;
+
+#ifdef _POSIX
+    void asyncProcess(int signal)
+    {
+        static const char stopping[] = "\n|  Stopping, please wait...  |\n";
+        switch (signal)
+        {
+        case SIGUSR2: dumpTimeRequired = true; return;
+        case SIGINT: exitRequired = true; write(2, stopping, sizeof(stopping)); fsync(2); return;
+        default: return;
+        }
+    }
+#endif
 
     void debugMem(const uint8 * buffer, const uint32 len, const String & title = "")
     {
@@ -43,6 +56,7 @@ namespace Frost
         Utils::hexDump(out, buffer, len, 16, true, false);
         fprintf(stdout, "%s%s\n", (const char*)title, (const char*)out);
     }
+
 
     // This will be used later on when i18n'ing the software
 #ifdef __GNUC__
@@ -219,29 +233,73 @@ namespace Frost
     }
 
     namespace DatabaseModel { String databaseURL = ""; }
-#if KeepPreviousVersionFormat != 1
   #define MapAs(X, Y, Offset) (X*)(Y + Offset)
     namespace FileFormat
     {
+        struct _CondScopeProfiler
+        {
+            uint32 startTime;
+            const char * name;
+            _CondScopeProfiler(const char * name, const bool force = false) : startTime(dumpTimeRequired || force ?  Time::getTimeWithBase(65536) : 0), name(name) { }
+            ~_CondScopeProfiler() { if (dumpTimeRequired) { uint32 duration = Time::getTimeWithBase(65536) - startTime; fprintf(stderr, "Time: %s => %.3fs\n", name, duration / 65536.0); } }
+        };
+        #define CondScopeProfiler ::Frost::FileFormat::_CondScopeProfiler profile (__FUNCTION__)
+
+        template <int instanceID>
+        struct _AccScopeProfiler
+        {
+            uint32 & getAccTime() { static uint32 accTime; return accTime; }
+            uint32 & getCount() { static uint32 count; return count; }
+            void flush() { fprintf(stderr, "Time: %s => avg %.3fs over %u runs (total: %.3fs)\n", name, getAccTime() / (getCount() * 65536.0), getCount(), getAccTime() / 65536.0); getCount() = getAccTime() =  0; }
+            uint32 startTime;
+            const char * name;
+            _AccScopeProfiler(const char * name) : startTime(dumpTimeRequired ?  Time::getTimeWithBase(65536) : 0), name(name) { }
+            ~_AccScopeProfiler() { if (dumpTimeRequired && startTime) { uint32 duration = Time::getTimeWithBase(65536) - startTime; getAccTime() += duration; getCount()++; } }
+        };
+        #define AccScopeProfiler(X) ::Frost::FileFormat::_AccScopeProfiler<X> profile (__FUNCTION__)
+
+
         // Start a new revision for this backup file
         bool IndexFile::startNewRevision(const unsigned rev)
         {
             const uint32 revision = rev ? rev : catalog->revision + 1;
             if (readOnly) return false;
-            fileTree.revision = local.revision = revision;
+            fileTree.revision = revision;
             metadata.Reset();
             if (!rev) metadata.Append(String::Print(TRANS("Revision %u created on %s"), revision, (const char*)Time::LocalTime::Now().toDate()));
             return true;
         }
+
+        // Resize the chunk index map
+        bool IndexFile::resizeChunkIndexMap()
+        {
+            if (!chunkIndices) return true;
+            return chunkIndices->resize(); //@todo use a generator to save memory while growing the table
+        }
+
+
 
         // Append a chunk to this index file
         bool IndexFile::appendChunk(Chunk & chunk, const uint32 forceUID)
         {
             if (readOnly) return false;
             if (!forceUID) chunk.UID = maxChunkID++ + 1;
-            local.chunks.insertSorted(chunk);
-            consolidated.chunks.insertSorted(chunk);
-            return true;
+            AccScopeProfiler(1);
+            // local.chunks.insertSorted(chunk);
+            // consolidated.chunks.insertSorted(chunk);
+            uint32 chunkIndex = (uint32)consolidated.chunks.getSize();
+            consolidated.chunks.Append(chunk);  // Should be O(1)
+            return chunkIndices->storeValue(chunk.checksum, chunkIndex);  // This too
+        }
+
+        // Find a chunk based on its checksum
+        uint32 IndexFile::findChunk(Chunk & chunk) const
+        {
+            AccScopeProfiler(2);
+            uint32 * pos = chunkIndices->getValue(chunk.checksum);
+            if (!pos) return -1;
+            return consolidated.chunks[*pos].UID;
+//            return consolidated.findChunk(chunk);
         }
 
         // Append a multichunk to this file
@@ -266,6 +324,7 @@ namespace Frost
             // Make sure it does not exists already
             list->UID = maxChunkListID + 1;
             item->fixed->chunkListID = list->UID;
+            CondScopeProfiler;
             fileTree.items.Append(item);
             if (chunkList.storeValue(list->UID, list))
             {
@@ -332,6 +391,39 @@ namespace Frost
             return ret;
         }
 
+        template <typename T>
+        static uint32 getListSize(T & list)
+        {
+            uint32 ret = 0;
+            typename T::IterT iter = list.getFirstIterator();
+            while (iter.isValid())
+            {
+                ret += (*iter)->getSize();
+                ++iter;
+            }
+            return ret;
+        }
+
+        // In a signal handler, we are not supposed to allocate, or call any system function, so this must be called in the processing loop.
+        String IndexFile::dumpMemStat() const
+        {
+            uint64 total = 0, current = 0;
+            String ret = String::Print("Header size: %llu bytes\n", (current = header->getSize())); total += current;
+            ret += String::Print("Catalog size: %llu bytes\n", (current = catalog->getSize())); total += current;
+            ret += String::Print("Consolidated chunks size: %llu bytes\n", (current = consolidated.getSize())); total += current;
+            ret += String::Print("Chunks index table size: %llu bytes\n", (current = chunkIndices->getMemUsage())); total += current;
+            ret += String::Print("Readonly chunks list size: %llu bytes\n", (current = getListSize(chunkListRO))); total += current;
+            ret += String::Print("Chunks list size: %llu bytes\n", (current = getListSize(chunkList))); total += current;
+            ret += String::Print("Multichunks size: %llu bytes\n", (current = getListSize(multichunks))); total += current;
+            ret += String::Print("Readonly multichunks size: %llu bytes\n", (current = getListSize(multichunksRO))); total += current;
+            ret += String::Print("FilterArg size: %llu bytes\n", (current = arguments.getSize())); total += current;
+            ret += String::Print("Metadata size: %llu bytes\n", (current = metadata.getSize())); total += current;
+            ret += String::Print("FileTree size: %llu bytes\n", (current = fileTree.getSize())); total += current;
+            ret += String::Print("Readonly fileTree size: %llu bytes\n", (current = fileTreeRO.getSize())); total += current;
+            ret += String::Print("Total size: %llu bytes\n", total);
+            return ret;
+        }
+
 
         // Create a new file from scratch.
         String IndexFile::createNew(const String & filePath, const Utils::MemoryBlock & cipheredMasterKey, const String & backupPath)
@@ -360,8 +452,9 @@ namespace Frost
 
             // Ok, header is written, let's unmap the area
             readOnly = false;
-            maxChunkID = 0; maxChunkListID = 0; maxMultichunkID = 0;
-            fileTree.revision = local.revision = 1;
+            maxChunkID = 0; maxChunkListID = 0; maxMultichunkID = 0; prevRevisionMaxChunkID = 0;
+            fileTree.revision = 1;
+            chunkIndices = new ChunkIndexMap(65535, &consolidated.chunks);
             return "";
         }
         // Load a file from the given storage
@@ -394,7 +487,7 @@ namespace Frost
             // Fuse the chunks
             maxChunkID = 0;
             consolidated.Clear();
-            local.Clear();
+            chunkIndices = 0;
             maxChunkListID = 0;
             multichunksRO.clearTable();
             multichunks.clearTable();
@@ -415,8 +508,9 @@ namespace Frost
                 for (size_t i = 0; i < chunk.chunks.getSize(); i++)
                 {
                     if (chunk.chunks[i].UID > maxChunkID) maxChunkID = chunk.chunks[i].UID;
-                    if (readWrite) consolidated.chunks.insertSorted(chunk.chunks[i]);
-                    else           consolidated.chunks.Append(chunk.chunks[i]); // Not sorted, we'll sort them later on
+//                    if (readWrite) consolidated.chunks.insertSorted(chunk.chunks[i]);
+//                    else
+                        consolidated.chunks.Append(chunk.chunks[i]); // Not sorted, we'll sort them later on
                 }
 
                 // Read all chunk lists now
@@ -472,13 +566,26 @@ namespace Frost
                 return String::Print(TRANS("Could not load the file tree for revision %u"), catalog->revision);
 
             ChunkUIDSorter sorter;
-            if (!readWrite) Container::Algorithms<Container::PlainOldData<Chunk>::Array>::sortContainer(consolidated.chunks, sorter);
+            if (!readWrite) Container::Algorithms<Container::PlainOldData<Chunk>::Array>::sortContainer(consolidated.chunks, sorter); // This is only using UID to sort
+//            else            Container::Algorithms<Container::PlainOldData<Chunk>::Array>::sortContainer(consolidated.chunks, consolidated.chunks[0]); // This is using size and checksum to sort
+            else
+            {
+                chunkIndices = new ChunkIndexMap(consolidated.chunks.getSize() * 2, &consolidated.chunks);
+                // Insert all chunks index in the map
+                for (size_t i = 0; i < consolidated.chunks.getSize(); i++)
+                {
+                    if (!chunkIndices->storeValue(consolidated.chunks.getElementAtUncheckedPosition(i).checksum, i))
+                        return String::Print(TRANS("Could not insert the chunk at pos %u with UID: %u"), (uint32)i, consolidated.chunks.getElementAtUncheckedPosition(i).UID);
+                }
+                prevRevisionMaxChunkID = maxMultichunkID;
+            }
             // Ok, done loading this file
             return "";
         }
         const Chunk * IndexFile::findChunk(const uint32 uid) const
         {
             size_t pos = 0;
+            CondScopeProfiler;
             Chunk item(uid);
             if (readOnly)
             {   // The consolidated array is sorted by UID, so we can do a O(log N) search here
@@ -500,13 +607,22 @@ namespace Frost
         {
             if (!file || readOnly || (fileTree.items.getSize() == 0 && !metadata.modified))
             {
-                file = 0; catalog = 0; header = 0;
+                file = 0; catalog = 0; header = 0; chunkIndices = 0;
                 fileTree.Clear(); fileTreeRO.Clear();
                 metadata.Reset(); arguments.Reset();
-                consolidated.Clear();       local.Clear();              maxChunkID = 0;
+                consolidated.Clear();       prevRevisionMaxChunkID = 0; maxChunkID = 0;
                 chunkListRO.clearTable();   chunkList.clearTable();     maxChunkListID = 0;
                 multichunks.clearTable();   multichunksRO.clearTable(); maxMultichunkID = 0;
                 return ""; // Nothing to do or no modifications done
+            }
+
+            Chunks local(0);
+            // O(n) operation here for a huge list, but hopefully, this will be in cache most of the time
+            // This will also consume all new chunks memory additionally
+            for (size_t i = 0; i < consolidated.chunks.getSize(); i++)
+            {
+                if (consolidated.chunks.getElementAtUncheckedPosition(i).multichunkID > prevRevisionMaxChunkID)
+                    local.chunks.Append(consolidated.chunks.getElementAtUncheckedPosition(i));
             }
 
             // Get a coarse approximation of the required size for the file expansion required
@@ -525,8 +641,8 @@ namespace Frost
             if (!file->map(0, file->fullSize() + requiredAdditionalSize))
                 return String::Print(TRANS("Cannot allocate %llu more bytes for the index file, is disk full?"), requiredAdditionalSize);
             uint8 * filePtr = file->getBuffer();
-            // Starting from this point, the previous mapping are not more valid, so we can't refer to them
-
+            // Starting from this point, the previous mapping are no more valid, so we can't refer to them
+            //===========================================================================================================
 
             uint32 prevRev = initialCatalog ? (*MapAs(Catalog, filePtr, initialCatalog)).revision : 0;
 
@@ -535,6 +651,7 @@ namespace Frost
             uint64 wo = initialSize;
             cat.chunks.fileOffset(wo);
             // Write the new chunk array
+            local.revision = prevRev + 1; // Fix the revision
             local.write(filePtr + wo); wo += local.getSize();
             // Write the chunk list
             cat.chunkLists.fileOffset(wo);
@@ -633,7 +750,6 @@ namespace Frost
         }
     }
   #undef MapAs
-#endif
     namespace Helpers
     {
         CompressorToUse compressor;
@@ -646,10 +762,10 @@ namespace Frost
         // Included file list if found
         String includedFilePath;
 
-#if KeepPreviousVersionFormat != 1
         // The index file we are using
         FileFormat::IndexFile indexFile;
-#endif
+
+
 
         // Base 85 encoding
         String fromBinary(const uint8 * data, const uint32 size, const bool base)
@@ -743,7 +859,6 @@ namespace Frost
             return String::Print("%d:%s:AES_CTR", File::MultiChunk::MaximumSize, compressorName[actualComp]);
         }
 
-#if KeepPreviousVersionFormat != 1
         static uint16 getFilterArgumentIndex(CompressorToUse actualComp)
         {
             const String & filterArg = getFilterArgument(actualComp);
@@ -752,14 +867,7 @@ namespace Frost
                 return indexFile.getFilterArguments().appendArgument(filterArg);
             return index;
         }
-#endif
-
-
-#if KeepPreviousVersionFormat == 1
-        typedef uint64 ChunkListT;
-#else
         typedef Utils::ScopePtr<FileFormat::ChunkList> & ChunkListT;
-#endif
 
         bool closeMultiChunkBin(String & chunkPath, File::MultiChunk & multiChunk, uint64 * totalOutSize, ProgressCallback & callback, CompressorToUse actualComp, KeyFactory::KeyT & chunkHash)
         {
@@ -828,33 +936,6 @@ namespace Frost
             String backPath = backupTo;
             if (!closeMultiChunkBin(backPath, multiChunk, totalOutSize, callback, actualComp, chunkHash)) return false;
 
-#if KeepPreviousVersionFormat == 1
-
-            DatabaseModel::MultiChunk dbMChunk;
-            if (previousMultiChunkID)
-            {
-                // Might need to update the previous multichunk ID
-                dbMChunk.ID = previousMultiChunkID;
-                if (dbMChunk.ChunkListID == multiChunkID)
-                {   // Same multichunk, so let's modify it (remove the previous file)
-                    File::Info(backupTo + dbMChunk.Path).remove();
-                    // Update it
-                    dbMChunk.FilterArgument = getFilterArgument(actualComp);
-                    dbMChunk.Path = multiChunkHash + ".#";
-                    dbMChunk.ID = Database::Index::WantNewIndex;
-                    previousMultiChunkID = 0;
-                    multiChunk.Reset();
-                    return true;
-                }
-                // It's a new ChunkListID, so we don't do anything (it'll be deleted at the end of the process if still required)
-            }
-            // Create the chunk in the database now
-            dbMChunk.ChunkListID = multiChunkID;
-            dbMChunk.FilterListID = 3;
-            dbMChunk.FilterArgument = getFilterArgument(actualComp);
-            dbMChunk.Path = multiChunkHash + ".#";
-            dbMChunk.ID = Database::Index::WantNewIndex;
-#else
             if (previousMultiChunkID)
             {
                 // Might need to update the previous multichunk ID
@@ -874,7 +955,6 @@ namespace Frost
             mc->filterArgIndex = getFilterArgumentIndex(actualComp);
             memcpy(mc->checksum, chunkHash, ArrSz(chunkHash));
             indexFile.appendMultichunk(mc, multiChunkID.Forget());
-#endif
 
             multiChunk.Reset();
             return true;
@@ -1044,78 +1124,14 @@ namespace Frost
             return extractChunkBin(error, basePath, MultiChunkPath, MultiChunkID, chunkOffset, chunkCS, filterMode, cache, callback);
         }
 
-#if KeepPreviousVersionFormat == 1
-        unsigned int allocateChunkList()
-        {
-            BuildPool(DatabaseModel::ChunkList, chunkListPool, ID, _C::Max());
-            return chunkListPool.count ? chunkListPool[0].ID + 1 : 1;
-        }
-#else
         uint32 allocateChunkList()
         {
             return indexFile.allocateChunkListID();
         }
-#endif
     }
     // Initialize the database connection, and bootstrap it if required.
     String initializeDatabase(const String & backupPath, unsigned int & revisionID, MemoryBlock & cipheredMasterKey)
     {
-#if KeepPreviousVersionFormat == 1
-        if (!Database::SQLFormat::initialize(DEFAULT_INDEX, DatabaseModel::databaseURL, "", "", 0))
-            return TRANS("Can't initialize the database with the given parameters.");
-
-        String currentTime = Time::LocalTime::Now().toDate();
-
-        // Check if the database exits and open it in that case.
-        if (!Database::SQLFormat::checkDatabaseExists(0))
-        {
-            // Need to create it
-            if (!Database::SQLFormat::createModelsForAllConnections())
-                return TRANS("Failed to create the tables in the database from the given model");
-
-            DatabaseModel::IndexDescription index;
-            index.Version = PROTOCOL_VERSION;
-            index.InitialBackupPath = backupPath;
-            if (cipheredMasterKey.getSize())
-            {
-                Utils::ScopePtr<MemoryBlock> base85Key = cipheredMasterKey.toBase85();
-                if (!base85Key) return TRANS("Failed to convert the ciphered master key to base85");
-                index.CipheredMasterKey = String(base85Key->getConstBuffer(), base85Key->getSize());
-            }
-            index.Description = "Backup of " + backupPath + " started on " + currentTime + " finished on";
-            index.synchronize("Version");
-            previousRevID = 0;
-        }
-
-
-        // Create a new revision now if provided a path to backup
-        if (backupPath)
-        {
-            DatabaseModel::Revision rev;
-            rev.RevisionTime = currentTime;
-            rev.TimeSinceEpoch = (uint64)time(NULL);
-            rev.ID = Database::Index::WantNewIndex;
-            revisionID = rev.ID;
-
-            wasBackingUp = true;
-        }
-
-        BuildPool(DatabaseModel::IndexDescription, pool, Version, _C::Equal(PROTOCOL_VERSION));
-        if (pool.count)
-        {
-            // Get the current revision identifier
-            previousRevID = pool[0].CurrentRevisionID;
-
-            const String & masterKey = pool[0].CipheredMasterKey;
-            if (!cipheredMasterKey.rebuildFromBase85(masterKey, masterKey.getLength()))
-                return TRANS("Invalid ciphered master key in the database. The database is likely corrupted.");
-            if (backupPath)
-            {
-                pool[0].CurrentRevisionID = revisionID;
-                pool[0].synchronize("Version");
-            } else revisionID = previousRevID;
-        }
-#else
         // Check if we are opening or creating an index file now
         const String & indexPath = DatabaseModel::databaseURL + DEFAULT_INDEX;
         if (!File::Info(indexPath).doesExist())
@@ -1130,48 +1146,12 @@ namespace Frost
         if (backupPath && !Helpers::indexFile.startNewRevision())
             return TRANS("Could not start a new revision in index file.");
         revisionID = Helpers::indexFile.getCurrentRevision();
-#endif
         return "";
     }
 
     // Finalize the database, updating the database description when done.
     void finalizeDatabase()
     {
-#if KeepPreviousVersionFormat == 1
-        // Check if we were backing up
-        if (wasBackingUp)
-        {
-            BuildPool(DatabaseModel::IndexDescription, pool, Version, _C::Equal(PROTOCOL_VERSION));
-            if (pool.count)
-            {
-                // Check if a backup operation actually happened
-                if (backupWorked)
-                {
-                    // Update the description
-                    pool[0].Description = ((String)pool[0].Description).upToFirst("finished on") + "finished on " + Time::LocalTime::Now().toDate();
-                    pool[0].synchronize("Version");
-                }
-                else
-                {
-                    // We need to rollback to a previous revision
-                    BuildConstraint(DatabaseModel::Revision, prevRevisions, ID, _C::Max());
-                    BuildConstraint(DatabaseModel::Revision, notNull, InitialSize, _C::NotEqual(0));
-
-                    Database::Pool<DatabaseModel::Revision> revPool = Database::find(notNull.And(prevRevisions));
-                    if (revPool.count)
-                        pool[0].CurrentRevisionID = revPool[0].ID;
-                    else pool[0].CurrentRevisionID = 0;
-                    pool[0].Description = "Reverted to last known good revision on " + Time::LocalTime::Now().toDate();
-                    pool[0].synchronize("Version");
-
-                    // Then delete all bad revisions
-                    BuildConstraint(DatabaseModel::Revision, nullRev, InitialSize, _C::IsNull());
-                    Database::deleteInDB(nullRev);
-                }
-            }
-        }
-        Database::SQLFormat::finalize((uint32)-1);
-#else
         if (wasBackingUp)
         {
             if (backupWorked)
@@ -1181,7 +1161,6 @@ namespace Frost
         }
         const String & ret = Helpers::indexFile.close();
         if (ret) fputs(ret + "\n", stderr); // Don't silent the error if any
-#endif
     }
 
 
@@ -1205,120 +1184,6 @@ namespace Frost
     /** The cache of files for a revision */
     typedef Container::HashTable<FileMDEntry, String, Container::HashKey<String> > PathIDMapT;
 
-#if KeepPreviousVersionFormat == 1
-    /** Create a list of files in a directory based on the Entry's in the database.
-        @param dirPath      The directory path to look for
-        @param entryList    On output, contains a sorted list of entries' ID in the specified directory
-        @param revID        The maximum revision ID to include
-        @return The highest directory entry ID if found, or 0 on error */
-    unsigned int createActualEntryListInDir(const String & dirPath, Strings::StringArray & entryList, const unsigned int revID)
-    {
-        entryList.Clear();
-
-        // Find the directory with the given path
-        // We want to stop searching as soon as a directory has its State "deleted"
-        // SELECT FROM Entry WHERE Path = path AND Revision <= revID AND Revision > (SELECT Revision FROM Entry WHERE Path = path AND State = deleted AND Revision <= revID AND Type == 1 ORDER BY Revision DESC LIMIT 1)
-        RowIterT deletedDir = ((((Select("Revision").From("Entry").Where("Path") == dirPath).And("State") == 1).And("Revision") <= revID).And("Type") == 1).OrderBy("Revision", false).Limit(1);
-        unsigned int lowerRev = 0;
-        if (deletedDir) lowerRev = (unsigned int)deletedDir["Revision"];
-
-        const Select dirEntry = ((((Select("*").From("Entry").Where("Path") == dirPath).And("Revision") <= revID).And("Type") == 1).And("Revision") > lowerRev).OrderBy("Revision", false);
-        Database::Pool<DatabaseModel::Entry> dirEntries = dirEntry;
-        if (!dirEntries.count) return 0; // No directory found lower than the given revision
-
-        // The dirEntries pool contains a chain of directory entries.
-
-        // We will then select any entries that are refering to any ID in the dirEntries pool
-        Database::Pool<DatabaseModel::Entry> entries = (Select("*").From("Entry").Where("ParentEntryID").In(dirEntry.Refine("ID")).And("Revision") <= revID).OrderBy("Path", true, "Revision", false);
-        // Then for each entry, let's build the final entry list
-        String lastPath = "*"; // Impossible path
-        for (unsigned int i = 0; i < entries.count; i++)
-        {
-            if (entries[i].Path != lastPath)
-            {
-                // New file, let's figure out if it needs to be included or not in the list
-                if (entries[i].State != 1)
-                    entryList.Append(String::Print("%u", (unsigned int)entries[i].ID));
-
-                lastPath = entries[i].Path;
-            }
-        }
-
-        // Now we have the update list of entries in the directory
-        return dirEntries[0].ID;
-    }
-
-    /** Create a list of files in a directory based on the Entry's in the database.
-        @param dirPath  The directory path to look for
-        @param fileList On output, contains a sorted list of files and directories path in the specified directory
-        @param revID    The maximum revision ID to include
-        @return The directory ID if found, or 0 on error */
-    unsigned int createFileListInDir(const String & dirPath, PathIDMapT & fileList, const unsigned int revID)
-    {
-        fileList.clearTable();
-        Strings::StringArray entries;
-
-        unsigned int dirID = createActualEntryListInDir(dirPath, entries, revID);
-        if (dirID == 0 || entries.getSize() == 0) return 0;
-
-        // Then find all files and directory and sort them
-
-        // Find the directory with the given path
-        RowIterT fileEntries = Select("Path", "ID", "Metadata").From("Entry").Where("ID").In(entries).OrderBy("Path", true);
-        if (!fileEntries) return 0; // No directory found lower than the given revision
-
-        while (fileEntries)
-        {
-            fileList.storeValue(fileEntries["Path"], new FileMDEntry(fileEntries["ID"], fileEntries["Metadata"]), true);
-            ++fileEntries;
-        }
-        return dirID;
-    }
-
-    /** Create the list of files and directories based on the Entry's in the database.
-        @param fileList On output, contains a sorted list of files and directories path in the specified directory
-        @param revID    The maximum revision ID to include
-        @return true if the revision is valid */
-    bool createFileListInRev(PathIDMapT & fileList, const unsigned int revID)
-    {
-        fileList.clearTable();
-        // We need to find out all the valid directories in the given revision.
-        Database::Pool<DatabaseModel::Entry> directories = ((Select("*").From("Entry").Where("Type") == 1).And("Revision") <= revID).OrderBy("Path", true, "Revision", false);
-        String lastPath = "*";
-        unsigned int step = 1;
-        for (unsigned int i = 0; i < directories.count; i += step)
-        {
-            // For each directory alive, we have to find out the min and max revision
-            step = 1;
-            if (directories[i].Path != lastPath)
-            {
-                lastPath = directories[i].Path;
-                // We don't care about deleted directories
-                if (directories[i].State == 1) continue;
-                // New dir that's alive, let's save it
-                fileList.storeValue(directories[i].Path, new FileMDEntry(directories[i].ID, directories[i].Metadata), true);
-
-                // Then find out all the files that refers to this directory
-                Strings::StringArray dirID = String::Print("%u", (unsigned int)directories[i].ID);
-                while (i + step < directories.count && directories[i + step].Path == lastPath)
-                {
-                    if (directories[i + step].State == 1) break;
-
-                    // Save this revision ID in the list of ID to include when searching for files
-                    dirID.Append(String::Print("%u", (unsigned int)directories[i + step].ID));
-                    step++;
-                }
-
-                // Then find any file that has a parent directory ID in the list above
-                Database::Pool<DatabaseModel::Entry> files = (((Select("*").Max("Revision", "MaxRev").From("Entry").Where("Type") == 0).And("Revision") <= revID).And("ParentEntryID").In(dirID).And("State") == 0).GroupBy("Path");
-                for (unsigned int j = 0; j < files.count; j++)
-                    fileList.storeValue(files[j].Path, new FileMDEntry(files[j].ID, files[j].Metadata), true);
-            }
-        }
-        return true;
-    }
-
-#else
     /** The index array */
     typedef Container::PlainOldData<uint32>::Array IndexArray;
     /** Collect the list of files in a directory based on the Entry's in the database.
@@ -1328,6 +1193,7 @@ namespace Frost
         @return The index in the file tree for the directory + 1, or 0 on error */
     uint32 createActualEntryListInDir(const String & dirPath, IndexArray & entryList, Utils::OwnPtr<FileFormat::FileTree> & fileTree)
     {
+        CondScopeProfiler;
         entryList.Clear();
 
         uint32 parentIndex = fileTree->findItem(dirPath);
@@ -1349,6 +1215,7 @@ namespace Frost
         @return The directory ID if found, or 0 on error */
     bool createFileListInDir(const String & dirPath, PathIDMapT & fileList, const unsigned int revID)
     {
+        CondScopeProfiler;
         fileList.clearTable();
 
         Utils::OwnPtr<FileFormat::FileTree> fileTree = Helpers::indexFile.getFileTree(revID);
@@ -1372,6 +1239,7 @@ namespace Frost
         @return The directory ID if found, or 0 on error */
     bool createFileListInDir(const String & dirPath, PathIDMapT & fileList, Utils::OwnPtr<FileFormat::FileTree> & fileTree)
     {
+        CondScopeProfiler;
         fileList.clearTable();
         if (!fileTree) return true;
 
@@ -1392,6 +1260,7 @@ namespace Frost
         @return true if the revision is valid */
     bool createFileListInRev(PathIDMapT & fileList, const unsigned int revID)
     {
+        CondScopeProfiler;
         fileList.clearTable();
 
         // First find the parent index for the given path
@@ -1409,6 +1278,7 @@ namespace Frost
         @return true if the revision is valid and output was filled */
     bool createDirListInRev(Strings::StringArray & dirList, const unsigned int revID)
     {
+        CondScopeProfiler;
         dirList.Clear();
         // First find the parent index for the given path
         Utils::OwnPtr<FileFormat::FileTree> fileTree = Helpers::indexFile.getFileTree(revID);
@@ -1428,7 +1298,6 @@ namespace Frost
         return true;
     }
 
-#endif
 
 
     // Very basic algorithm to make a size readable by a human easily
@@ -1458,21 +1327,31 @@ namespace Frost
         uint32  lastTime;
         int     lastSpeed;
         FILE *  out;
+        int     lastLineSize;
 
         // Helpers
     private:
-        bool flushLine(bool flush) { if (flush) fprintf(out, "\n"); else fflush(out); return true; }
+        bool flushLine(int lineSize, bool flush)
+        {
+            // Clear the previous line's characters with spaces if required
+            if (lastLineSize > lineSize) fprintf(out, "%*c", lastLineSize - lineSize, ' ');
+            if (flush) fprintf(out, "\n");
+            else       fflush(out);
+            lastLineSize = lineSize;
+            return true;
+        }
 
     public:
         virtual bool progressed(const Action action, const String & currentFilename, const uint64 sizeDone, const uint64 totalSize, const uint32 index, const uint32 count, const FlushMode mode)
         {
-            if (mode == EraseLine) { fprintf(out, "\r"); return flushLine(false); }
+            int lineSize = lastLineSize;
+            if (mode == EraseLine) { fprintf(out, "\r"); return flushLine(lineSize, false); }
             if (mode == KeepLine || mode == FlushLine) fprintf(out, "\r");
             // Special signal to display the current filename only
             if (!sizeDone && !totalSize && !index && !count)
             {
-                fprintf(out, "%s                                                 ", (const char*)currentFilename);
-                return flushLine(mode == FlushLine);
+                lineSize = fprintf(out, "%s", (const char*)currentFilename);
+                return flushLine(lineSize, mode == FlushLine);
             }
             if (lastIndex != index || lastCount != count)
             {
@@ -1485,9 +1364,9 @@ namespace Frost
             // Special signal to display the output non-flushed
             if (sizeDone == 0)
             {
-                fprintf(out, "%s: %s [%u/%u]                                     ", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, index, count);
+                lineSize = fprintf(out, "%s: %s [%u/%u]", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, index, count);
                 //if (!totalSize) fprintf(stdout, "\n");
-                return flushLine(mode == FlushLine);
+                return flushLine(lineSize, mode == FlushLine);
             }
 
             uint32 currentTime = Time::getTimeWithBase(1000);
@@ -1499,19 +1378,19 @@ namespace Frost
                     int duration = currentTime - lastTime;
                     int speed = duration ? (sizeDone - lastSize) * 1000 / duration : 0;
                     // Window average to smooth the reported speed
-                    const int windowSize = 128;
+                    const int windowSize = 32;
                     lastSpeed = (lastSpeed * (windowSize - 1)) / windowSize + (speed - lastSpeed) / windowSize;
                     int remaining = lastSpeed ? (totalSize - sizeDone) * 1000 / lastSpeed : 0;
 
-                    fprintf(out, "%s: %s %2d%%:%s/s (rem: %s) [%u/%u]            ", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, progress, (const char*)makeLegibleSize(lastSpeed), (const char*)makeLegibleTime(remaining), index, count);
+                    lineSize = fprintf(out, "%s: %s %2d%%:%s/s (rem: %s) [%u/%u]", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, progress, (const char*)makeLegibleSize(lastSpeed), (const char*)makeLegibleTime(remaining), index, count);
                 }
                 else
-                    fprintf(out, "%s: %s [%u/%u]                                     ", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, index, count);
+                    lineSize = fprintf(out, "%s: %s [%u/%u]", (const char*)TRANS(getActionName(action)), (const char*)currentFilename, index, count);
                 lastProgress = progress;
             }
             lastSize = sizeDone;
             lastTime = currentTime;
-            return flushLine(mode == FlushLine);
+            return flushLine(lineSize, mode == FlushLine);
         }
 
         virtual bool warn(const Action action, const String & currentFilename, const String & message, const uint32 sourceLine = 0)
@@ -1521,7 +1400,7 @@ namespace Frost
             return true;
         }
 
-        ConsoleProgressCallback(const bool standardOutput = true) : lastProgress(0), lastIndex(0), lastCount(0), lastSize(0), lastTime(0), lastSpeed(0), out(standardOutput ? stdout : stderr) {}
+        ConsoleProgressCallback(const bool standardOutput = true) : lastProgress(0), lastIndex(0), lastCount(0), lastSize(0), lastTime(0), lastSpeed(0), out(standardOutput ? stdout : stderr), lastLineSize(0) {}
     };
 
     /** A filter class that's accepting all files */
@@ -1569,6 +1448,7 @@ namespace Frost
     public:
         bool isExcluded(const String & relPath) const
         {
+            CondScopeProfiler;
             for (size_t i = 0; i < excMatches.getSize(); i++)
                 if (excMatches.getElementAtUncheckedPosition(i)->isExcluded(relPath))
                 {
@@ -1612,14 +1492,12 @@ namespace Frost
         MatchExcludedFiles   excludes;
 
         PathIDMapT           prevFilesInDir;
-#if KeepPreviousVersionFormat != 1
         uint32               prevParentID;
         Utils::OwnPtr<FileFormat::FileTree> fileTree, prevFileTree;
         Utils::MemoryBlock   metadataTmp;
         Utils::ScopePtr<FileFormat::Multichunk> compMultichunk, encMultichunk;
         Utils::ScopePtr<FileFormat::ChunkList> compMultichunkList, encMultichunkList;
         bool                 worthSaving;
-#endif
 
         // Check if a file has content to save
         bool hasContent(File::Info & info)
@@ -1627,360 +1505,10 @@ namespace Frost
             return info.isFile() && !info.isDir() && !info.isLink();
         }
 
-#if KeepPreviousVersionFormat == 1
-        unsigned int findParentDirectoryID(const String & strippedFilePath)
-        {
-            String parentPath = File::General::normalizePath(strippedFilePath + "/../").normalizedPath(Platform::Separator, false);
-
-            Database::Pool<DatabaseModel::Entry> pool = (Select("ID", "State").From("Entry").Where("Path") == parentPath).OrderBy("Revision", false).Limit(1);
-            if (pool.count)
-            {
-                // This should not happen, since we traverse the file hierarchy directories first and a
-                // new directory should already be inserted in the DB
-                Assert(pool[0].State == 0);
-                return pool[0].ID;
-            }
-            return 0;
-        }
-
-        String checkMostRecentEntryMetadata(const String & strippedFilePath)
-        {
-            RowIterT entry = (Select("State", "Metadata").From("Entry").Where("Path") == strippedFilePath).OrderBy("Revision", false).Limit(1);
-            if (entry && entry["State"] == "0")
-                return entry["Metadata"];
-            return "";
-        }
-
-        void deleteRemainingEntry(unsigned int ID)
-        {
-            DatabaseModel::Entry entry;
-            entry.ID = ID; // Fetch the previous entry
-            if (entry.Type == 1)
-            {
-                // If it's a directory, we need to remove all the sub files too
-                // First, we need to find out all the revisions where this directory entry exist
-                RowIterT lastDeleteRev = (((Select("Revision").From("Entry").Where("Path") == entry.Path).And("State") == 1).And("Type") == 1).OrderBy("Revision", false).Limit(1);
-                Select dirValidRevs = ((Select("ID").From("Entry").Where("Path") == entry.Path).And("Type") == 1).And("Revision") > lastDeleteRev["Revision"];
-
-                // Then select all the entries that refer to this directory
-                RowIterT subEntries = ((Select("ID", "Path").From("Entry").Where("ParentEntryID").In(dirValidRevs).And("Revision") > lastDeleteRev["Revision"]).And("State") == 0).OrderBy("Path", true, "Revision", false);
-                String lastPath = "*";
-                while (subEntries)
-                {   // We are getting the list of entries refering to the deleted directory, ordered by path, and then revision (max first).
-                    // If an entry was modified in a previous backup, it will appear twice with the same path, so the first revision in the result set is the highest one.
-                    // We want the highest revision in order to get the most up-to-date metadata
-                    String path = subEntries["Path"];
-                    if (path != lastPath)
-                    {
-                        deleteRemainingEntry((unsigned int)subEntries["ID"]);
-                        lastPath = path;
-                    }
-                    ++subEntries;
-                }
-            }
-            entry.ID = Database::Index::WantNewIndex; // Clone this entry
-            entry.Revision = revID;
-            entry.State = 1; // And say it's deleted
-            // We are done
-        }
-
-        virtual bool fileFound(File::Info & info, const String & strippedFilePath)
-        {
-            // Compute stats first
-            uint32 entriesCount = info.getEntriesCount();
-            if (info.isDir()) total += entriesCount;
-            seen++;
-
-            // Ok, backup this file, if required (we lie about the size here)
-            if (!callback.progressed(ProgressCallback::Backup, TRANS("Analysing: ") + info.name, 0, 1, seen, total, ProgressCallback::KeepLine))
-                return false;
-            if (excludes.isExcluded(strippedFilePath))
-            {   // This file is excluded
-                if (!callback.progressed(ProgressCallback::Backup, TRANS("Excluded: ") + info.name, 0, 0, seen, total, ProgressCallback::FlushLine))
-                    return false;
-                return true;
-            }
-
-            // Check if the parent folder was changed
-            String parentFolder = info.getParentFolder();
-            if (parentFolder != prevParentFolder)
-            {
-                // It is, so let's find out the deleted items (and mark them as removed in the database)
-                PathIDMapT::IterT iter = prevFilesInDir.getFirstIterator();
-                while (iter.isValid())
-                {
-                    deleteRemainingEntry(*(*iter));
-                    ++iter;
-                }
-
-                // Then we need to compute the last database index for this folder
-                String relativeParentPath = File::General::normalizePath(strippedFilePath + "/../").normalizedPath(Platform::Separator, false);
-                createFileListInDir(relativeParentPath, prevFilesInDir, revID);
-                // We don't care about the result here, as if the directory does not exists (yet), it'll be created below
-
-                prevParentFolder = parentFolder;
-            }
-
-            // We will extract the metadata out of this file first
-            String metadata = info.getMetaData();
-
-            prevFilesInDir.removeValue(strippedFilePath);
-
-
-            // Now handle special file directly
-            if (info.isLink())
-            {
-                // Check if the link point to outside the backup folder (in that case warn the user that it'll not be backuped)
-                String backupFullPath = File::Info(folderToBackup).getRealFullPath();
-                String currentFullPath = info.getRealFullPath();
-                if (currentFullPath.midString(0, backupFullPath.getLength()) != backupFullPath)
-                {
-                    if (!WARN_CB(ProgressCallback::Backup, info.name, TRANS("Symbolic link points outside of the backup folder, the content will not be saved, only the link")))
-                        return false;
-                }
-            }
-
-            if (strippedFilePath == PathSeparator && findParentDirectoryID(strippedFilePath + "a") == 0)
-            {
-                // Create the root folder if it does not exists yet
-                DatabaseModel::Entry file;
-                file.ChunkListID = 0;
-                file.ParentEntryID = 0;
-                file.Metadata = metadata;
-                file.Path = strippedFilePath;
-                file.Revision = revID;
-                file.Type = 1;
-                file.State = 0;
-                file.ID = Database::Index::WantNewIndex;
-                dirCount++;
-                return callback.progressed(ProgressCallback::Backup, info.name, 0, 0, seen, total, ProgressCallback::KeepLine);
-            }
-
-            // We'll need the parent directory ID to link with
-            unsigned int parentDirID = findParentDirectoryID(strippedFilePath);
-            if (!parentDirID)
-                return !WARN_CB(ProgressCallback::Backup, info.name, TRANS("The parent directory does not exists in the database")) && false;
-
-            // Check if the entry already exists in the database
-            String dbMeta = checkMostRecentEntryMetadata(strippedFilePath);
-
-            if (!dbMeta || !info.hasSimilarMetadata(dbMeta, File::Info::AllButAccessTime, &metadata))
-            {
-                if (info.isLink() || info.isDevice() || info.isDir())
-                {
-                    DatabaseModel::Entry file;
-                    file.ChunkListID = 0;
-                    file.ParentEntryID = parentDirID;
-                    file.Metadata = metadata;
-                    file.Path = strippedFilePath;
-                    file.Revision = revID;
-                    file.Type = info.isDir() ? 1 : 0;
-                    file.State = 0;
-                    file.ID = Database::Index::WantNewIndex;
-                    if (info.isDir()) dirCount++;
-                    else fileCount++;
-                } else if (info.isFile())
-                {
-                    // We need to chunk it
-                    // It does not exist, or is modified, so create a new entity in the database
-                    Database::Transaction transaction;
-                    // We need to chunk it
-                    File::Chunk temporaryChunk;
-                    ::Stream::InputFileStream stream(info.getFullPath());
-
-                    // Create a new entity in the DB for this chunk list
-                    DatabaseModel::ChunkList chunkList;
-                    chunkList.Type = 0;
-                    bool hasData = false;
-
-                    // And for the multichunk list
-                    DatabaseModel::ChunkList multiChunkList;
-
-                    // Build the list of chunk ID for storage in the DB
-                    uint64 streamOffset = stream.currentPosition();
-                    uint64 fullSize = stream.fullSize();
-                    totalInSize += fullSize;
-                    while (chunker.createChunk(stream, temporaryChunk))
-                    {
-                        if (!callback.progressed(ProgressCallback::Backup, info.name, streamOffset, fullSize, seen, total, ProgressCallback::KeepLine))
-                            return false;
-
-                        // Ok, got a chunk, let's first figure out if we need to store it in the database
-                        const String & chunkChecksum = Helpers::fromBinary(temporaryChunk.checksum, ArrSz(temporaryChunk.checksum));
-                        BuildPool(DatabaseModel::Chunk, chunkPool, Checksum, _C::Equal(chunkChecksum));
-                        if (chunkPool.count)
-                        {
-                            // Seems like the chunk already exist on the system, so there's no point in backing it up again.
-                            chunkList.ChunkID = chunkPool[0].ID;
-                            chunkList.Offset = streamOffset;
-                            if (!hasData)
-                            {
-                                chunkList.ID = Helpers::allocateChunkList();
-                                hasData = true;
-                            }
-                            chunkList.synchronize(); // This insert the object in the database
-                        }
-                        else
-                        {
-                            // The chunk does not exist, so let's append to the current multichunk, and create an entry for it
-
-                            // We need to figure out where this chunk should go
-                            double entropy = compMultiChunk.getChunkEntropy(&temporaryChunk);
-                            File::MultiChunk & multiChunk = entropy <= Helpers::entropyThreshold ? compMultiChunk : encMultiChunk;
-                            uint64 & multiChunkListID = entropy <= Helpers::entropyThreshold ? compMultiChunkListID : encMultiChunkListID;
-                            uint64 & previousMCID = entropy <= Helpers::entropyThreshold ? compPreviousMCID : encPreviousMCID;
-
-                            if (!multiChunk.canFit(temporaryChunk.size))
-                            {
-                                // Close this multichunk, and apply filters
-                                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkListID, &totalOutSize, callback, previousMCID, entropy <= Helpers::entropyThreshold ? Helpers::Default : Helpers::None))
-                                    return false;
-                                // Allocate a new chunk list
-                                multiChunkListID = 0;
-                            }
-                            // Append to the current multichunk
-                            size_t offsetInMC = multiChunk.getSize();
-                            uint8 * chunkBuffer = multiChunk.getNextChunkData(temporaryChunk.size, temporaryChunk.checksum);
-                            if (!chunkBuffer) return false;
-
-                            memcpy(chunkBuffer, temporaryChunk.data, temporaryChunk.size);
-
-                            // Then add to the chunk list
-                            DatabaseModel::Chunk chunk;
-                            chunk.Checksum = chunkChecksum;
-                            chunk.Size = temporaryChunk.size;
-                            chunk.ID = Database::LongIndex::WantNewIndex;
-
-                            chunkList.ChunkID = chunk.ID;
-                            chunkList.Offset = streamOffset;
-                            if (!hasData)
-                            {
-                                chunkList.ID = Helpers::allocateChunkList();
-                                hasData = true;
-                            }
-                            chunkList.synchronize(); // Insert in the database
-                            Assert(streamOffset + temporaryChunk.size == stream.currentPosition());
-
-                            // And remember in which multichunk it is in too
-                            multiChunkList.Type = 1;
-                            multiChunkList.ChunkID = chunk.ID;
-                            multiChunkList.Offset = (uint64)offsetInMC;
-                            if (!multiChunkListID)
-                                multiChunkListID = Helpers::allocateChunkList();
-                            multiChunkList.ID = multiChunkListID;
-
-                            multiChunkList.synchronize();
-                        }
-                        streamOffset = stream.currentPosition();
-                    }
-
-
-                    // Ok, done with synchronization, insert in DB
-                    if (hasData)
-                        chunkList.synchronize();
-
-                    DatabaseModel::Entry file;
-                    file.ChunkListID = hasData ? chunkList.ID : 0;
-                    file.ParentEntryID = parentDirID;
-                    file.Metadata = metadata;
-                    file.Path = strippedFilePath;
-                    file.Revision = revID;
-                    file.Type = 0;
-                    file.State = 0;
-                    file.ID = Database::Index::WantNewIndex;
-
-                    transaction.shouldCommit();
-                    fileCount++;
-                }
-                else
-                {
-                    if (!WARN_CB(ProgressCallback::Backup, info.name, TRANS("Non regular type (fifo, pipe or socket) are not backed up.")))
-                        return false;
-                }
-            }
-            return callback.progressed(ProgressCallback::Backup, info.name, 0, 0, seen, total, ProgressCallback::FlushLine);
-        }
-
-        /** Accessible wrapper from outside to finish the multichunks */
-        bool finishMultiChunks()
-        {
-            if (!finishMultiChunk(compMultiChunk, compMultiChunkListID, compPreviousMCID, Helpers::Default)) return false;
-            if (!finishMultiChunk(encMultiChunk, encMultiChunkListID, encPreviousMCID, Helpers::None)) return false;
-
-            // Marks the currently missing item as deleted in database
-            PathIDMapT::IterT iter = prevFilesInDir.getFirstIterator();
-            while (iter.isValid())
-            {
-                deleteRemainingEntry(*(*iter));
-                ++iter;
-            }
-
-            // Save the statistics
-            DatabaseModel::Revision rev;
-            rev.FileCount = fileCount;
-            rev.DirCount = dirCount;
-            rev.InitialSize = totalInSize;
-            rev.BackupSize = totalOutSize;
-            rev.ID = revID;
-
-            // If we found something to analyze, then the backup worked
-            if (totalInSize)
-            {
-                Frost::backupWorked = true;
-                // If we were appending to a multichunk, remove the previous multichunk
-                if (compPreviousMCID)
-                {
-                    DatabaseModel::MultiChunk mc;
-                    mc.ID = compPreviousMCID;
-                    // Remove the file from the disk first
-                    File::Info(backupTo + mc.Path).remove();
-                    // Then from the database too
-                    mc.Delete();
-                }
-                if (encPreviousMCID)
-                {
-                    DatabaseModel::MultiChunk mc;
-                    mc.ID = encPreviousMCID;
-                    // Remove the file from the disk first
-                    File::Info(backupTo + mc.Path).remove();
-                    // Then from the database too
-                    mc.Delete();
-                }
-            }
-            return callback.progressed(ProgressCallback::Backup, TRANS("Done"), 0, 0, 0, 0, ProgressCallback::FlushLine);
-        }
-
-
-        /** Reopen an existing multichunk */
-        void reopenMultichunk(Helpers::CompressorToUse comp, File::MultiChunk & multiChunk, uint64 & multiChunkListID, uint64 & previousMCID)
-        {
-            String compFilterArg = Helpers::getFilterArgument(comp);
-
-            // First reopen multichunk
-            RowIterT lastMC = (Select("*").Max("ID", "MaxID").From("MultiChunk").Where("FilterArgument") == compFilterArg);
-            if (lastMC)
-            {
-                File::Info lastMultichunk(backupTo + lastMC["Path"]);
-                // If the multichunk exists and is not filled at more than 80% of the maximum allowed size
-                if (lastMultichunk.doesExist() && (lastMultichunk.size * 100) < (File::MultiChunk::MaximumSize * 80))
-                {
-                    // Reopen the previous multichunk. How is it done ?
-                    // First, we load it in our multichunk
-                    String error = Helpers::readMultichunk(backupTo + lastMC["Path"], lastMC["FilterArgument"], multiChunk, callback);
-                    if (!error)
-                    {
-                         // Ok, it worked, let's continue as expected (in our destructor, we'll remove the references to the previous multichunk.
-                         // This way, we will not loose any data in case backup failed
-                         multiChunkListID = (uint64)(int64)lastMC["ChunkListID"];
-                         previousMCID = (uint64)(int64)lastMC["ID"];
-                    }
-                }
-            }
-        }
-#else
         // Returns true if the file is different (else fills the previous chunklist ID if applicable)
         bool checkDifferentFile(File::Info & info, const String & strippedFilePath, const String & metadata, uint32 & prevChunkListID)
         {
+            CondScopeProfiler;
             if (!prevFileTree) return true;
             uint32 prevItemID = prevFileTree->findItem(strippedFilePath);
             if (prevItemID == prevFileTree->notFound()) return true;
@@ -1995,6 +1523,8 @@ namespace Frost
 
         virtual bool fileFound(File::Info & info, const String & strippedFilePath)
         {
+            if (Frost::exitRequired) return false; // Premature stopping
+            CondScopeProfiler;
             if (!fileTree) return WARN_CB(ProgressCallback::Backup, info.name, TRANS("Invalid File Tree found. Are you trying to backup using a bad revision ID ?"));
             // Compute stats first
             uint32 entriesCount = info.getEntriesCount();
@@ -2081,6 +1611,7 @@ namespace Frost
             uint32 prevChunkListID = 0;
             if (!checkDifferentFile(info, strippedFilePath, metadata, prevChunkListID))
             {
+                FileFormat::_CondScopeProfiler profile("SameFile");
                 // The file already exists in the previous file tree, so we'll skip chunking and all other process, just copy the relevant informations
                 fileTree->appendItem(&FileFormat::FileTree::Item::createNew(false).setMetaData(metadataTmp.getConstBuffer(), (uint16)metadataTmp.getSize())
                                                                                     .setBaseName(info.name)
@@ -2092,10 +1623,12 @@ namespace Frost
                 worthSaving = true;
                 if (info.isLink() || info.isDevice() || info.isDir())
                 {
+                    FileFormat::_CondScopeProfiler profile("LinkDevOrDir");
                     fileTree->appendItem(&FileFormat::FileTree::Item::createNew(false).setMetaData(metadataTmp.getConstBuffer(), (uint16)metadataTmp.getSize())
                                                                                         .setBaseName(info.name).setChunkListID(0).setParentID(prevParentID+1));
                 } else if (info.isFile())
                 {
+                    FileFormat::_CondScopeProfiler profile("FileSave", true);
                     // We need to chunk it
                     File::Chunk temporaryChunk;
                     ::Stream::InputFileStream stream(info.getFullPath());
@@ -2109,8 +1642,13 @@ namespace Frost
                     uint64 streamOffset = stream.currentPosition();
                     uint64 fullSize = stream.fullSize();
                     totalInSize += fullSize;
-                    while (chunker.createChunk(stream, temporaryChunk))
+                    bool chunkCreation = true;
+                    while (true)
                     {
+                        {   // We want to profile the time it takes to create chunks
+                            AccScopeProfiler(3);
+                            if (!chunker.createChunk(stream, temporaryChunk)) break;
+                        }
                         if (!callback.progressed(ProgressCallback::Backup, info.name, streamOffset, fullSize, seen, total, ProgressCallback::KeepLine))
                             return false;
 
@@ -2122,7 +1660,12 @@ namespace Frost
                             // The chunk does not exist, so let's append to the current multichunk, and create an entry for it
 
                             // We need to figure out where this chunk should go
-                            double entropy = compMultiChunk.getChunkEntropy(&temporaryChunk);
+                            double entropy = 0;
+                            if (Helpers::entropyThreshold < 1.0)
+                            {   // We want to profile the time it takes to compute entropy (if it's worth it)
+                                AccScopeProfiler(4);
+                                entropy = compMultiChunk.getChunkEntropy(&temporaryChunk);
+                            }
                             File::MultiChunk & multiChunk = entropy <= Helpers::entropyThreshold ? compMultiChunk : encMultiChunk;
                             FileFormat::Multichunk * mc = entropy <= Helpers::entropyThreshold ? compMultichunk : encMultichunk;
                             Helpers::ChunkListT & mcl = entropy <= Helpers::entropyThreshold ? compMultichunkList : encMultichunkList;
@@ -2150,6 +1693,16 @@ namespace Frost
                             mcl->appendChunk(chunkID, offsetInMC);
                             // And remember in which multichunk it is in too
                             tmpChunk.multichunkID = Helpers::indexFile.allocateMultichunkID(); // This is safe because it returns the next multichunk's ID until it's closed & saved
+                            if (Helpers::indexFile.shouldResizeChunkIndexMap())
+                            {
+                                if (!callback.progressed(ProgressCallback::Backup, TRANS("Resizing the chunk index table (too small)"), 0, 0, 0, 0, ProgressCallback::KeepLine))
+                                    return false;
+                                if (!Helpers::indexFile.resizeChunkIndexMap())
+                                {
+                                    WARN_CB(ProgressCallback::Backup, info.name, TRANS("Error while resizing the chunk index hash table while processing: ") + strippedFilePath);
+                                    return false;
+                                }
+                            }
                             Helpers::indexFile.appendChunk(tmpChunk);
 
                             Assert(streamOffset + temporaryChunk.size == stream.currentPosition());
@@ -2170,6 +1723,17 @@ namespace Frost
                         return false;
                 }
             }
+            if (dumpTimeRequired)
+            {
+                fprintf(stderr, "\n%s", (const char*)Helpers::indexFile.dumpMemStat());
+                ::Frost::FileFormat::_AccScopeProfiler<3> createChunk("createChunk"); createChunk.flush();
+                ::Frost::FileFormat::_AccScopeProfiler<4> entropy("computeEntropy"); entropy.flush();
+                ::Frost::FileFormat::_AccScopeProfiler<2> findChunk("IndexFile::findChunk"); findChunk.flush();
+                ::Frost::FileFormat::_AccScopeProfiler<1> appendChunk("IndexFile::appendChunk"); appendChunk.flush();
+                dumpTimeRequired = false;
+                fprintf(stderr, "\n");
+            }
+
             return callback.progressed(ProgressCallback::Backup, info.name, 0, 0, seen, total, ProgressCallback::FlushLine);
         }
 
@@ -2207,7 +1771,6 @@ namespace Frost
         }
 
 
-#endif
 
         /** Finish the current multichunk, as it's the end of the backup process */
         bool finishMultiChunk(File::MultiChunk & multiChunk, Helpers::ChunkListT & multiChunkList, uint64 & previousMCID, const Helpers::CompressorToUse comp)
@@ -2227,21 +1790,16 @@ namespace Frost
               folderToBackup(rootFolder.normalizedPath(Platform::Separator, true)), revID(revID), seen(0), total(1),
               fileCount(0), dirCount(0), totalInSize(0), totalOutSize(0),
               compMultiChunkListID(0), encMultiChunkListID(0), compPreviousMCID(0), encPreviousMCID(0), prevParentFolder("*")
-#if KeepPreviousVersionFormat == 1
-#else
               , prevParentID(0), fileTree(Helpers::indexFile.getFileTree(revID)), prevFileTree(Helpers::indexFile.getFileTree(revID - 1)), worthSaving(false)
-#endif
         {
-#if KeepPreviousVersionFormat == 1
+            /* TODO
             if (strategy == Slow)
             {
                 // Need to reopen last multichunks if it makes any sense
                 reopenMultichunk(Helpers::Default, compMultiChunk, compMultiChunkListID, compPreviousMCID);
                 reopenMultichunk(Helpers::None, encMultiChunk, encMultiChunkListID, encPreviousMCID);
             }
-#else
-            //!< @todo
-#endif
+            */
         }
     };
 
@@ -2255,63 +1813,14 @@ namespace Frost
         OverwritePolicy overwritePolicy;
         Helpers::MultiChunkCache cache;
 
-#if KeepPreviousVersionFormat != 1
         Utils::OwnPtr<FileFormat::FileTree> tree;
-#endif
 
 
     public:
         /** Helper method that's extracting a file to the given stream */
         int restoreSingleFile(Stream::OutputStream & stream, String & errorMessage, uint64 chunkListID, const String & filePath, const uint64 fileSize, const uint32 current = 0, const uint32 total = 1)
-        {
-    #define ERR(Msg) { errorMessage = Msg; return -1; }
-#if KeepPreviousVersionFormat == 1
-            // The initial approach that used to work was doing multiple request per chunk and as such, was very slow.
-            // The new approach is using the filtering capabilities of the SQL engine to perform a single request with all informations included.
-            // Basically, we'll be joining the ChunkList table for the File's chunk and the MultiChunk's chunk, and joining the Multichunk table too to get the
-            // MultiChunk path to read from. This will also simplify caching the multichunk in a later stage
-            // The request will look like this:
-            // SELECT a.ID AS ID, a.ChunkID AS ChunkID, a.Offset AS MultichunkOffset, b.Offset AS FileOffset, c.ID AS MultichunkID, c.FilterListID AS FilterListID, c.FilterArgument AS FilterArgument, c.Path AS Path FROM ChunkList a
-            // INNER JOIN ChunkList b ON a.ChunkID = b.ChunkID
-            // INNER JOIN MultiChunk c ON a.ID = c.ChunkListID
-            // WHERE b.ID = file.ChunkListID AND a.Type = 1
-            RowIterT iter = (((((Select().Alias("a.ID", "ID").Alias("a.ChunkID", "ChunkID").Alias("a.Offset", "MCOffset")
-                                         .Alias("b.Offset", "FileOffset")
-                                         .Alias("c.ID", "MCID").Alias("c.FilterListID", "FilterListID").Alias("c.FilterArgument", "FilterArgument").Alias("c.Path", "MCPath")
-                                         .Alias("d.Checksum", "Checksum")
-                                         .From("ChunkList a")
-                                         .InnerJoin("ChunkList b").On("a.ChunkID") == _U("b.ChunkID"))
-                                         .InnerJoin("MultiChunk c").On("a.ID") == _U("c.ChunkListID"))
-                                         .InnerJoin("Chunk d").On("a.ChunkID") == _U("d.ID"))
-                                         .Where("b.ID") == chunkListID).And("a.Type") == 1).OrderBy("FileOffset", true);
-
-
-            while (iter)
             {
-                // Check for the filter ID
-                if (iter["FilterListID"] != "3")
-                {
-                    errorMessage = TRANS("Unknown filter ID");
-                    return 1;
-                }
-
-                // Extract a chunk out of this multichunk
-                File::Chunk * chunk = Helpers::extractChunk(errorMessage, backupFolder, iter["MCPath"], (uint64)(int64)iter["MCID"], (size_t)(int64)iter["MCOffset"], iter["Checksum"], iter["FilterArgument"], cache, callback);
-                if (!chunk || errorMessage) return -1;
-
-                // Ok, if we got a chunk, let's save it
-                if (!chunk)
-                    ERR(TRANS("Missing chunk for this file: ") + (String)iter["ChunkID"]);
-                if (stream.write(chunk->data, chunk->size) != (uint64)chunk->size)
-                    ERR(TRANS("Can't write the file (disk full ?)"));
-
-                if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + filePath, stream.currentPosition(), fileSize, current, total, stream.currentPosition() != fileSize ? ProgressCallback::KeepLine : ProgressCallback::FlushLine))
-                    ERR(TRANS("Interrupted in output"));
-
-                // Select next row
-                ++iter;
-            }
-#else
+    #define ERR(Msg) { errorMessage = Msg; return -1; }
             FileFormat::ChunkList * chunkList = Helpers::indexFile.getChunkList((uint32)chunkListID);
             if (!chunkList)
             {
@@ -2350,90 +1859,10 @@ namespace Frost
                 if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + filePath, stream.currentPosition(), fileSize, current, total, stream.currentPosition() != fileSize ? ProgressCallback::KeepLine : ProgressCallback::FlushLine))
                     ERR(TRANS("Interrupted in output"));
             }
-#endif
             return 0; // Done
         }
 
 
-#if KeepPreviousVersionFormat == 1
-        /** Restore a single file from the database
-            @return 0 on success, -1 on error, 1 on warning */
-        int restoreFile(const DatabaseModel::Entry & file, String & errorMessage, const uint32 current, const uint32 total)
-        {
-    #define WarnAndReturn(Msg) WARN_CB(ProgressCallback::Restore, file.Path, TRANS( Msg )) ? 1 : -1
-            // We need to figure out if the file is a regular file, we do so by checking its metadata field
-            File::Info outFile(folderTrimmed + file.Path);
-            if (!outFile.analyzeMetaData(file.Metadata))
-            {
-                errorMessage = TRANS("Bad metadata found in database");
-                return WarnAndReturn("Bad metadata for this file, it's ignored for restoring");
-            }
-
-            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + file.Path, 0, outFile.size, current, total, ProgressCallback::KeepLine))
-                ERR(TRANS("Interrupted in output"));
-
-
-            // Check if the file was deleted in the backup
-            if (file.State == 1)
-            {
-                if (!outFile.doesExist()) return 0; // Ignore deleted file that does not exists on the system.
-
-                // We need to delete the file from the system, depending on the overwrite policy
-                if (overwritePolicy == No)
-                    return WarnAndReturn("This file already exists and is deleted in the backup, and no overwrite specified");
-                if (overwritePolicy == Update && outFile.modification < File::Info(outFile.getFullPath()).modification)
-                    return WarnAndReturn("This file already exists in the restoring folder and is newer than the backup which is deleted");
-
-                if (!File::Info(outFile.getFullPath()).remove())
-                    ERR(TRANS("Can not remove file on the system: ") + file.Path);
-
-                return 0;
-            }
-            // Check if the file already exists
-            if (outFile.doesExist())
-            {
-                if (file.Metadata != File::Info(outFile.getFullPath()).getMetaData())
-                {
-                    switch(overwritePolicy)
-                    {
-                    case No: return WarnAndReturn("This file already exists and is different in the restoring folder, and no overwrite specified");
-                    case Update:
-                        if (outFile.modification < File::Info(outFile.getFullPath()).modification)
-                            return WarnAndReturn("This file already exists in the restoring folder and is newer than the backup");
-                        break;
-                    case Yes:
-                    default:
-                        break;
-                    }
-                }
-            }
-
-            // Ok, now check if it's a regular file that need its content to be restored
-            if (outFile.isFile())
-            {
-                // Seem so, let's restore it now.
-                ::Stream::OutputFileStream stream(outFile.getFullPath());
-                int ret = restoreSingleFile(stream, errorMessage, file.ChunkListID, file.Path, outFile.size, current, total);
-                if (ret == 1) return WarnAndReturn(errorMessage);
-                if (ret < 0) return ret;
-            }
-            else
-            {
-                if (!callback.progressed(ProgressCallback::Restore, outFile.getFullPath(), 0, 0, current, total, ProgressCallback::FlushLine))
-                    ERR(TRANS("Interrupted in output"));
-            }
-
-            // Then restore the metadata here
-            if (!outFile.setMetaData(file.Metadata))
-            {
-                errorMessage = TRANS("Failed to restore metadata");
-                return WarnAndReturn("Failed to restore the file's metadata");
-            }
-    #undef WarnAndReturn
-    #undef ERR
-            return 0;
-        }
-#else
         /** File removed, let's apply the same on the file system */
         int removeFile(const String & filePath, String & errorMessage, const uint32 current, const uint32 total)
         {
@@ -2516,14 +1945,11 @@ namespace Frost
             return 0;
         }
 
-#endif
 
         RestoreFile(ProgressCallback & callback, const String & folderTrimmed, const String & backupFolder, OverwritePolicy policy, const size_t maxCacheSize, const uint32 revisionID)
             : callback(callback), folderTrimmed(folderTrimmed), backupFolder(backupFolder.normalizedPath(Platform::Separator, true)),
               overwritePolicy(policy), cache(maxCacheSize)
-#if KeepPreviousVersionFormat != 1
             , tree(Helpers::indexFile.getFileTree(revisionID))
-#endif
         {}
     };
 
@@ -2542,7 +1968,7 @@ namespace Frost
         processor.fileFound(rootFolder, PathSeparator);
         File::Scanner::EventIterator iterator(true, processor);
 
-        if (File::Scanner::scanFolderGeneric(folderToBackup, ".", items, iterator, false))
+        if (File::Scanner::scanFolderGeneric(folderToBackup, ".", items, iterator, false) && !exitRequired)
             return TRANS("Can't scan the backup folder");
 
         if (!processor.finishMultiChunks())
@@ -2567,54 +1993,6 @@ namespace Frost
     };
     unsigned int listBackups(const ::Time::Time & startTime, const ::Time::Time & endTime, const bool withList)
     {
-#if KeepPreviousVersionFormat == 1
-        BuildPool(DatabaseModel::Revision, pool, TimeSinceEpoch, _C::Between((uint64)startTime.asNative(), (uint64)endTime.asNative()));
-        if (!pool.count)
-            fprintf(stdout, "%s", (const char*)TRANS("No revision found\n"));
-        else
-        {
-            for (unsigned int i = 0; i < pool.count; i++)
-            {
-                if ((uint64)pool[i].InitialSize)
-                    fprintf(stdout, (const char*)TRANS("Revision %d happened on %s, linked %d files and %d directories, cumulative size %s (backup is %s, saved %d%%)\n"), (int)pool[i].ID, (const char*)(String)pool[i].RevisionTime,
-                                             (uint32)pool[i].FileCount, (uint32)pool[i].DirCount, (const char*)makeLegibleSize(pool[i].InitialSize),
-                                             (const char*)makeLegibleSize(pool[i].BackupSize), 100 - (100 * (uint64)pool[i].BackupSize) / (uint64)pool[i].InitialSize);
-                else
-                    fprintf(stdout, (const char*)TRANS("Revision %d happened on %s, linked %d files and %d directories, cumulative size %s (backup is %s, saved 100%%)\n"), (int)pool[i].ID, (const char*)(String)pool[i].RevisionTime,
-                                             (uint32)pool[i].FileCount, (uint32)pool[i].DirCount, (const char*)makeLegibleSize(pool[i].InitialSize),
-                                             (const char*)makeLegibleSize(pool[i].BackupSize));
-
-                // Then make a list of files for this revision
-                PathIDMapT fileList;
-                if (withList && createFileListInRev(fileList, pool[i].ID))
-                {
-                    Strings::StringArray filePaths;
-                    // Prepare the file list in the format we like
-                    PathIDMapT::IterT iter = fileList.getFirstIterator();
-                    while (iter.isValid())
-                    {
-                        String md = (*iter)->getMetaData();
-                        String metaData = File::Info::printMetaData(md);
-                        if (metaData)
-                        {
-                            filePaths.Append(String::Print(TRANS("%s %s [rev%u:id%u]"), (const char*)metaData, (const char*)*(iter.getKey()), (unsigned int)pool[i].ID, (unsigned int)*(*iter)));
-                        }
-                        else
-                            filePaths.Append(String::Print(TRANS("%s [rev%u:id%u]"), (const char*)*(iter.getKey()), (unsigned int)pool[i].ID, (unsigned int)*(*iter)));
-                        ++iter;
-                    }
-                    // Sort the file list
-
-                    CompareStringPath cs;
-                    Container::Algorithms<Strings::StringArray>::sortContainer(filePaths, cs);
-                    // Show it
-                    for (size_t j = 0; j < filePaths.getSize(); j++)
-                        fprintf(stdout, "\t%s\n", (const char*)filePaths[j]);
-                }
-            }
-        }
-        return (unsigned int)pool.count;
-#else
         const FileFormat::Catalog * catalog = Helpers::indexFile.getCatalog();
         uint32 count = 0;
         FileFormat::MetaData md;
@@ -2675,340 +2053,8 @@ namespace Frost
         if (!count)
             fprintf(stdout, "%s", (const char*)TRANS("No revision found\n"));
         return count;
-#endif
-    }
-
-#if KeepPreviousVersionFormat == 1
-    // Purge old backups
-    String purgeBackup(const String & chunkFolder, ProgressCallback & callback, const PurgeStrategy strategy, const unsigned int upToRevision)
-    {
-        // First, we need to figure out the chunks that are in the given revision but in no other revision (orphans)
-        if (!callback.progressed(ProgressCallback::Purge, TRANS("...scanning..."), 0, 1, 0, 1, ProgressCallback::KeepLine))
-            return TRANS("Error with output");
-
-
-        // This block is there to show that a transaction is around all these operations
-        {
-            // On any error, the operations below will be aborted
-            Database::Transaction transaction;
-
-            // First find orphan chunks (chunk that refers to file not anymore in the wanted revision range)
-
-            // We are building two sets
-            // Let's take the following example database as a base of thought
-            /*
-               Rev 1:
-                 Modified /a
-                 Modified /b
-                 Modified /c
-                 Modified /d
-
-               Rev 2:
-                 Modified /a
-                 Deleted  /b
-                 (no change) /c
-                 (no change) /d
-
-
-               Rev 3:
-                 Deleted  /a
-                 Modified /b (new file, but same name)
-                 (no change) /c
-                 (no change) /d
-
-               Rev 4:
-                 Deleted  /c
-                 (no change) /d
-                 Modified /e
-            */
-            // 1) The deleted set:
-            // For each file in the database (distinct by path), select the highest revision that's above the given revision range where the file was deleted.
-            // In the increasing revision order, as soon as a file is not deleted anymore, we stop the selection.
-            // In the previous example, if the given revision limit is 2, the deleted set should contain:
-            //  /a[1] /a[2] /a[3] /b[1] /b[2]
-            // This is because at revision 3, the only remaining files are (new) /b and /c /d
-            // Please notice that even if the given revision limit is 2, we have to remove /a from revision 3, but not /c from revision 4 as it would break
-            // rev 3 integrity
-            const Select deletedSet = Select().Distinct("ID").From(
-                                    (((((Select().Alias("a.ID", "ID").From("Entry a").InnerJoin("Entry b").On("a.Path") == _U("b.Path")).And("b.Revision") < _U("a.Revision"))
-                                               .Where("a.Revision") <= (upToRevision+1)).And("a.State") == 1).And("a.Type") == 0)
-                                                             .UnionAll(
-                                    (((((Select().Alias("b.ID", "ID").From("Entry a").InnerJoin("Entry b").On("a.Path") == _U("b.Path")).And("b.Revision") < _U("a.Revision"))
-                                               .Where("a.Revision") <= (upToRevision+1)).And("a.State") == 1).And("a.Type") == 0)));
-
-            // Remember this to avoid having such a huge query called multiple time
-            CreateTempTable deletedEntryTable = CreateTempTable("DeletedSet", true).As(Select("*").From("Entry").Where("ID").In(deletedSet));
-
-
-            // 2) The remaining set:
-            // For each file in the database (distinct by path), select the lowest revision that's above a revision were the file was deleted.
-            // In the previous example, if the given revision limit is 2, the remaining set should contain:
-            //  /c[1] /b[3] /d[1] /e[4]
-            // Please notice that even if the given revision limit is 2, we have to keep /c and /d from revision 1
-            const Select remainingSet = Select("ChunkListID").From("Entry").Where("ID").NotIn(deletedSet).And("State") == 0;
-    /*
-
-
-            // File to purge are those below the given revision (whatever state), plus those who are deleted in any
-            // later revision (but not modified since the given revision)
-            // This is very tricky to select, so we split the selection in small part (easier to understand)
-            // SELECT * FROM Entry WHERE (   ID IN (SELECT a.ID FROM Entry a INNER JOIN Entry b ON a.Path = b.Path AND a.Type = 0 AND a.State = 1 WHERE b.State != a.State AND b.Revision < a.Revision AND a.Revision > 1)
-            //                           OR ID IN(SELECT a.ID FROM Entry a INNER JOIN Entry b ON a.Path = b.Path AND a.Type = 0 AND a.State = 1 WHERE b.State != a.State AND b.Revision > a.Revision AND a.Revision > 1))
-            //                        AND ID NOT IN(SELECT a.ID FROM Entry a INNER JOIN Entry b ON a.Path = b.Path AND a.Type = 0 AND a.State = 1 WHERE b.State != a.State AND b.Revision < a.Revision AND b.Revision > 1);
-            const Select allDelFiles = (((((Select("a.ID").From("Entry a").InnerJoin("Entry b").On("a.Path") == _U("b.Path")).And("a.Type") == 0).And("a.State") == 1)
-                                         .Where("b.State") != _U("a.State")).And("b.Revision") < _U("a.Revision")).And("a.Revision") > upToRevision; // If there is a deleted file, it'll be listed here
-            const Select allNewFiles = (((((Select("a.ID").From("Entry a").InnerJoin("Entry b").On("a.Path") == _U("b.Path")).And("a.Type") == 0).And("a.State") == 1)
-                                         .Where("b.State") != _U("a.State")).And("b.Revision") > _U("a.Revision")).And("a.Revision") > upToRevision; // This will list only deleted file where the same file is recreated in a later revision
-            const Select notThoseFiles = (((((Select("a.ID").From("Entry a").InnerJoin("Entry b").On("a.Path") == _U("b.Path")).And("a.Type") == 0).And("a.State") == 1)
-                                         .Where("b.State") != _U("a.State")).And("b.Revision") < _U("a.Revision")).And("b.Revision") > upToRevision; // This will list new file after the expected revision that were deleted in a later revision
-
-            const Select deletedFiles = Select("ChunkListID").From("Entry").Where("(ID").In(allDelFiles).Or("ID").In(allNewFiles).eP()
-                                             .And("ID").NotIn(notThoseFiles);
-
-            // We are doing complex stuff here, so we are using the low level database selection code here
-            const Select purgeFiles = (Select("ChunkListID").From("Entry").Where("Revision") <= upToRevision).And("Type") == 0;
-            // We are only interested in the chunk, so this selection is enough
-            const Select keepFiles = ((Select("ChunkListID").From("Entry").Where("Revision") > upToRevision).And("Type") == 0).And("State") == 0;
-
-            const Select purgeChunkList = Select("ChunkID").From("ChunkList").Where("ID").In(purgeFiles).Or("ID").In(deletedFiles);
-            const Select keepChunkList = Select("ChunkID").From("ChunkList").Where("ID").In(keepFiles);
-            const Select purgeChunks = Select("ID").From("Chunk").Where("ID").In(purgeChunkList).And("ID").NotIn(keepChunkList);
-      */
-            const Select purgeChunkList = Select("ChunkID").From("ChunkList").Where("ID").In(Select("ChunkListID").From("Entry").Where("ID").In(deletedSet));
-            const Select keepChunkList = Select("ChunkID").From("ChunkList").Where("ID").In(remainingSet);
-            const Select purgeChunks = Select("ID").From("Chunk").Where("ID").In(purgeChunkList).And("ID").NotIn(keepChunkList);
-
-            // Count the likely orphans
-            int likelyOrphansChunks = purgeChunks.getCount();
-            if (!likelyOrphansChunks)
-                return TRANS("No orphan chunks to purge");
-            int allChunks = Select("*").From("Chunk").getCount();
-            if (!callback.progressed(ProgressCallback::Purge, TRANS("... found likely orphans chunks ..."), 0, 0, likelyOrphansChunks, allChunks, ProgressCallback::FlushLine))
-                return TRANS("Error with output");
-
-            // Find the multichunks that only have those chunks
-            // Multichunks either use
-            // 1) Only these chunks
-            // 2) None of these chunks
-            // 3) At least one of these chunks, but not only these
-            // So, if we select all Multichunks that are using those chunks, we'll get case 1 and 3 above
-            // If we select all Multichunks that are not using those chunks, we'll get case 2 and 3 above
-            // Finally, to get only case 1, we have to interset both request above (request 1 and not request 2)
-            const Select usingOrphans = (Select().Distinct("ID").From("ChunkList").Where("ChunkID").In(purgeChunks).And("Type") == 1).And("ID").IsNotNull();  // Case 3 and 1
-            const Select notUsingOrphans = (Select().Distinct("ID").From("ChunkList").Where("ChunkID").NotIn(purgeChunks).And("Type") == 1).And("ID").IsNotNull(); // Case 2 and 3
-
-            const Select orphansMC = Select("*").From("MultiChunk").Where("ChunkListID").In(usingOrphans).And("(ChunkListID").NotIn(notUsingOrphans).Or(notUsingOrphans).IsNull().eP();
-            // Remember them, because once we'll have deleted them, we will not be able to find them anymore
-            CreateTempTable orphansMCTable = CreateTempTable("OrphansMultiChunk", true).As(orphansMC);
-
-            Database::Pool<DatabaseModel::MultiChunk> orphanMultichunks = orphansMC;
-
-            if (!callback.progressed(ProgressCallback::Purge, TRANS("... found orphans multichunks ..."), 0, 0, 0, orphanMultichunks.count, ProgressCallback::FlushLine))
-                return TRANS("Error with output");
-
-
-            // Then purge the orphans multichunks
-            String chunkRoot = File::Info(chunkFolder.normalizedPath(Platform::Separator, true), true)
-                                       .getFullPath().normalizedPath(Platform::Separator, true);   // Expand environnement variables
-            uint64 purgedSize = 0;
-            for (unsigned int i = 0; i < orphanMultichunks.count; i++)
-            {
-                if (!callback.progressed(ProgressCallback::Purge, orphanMultichunks[i].Path, 0, 0, i, orphanMultichunks.count, ProgressCallback::FlushLine))
-                    return TRANS("Error with output");
-                File::Info multichunk(chunkRoot + orphanMultichunks[i].Path);
-                purgedSize += multichunk.size;
-                if (!multichunk.remove())
-                {
-                    if (!WARN_CB(ProgressCallback::Purge, orphanMultichunks[i].Path, TRANS("Can not remove this multichunk")))
-                        return TRANS("Can not remove a multichunk");
-                }
             }
 
-            // Then delete the orphans chunks from database
-
-            // Show some log
-            const Select reallyOrphans = Select("ID").From("Chunk").Where("ID").In(Select("ChunkID").From("ChunkList").Where("ID").In(Select("ChunkListID").From("OrphansMultiChunk")));
-            int reallyOrphansCount = reallyOrphans.getCount();
-            if (!callback.progressed(ProgressCallback::Purge, TRANS("... deleting really orphans chunks ..."), 0, 0, reallyOrphansCount, allChunks, ProgressCallback::FlushLine))
-                return TRANS("Error with output");
-
-            // Then delete them from the database
-            reallyOrphans.Delete();
-
-            // Find out the orphan directories too
-            // These are the directories that are referred by the orphans files & directories, and only those
-            const Select orphanDirs = (Select("*").From("Entry").Where("Type") == 1)
-                                           .And("ID").In((Select("ParentEntryID").From("Entry").Where("Revision") <= (upToRevision+1)).And("State") == 1)
-                                           .And("ID").NotIn((Select("ParentEntryID").From("Entry").Where("Revision") > upToRevision).And("State") == 0);
-
-            orphanDirs.Delete();
-            // Delete the multichunks from the database
-            Delete().From("MultiChunk").Where("ID").In(Select("ID").From("OrphansMultiChunk")).execute();
-            // Delete the useless chunk list now
-            Delete().From("ChunkList").Where("ID").In(Select("ChunkListID").From("OrphansMultiChunk"))
-                                          .Or("ID").In(Select("ChunkListID").From("DeletedSet")).execute();
-
-            // Then removes the files themselves
-            Delete().From("Entry").Where("ID").In(Select("ID").From("DeletedSet")).execute();
-
-            // Now enter the slow mode if requested
-            if (strategy == Slow)
-            {
-                // On any error, we'll commit what we did before
-                transaction.shouldCommit(true);
-
-                // The idea here is to find out all orphans chunks, and from there, find out in which multichunk they still appear.
-                // Then, for each multichunk with orphans chunks, we'll extract the good chunks and create another multichunk made of those.
-                // The ending multichunks will be replaced in the DB.
-
-                // 1) Find orphans chunks
-                const Select orphanChunks = Select("ID").From("Chunk").Where("ID").NotIn(
-                                                   Select("ChunkID").From("ChunkList").Where("ID").In(
-                                                      Select("ChunkListID").From("Entry").Where("Type") == 0));
-
-                int finalOrphanChunks = orphanChunks.getCount();
-                if (!finalOrphanChunks)
-                {
-                    WARN_CB(ProgressCallback::Purge, "", TRANS("No more orphan chunks to purge"));
-                    return "";
-                }
-                if (!callback.progressed(ProgressCallback::Purge, TRANS("... found remaining orphans chunks ..."), 0, 0, finalOrphanChunks, allChunks, ProgressCallback::FlushLine))
-                    return TRANS("Error with output");
-
-                // Figure out who's linking them
-                const Select multiChunkWithOrphans = (Select("*").From("ChunkList").Where("ChunkID").In(orphanChunks).And("Type") == 1).OrderBy("ID", true);
-
-                // Then for each different multichunk that has orphans.
-                // In order to be interruptible, we'll sort them based on the number of orphans chunk, so we'll rewrite the chunks with
-                // the highest number of orphans chunks first, as the gain will be higher
-                Database::Pool<DatabaseModel::ChunkList> chunkListWithOrphans = multiChunkWithOrphans;
-                typedef Tree::AVL::Tree<unsigned int, float> MultiChunkTreeT;
-                MultiChunkTreeT amountRatio;
-                unsigned int previousChunkListID = 0; unsigned int tmpCount = 0;
-                for (unsigned int i = 0; i < chunkListWithOrphans.count; i++)
-                {
-                    tmpCount ++;
-                    if (previousChunkListID != chunkListWithOrphans[i].ID)
-                    {
-                        if (!previousChunkListID)
-                        {
-                            previousChunkListID = chunkListWithOrphans[i].ID;
-                            continue;
-                        }
-                        int chunksInMultiChunk = (Select("*").From("ChunkList").Where("ID") == previousChunkListID).getCount();
-                        amountRatio.insertObject(previousChunkListID, 1.0f - (float)(tmpCount - 1) / (float)chunksInMultiChunk); // Make sure the higher is the lower
-
-                        previousChunkListID = chunkListWithOrphans[i].ID;
-                        tmpCount = 1;
-                    }
-                }
-                if (previousChunkListID)
-                {
-                    int chunksInMultiChunk = (Select("*").From("ChunkList").Where("ID") == previousChunkListID).getCount();
-                    amountRatio.insertObject(previousChunkListID, 1.0f - (float)tmpCount / (float)chunksInMultiChunk); // Make sure the higher is the lower
-                }
-
-                // Then from the lowest one, let's start making new multichunk
-                MultiChunkTreeT::SortedIterT iter = amountRatio.getFirstSortedIterator();
-                uint64 consumedOutSize = 0;
-                File::MultiChunk newOne;
-                Helpers::MultiChunkCache cache(File::MultiChunk::MaximumSize);
-                unsigned int newChunkListID = 0;
-                int cleanedCount = 0;
-                while (iter.isValid())
-                {
-                    if (!callback.progressed(ProgressCallback::Purge, TRANS("Processing multichunk"), 0, 0, cleanedCount+1, amountRatio.getSize(), ProgressCallback::FlushLine))
-                        return TRANS("Error with output");
-
-                    // Create a multichunk for it
-                    DatabaseModel::MultiChunk mChunk;
-                    if (!mChunk.ChunkListID.find((*iter)))
-                        return TRANS("Can not find a multichunk for the specified ChunkList ID") + (*iter);
-
-                    DatabaseModel::ChunkList newChunkList;
-                    // First we extract all valid chunks out of the multichunk
-                    Database::Pool<DatabaseModel::ChunkList> multichunk = Select("*").From("ChunkList").Where("ChunkID").NotIn(orphanChunks).And("ID") == (*iter);
-
-                    String error;
-                    for (unsigned int i = 0; i < multichunk.count; i++)
-                    {
-                        // Then we need to read the complete multichunk to get each chunk that's alive
-                        // Find the chunk checksum to ensure about integrity
-                        DatabaseModel::Chunk currentChunk;
-                        currentChunk.ID = multichunk[i].ChunkID;
-
-                        // Read the chunk out of the multichunk
-                        File::Chunk * localChunk = Helpers::extractChunk(error, chunkRoot, mChunk.Path, (uint64)(int64)mChunk.ID, (size_t)(uint64)multichunk[i].Offset, currentChunk.Checksum, mChunk.FilterArgument, cache, callback);
-                        if (error || !localChunk)
-                            return error;
-
-                        // Then we need to store it in a new multichunk
-                        if (!newOne.canFit(localChunk->size))
-                        {
-                            // Close this multichunk
-                            uint64 prevID = 0;
-                            Helpers::closeMultiChunk(chunkRoot, newOne, newChunkListID, &consumedOutSize, callback, prevID);
-                            newChunkListID = 0;
-                        }
-                        // Append to current multichunk
-                        size_t offsetInMC = newOne.getSize();
-                        uint8 * chunkBuffer = newOne.getNextChunkData(localChunk->size, localChunk->checksum);
-                        if (!chunkBuffer)
-                            return TRANS("Can not allocate memory for storing the chunk: ") + (uint64)currentChunk.ID;
-                        memcpy(chunkBuffer, localChunk->data, localChunk->size);
-
-                        newChunkList.ChunkID = currentChunk.ID;
-                        newChunkList.Offset = (uint64)offsetInMC;
-                        newChunkList.Type = 1;
-                        if (!newChunkListID)
-                            newChunkListID = Helpers::allocateChunkList();
-                        newChunkList.ID = newChunkListID;
-                        newChunkList.synchronize();
-                    }
-
-                    // Finally delete the useless multichunk anymore
-                    if (!callback.progressed(ProgressCallback::Purge, mChunk.Path, 0, 0, cleanedCount, amountRatio.getSize(), ProgressCallback::FlushLine))
-                        return TRANS("Error with output");
-                    File::Info multichunkFile(chunkRoot + mChunk.Path);
-                    purgedSize += multichunkFile.size;
-                    if (!multichunkFile.remove())
-                    {
-                        if (!WARN_CB(ProgressCallback::Purge, mChunk.Path, TRANS("Can not remove this multichunk")))
-                            return TRANS("Can not remove a multichunk");
-                    }
-                    // Remove the now useless multichunk out of the database
-                    (Delete().From("MultiChunk").Where("ID") == mChunk.ID).execute();
-                    // Remove the now useless chunklist ID out of the database too
-                    (Delete().From("ChunkList").Where("ID") == (*iter)).execute();
-
-                    // Ok, get to the next multichunk to clean
-                    ++iter;
-                    ++cleanedCount;
-                }
-
-                // Check if we need to close the current multichunk
-                if (newOne.getSize())
-                {
-                    Assert(newChunkListID);
-                    uint64 prevID = 0;
-                    if (!Helpers::closeMultiChunk(chunkRoot, newOne, newChunkListID, &consumedOutSize, callback, prevID))
-                        return TRANS("Can not close and save the last multichunk, data is now lost");
-                }
-
-                // Don't account for the new output in the purged size
-                purgedSize -= consumedOutSize;
-            }
-
-            if (!callback.progressed(ProgressCallback::Purge, TRANS("... purge finished and saved ..."), 0, 0, purgedSize, purgedSize, ProgressCallback::FlushLine))
-                return TRANS("Error with output");
-
-            transaction.shouldCommit();
-        }
-        // Vacuum the database to get back the last few bytes
-        Database::SQLFormat::optimizeTables(0);
-        return "";
-    }
-#else
     // Purge old backups
     String purgeBackup(const String & chunkFolder, ProgressCallback & callback, const PurgeStrategy strategy, const unsigned int upToRevision)
     {
@@ -3445,7 +2491,6 @@ namespace Frost
     }
 
 
-#endif
 
     // Restore a backup to the given folder
     String restoreBackup(const String & folderToRestore, const String & restoreFrom, const unsigned int revisionID, ProgressCallback & callback, const size_t maxCacheSize)
@@ -3474,90 +2519,6 @@ namespace Frost
         String lastPath = "*";
         RestoreFile restore(callback, folderTrimmed, restoreFrom, overwritePolicy, maxCacheSize, revisionID);
 
-#if KeepPreviousVersionFormat == 1
-        // Need to find out all the directories required for this revision, in order to restore them
-        Database::Pool<DatabaseModel::Entry> dirPool = ((Select("*").From("Entry").Where("Revision") <= revisionID).And("Type") == 1).OrderBy("Path", true, "Revision", false);
-
-        unsigned int skip = 1;
-        for (unsigned int i = 0; i < dirPool.count; i+= skip)
-        {
-            // Reinitialize the skip counter (used to avoid checking numerous times the same value)
-            skip = 1;
-            // Result is ordered by path (ascending), then revision (descending)
-            if (dirPool[i].Path == lastPath) continue;
-
-            lastPath = dirPool[i].Path;
-            File::Info dir(folderTrimmed + lastPath);
-
-            // Show the list of directories to restore
-            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + lastPath, 0, 1, ++current, total, ProgressCallback::KeepLine))
-                return TRANS("Interrupted in output");
-
-            // Is the directory deleted in the database and not in the system ?
-            if (dirPool[i].State == 1)
-            {
-                if (dir.doesExist())
-                {
-                    if (!dir.isDir())
-                        return TRANS("This file is a directory in the backup, but an actual file on the system: ") + lastPath;
-
-                    String metadata = dirPool[i].Metadata;
-                    if (overwritePolicy == No)
-                        continue; // If the last revision deleted the directory, let's skip it
-                    else if (overwritePolicy == Update)
-                    {
-                        File::Info outDir;
-                        outDir.analyzeMetaData(metadata);
-
-                        if (outDir.modification <= File::Info(lastPath).modification)
-                            continue;
-                    }
-                    // Removing the directory as specified in the policy
-                    if (!File::Info(lastPath).remove())
-                        return TRANS("Can not remove this directory on the system: ") + lastPath;
-                }
-                // Ok, applied the change, let's continue
-                continue;
-            }
-
-
-            if (!dir.makeDir())
-                return TRANS("Failed to create directory: ") + dir.getFullPath();
-
-            if (!callback.progressed(ProgressCallback::Restore, folderTrimmed + lastPath, 0, 0, current, total, ProgressCallback::FlushLine))
-                return TRANS("Interrupted in output");
-
-            // Find all the files that are linked to this directory
-            // Check the lower limit in the directory revision ID (if any)
-            unsigned int lowerRevID = 0;
-            while (skip + i < dirPool.count && dirPool[skip + i].Path == lastPath)
-            {
-                if (dirPool[skip + i].State == 1)
-                {
-                    lowerRevID = dirPool[skip + i].ID;
-                    break;
-                }
-                skip++;
-            }
-
-            // Select all the directory that are still valid for this revision
-            Select dirPossibility = ((Select("ID").From("Entry").Where("Revision") <= revisionID).And("Path") == lastPath).And("Revision") > lowerRevID;
-            Database::Pool<DatabaseModel::Entry> filePool = ((Select("*").From("Entry").Where("Revision") <= revisionID).And("Type") == 0).And("ParentEntryID").In(dirPossibility).OrderBy("Path", true, "Revision", false);
-            String lastFilePath = "*";
-            for (unsigned int j = 0; j < filePool.count; j++)
-            {
-                String errorMessage;
-                // We only care about the last revision for files and subdir
-                if (filePool[j].Path != lastFilePath)
-                {
-                    current++;
-                    if (restore.restoreFile(filePool[j], errorMessage, current, total) < 0)
-                        return errorMessage;
-                    lastFilePath = filePool[j].Path;
-                }
-            }
-        }
-#else
         // Compute a list of files in the restoring folder, as we might need to remove them later on
         if (!callback.progressed(ProgressCallback::Restore, TRANS("...analysing restore folder..."), 0, 1, 0, 1, ProgressCallback::KeepLine))
             return TRANS("Error in output");
@@ -3619,7 +2580,6 @@ namespace Frost
                 return errorMessage;
         }
 
-#endif
         // Ok done restoring
         return "";
     }
@@ -3644,18 +2604,10 @@ namespace Frost
 
         String baseFolder = "";
         RestoreFile restore(callback, baseFolder, restoreFrom, No, maxCacheSize, revisionID);
-#if KeepPreviousVersionFormat == 1
-        DatabaseModel::Entry file;
-        file.ID = *entry;
-        String errorMsg;
-        int ret = restore.restoreSingleFile(Stream::StdOutStream::getInstance(), errorMsg, file.ChunkListID, file.Path, entryMD.size);
-        if (ret < 0) return errorMsg;
-#else
         String errorMsg;
         FileFormat::FileTree::Item * item = Helpers::indexFile.getFileTree(revisionID)->getItem((unsigned int)*entry); // Call uint operator
         int ret = restore.restoreSingleFile(Stream::StdOutStream::getInstance(), errorMsg, item->getChunkListID(), fileToRestore, entryMD.size);
         if (ret < 0) return errorMsg;
-#endif
 
         // Ok done restoring
         return "";
@@ -3706,17 +2658,10 @@ int showHelpMessage(const Frost::String & error = "")
            "\t                     \tIf you backup often, and purge at regular interval, the default should allow fast restoring and purging\n"
            "\t--compression [bsc]\tYou can change the compression library to use (default is zlib). Using 'bsc' is faster than LZMA and gives better compression ratio.\n"
            "\t                     \tHowever, 'bsc' also changes the multichunk size to 25MB.\n"
-#if KeepPreviousVersionFormat == 1
-           "\t--strategy [mode]    \tThe purging strategy, 'fast' for removing lost chunk from database, but does not reassemble multichunks\n"
-           "\t                     \t'slow' for rebuilding multichunks after fast pruning. This will save the maximum backup amount, at the price of much longer processing\n"
-           "\t                     \t'slow' can also be used for when backing up to reopen and append to the last multichunk from the last backup. This will reduce the number of multichunks created.\n"
-           "\t                     \t       In that case, this means that the previous set of backup is mutated (which might not be desirable depending on the storage).\n"
-#else
            "\t--strategy [mode]    \tThe purging strategy. By default 'fast', when purging from previous revision, a new index file is created that's built from the cleaned index.\n"
            "\t                     \tHowever, multichunks are not rebuild to remove lost chunks. When using 'slow', multichunks are rebuilt too to remove lost chunks. This incurs reading\n"
            "\t                     \tand writing many multichunk (which might not be desirable if storage is remote). If you enter a value x between 0 (slow) and 100 (fast), the multichunk will be\n"
            "\t                     \tscanned and only get processed/cleaned if the number of chunks to remove is higher than x% from the number of chunks in the multichunks.\n"
-#endif
            "\t--exclude list.exc \tYou can specify a file containing the exclusion list for backup. This file is read line-by-line (one rule per line)\n"
            "\t                     \tIf a line starts by 'r/' the exclusion rule is considered as a regular expression otherwise the rule is matched if the analyzed file path contains the rule.\n"
            "\t                     \tThis also means that if you need to exclude a file whose name starts by 'r/', you need to write 'r/r/'.\n"
@@ -3878,27 +2823,6 @@ int checkTests(Strings::StringArray & options)
             return EXIT_SUCCESS;
 
         }
-#if KeepPreviousVersionFormat == 1
-        else if (testName == "db")
-        {
-            // Create a fake database URL
-            Frost::DatabaseModel::databaseURL = "./";
-            // Wipe out the database
-            File::Info(Frost::DatabaseModel::databaseURL + DEFAULT_INDEX).remove();
-            // And recreate it
-            unsigned int revisionID = 0; Frost::MemoryBlock cipheredMasterKey;
-            Frost::String result = Frost::initializeDatabase("test/", revisionID, cipheredMasterKey);
-            if (result) ERR("Creating the database failed: %s\n", (const char*)result);
-
-            if (!revisionID || cipheredMasterKey.getSize())
-                ERR("Incoherent database bootstrapping: %d with initial key size %d\n", revisionID, cipheredMasterKey.getSize());
-
-            // Ok, finalize the database
-            Frost::finalizeDatabase();
-            fprintf(stderr, "Success\n");
-            return EXIT_SUCCESS;
-        }
-#endif
         else if (testName == "roundtrip")
         {
             // First create some specific files to save
@@ -4564,21 +3488,6 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         if (!File::Info(backup, true).doesExist() || !File::Info(backup, true).isDir())
             return showHelpMessage("Bad argument for backup, the --backup parameter is not a folder");
 
-#if KeepPreviousVersionFormat == 1
-        // Check if it's the first time the backup is made
-        if (!Database::SQLFormat::initialize(DEFAULT_INDEX, Frost::DatabaseModel::databaseURL, "", "", 0))
-            ERR("Can't initialize the database with the given parameters.");
-        if (!Database::SQLFormat::checkDatabaseExists(0))
-        {
-            // Need to create it now
-            result = Frost::getKeyFactory().createMasterKeyForFileVault(cipheredMasterKey, *optionsMap["keyvault"], pass, keyID);
-            if (result) ERR("Creating the master key failed: %s\n", (const char*)result);
-            result = Frost::initializeDatabase(backup, revisionID, cipheredMasterKey);
-        } else
-        {
-            if (!File::Info(*optionsMap["keyvault"], true).doesExist())
-                ERR("The database exists, but the keyvault does not. Either delete the database, either set the path to the keyvault\n");
-#else
         {
             Frost::String indexFile = File::Info(Frost::DatabaseModel::databaseURL).isDir() ? Frost::DatabaseModel::databaseURL + DEFAULT_INDEX : Frost::DatabaseModel::databaseURL;
             if (!File::Info(indexFile).doesExist())
@@ -4588,7 +3497,6 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
                 result = Frost::getKeyFactory().createMasterKeyForFileVault(cipheredMasterKey, *optionsMap["keyvault"], pass, keyID);
                 if (result) ERR("Creating the master key failed: %s\n", (const char*)result);
             }
-#endif
 
             result = Frost::initializeDatabase(backup, revisionID, cipheredMasterKey);
             if (!result)
@@ -4607,20 +3515,11 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         if (result) ERR("Can't backup the test folder: %s\n", (const char*)result);
 
         // Display some statistics
-#if KeepPreviousVersionFormat == 1
-        Frost::DatabaseModel::Revision rev;
-        rev.ID = revisionID;
-        console.progressed(Frost::ProgressCallback::Backup, "", 0, 0, 0, 0, Frost::ProgressCallback::FlushLine);
-        console.progressed(Frost::ProgressCallback::Backup, Frost::String::Print(Frost::__trans__("Finished: %s, (source size: %lld, backup size: %lld, %u files, %u directories)"),
-                                            (const char*)backup, (uint64)rev.InitialSize, (uint64)rev.BackupSize, (uint32)rev.FileCount, (uint32)rev.DirCount), 1, 1, (uint32)rev.FileCount, (uint32)rev.FileCount,
-                                            Frost::ProgressCallback::FlushLine);
-#else
         console.progressed(Frost::ProgressCallback::Backup, "", 0, 0, 0, 0, Frost::ProgressCallback::FlushLine);
         console.progressed(Frost::ProgressCallback::Backup, Frost::String::Print(Frost::__trans__("Finished: %s, (source size: %lld, backup size: %lld, %u files, %u directories)"),
                                             (const char*)backup, (int64)Frost::Helpers::indexFile.getMetaData().findKey("InitialSize").fromFirst(": "), (int64)Frost::Helpers::indexFile.getMetaData().findKey("BackupSize").fromFirst(": "), (uint32)Frost::Helpers::indexFile.getMetaData().findKey("FileCount").fromFirst(": "), (uint32)Frost::Helpers::indexFile.getMetaData().findKey("DirCount").fromFirst(": ")), 1, 1, (uint32)Frost::Helpers::indexFile.getMetaData().findKey("FileCount").fromFirst(": "), (uint32)Frost::Helpers::indexFile.getMetaData().findKey("FileCount").fromFirst(": "),
                                             Frost::ProgressCallback::FlushLine);
 
-#endif
         // Need to be called anyway
         Frost::finalizeDatabase();
         if (warningLog.getSize()) fputs((const char*)(warningLog.Join("\n")+"\n"), stderr);
@@ -5169,34 +4068,14 @@ int main(int argc, char ** argv)
     return ret;
 }
 #else
-
-#if KeepPreviousVersionFormat == 1
-namespace Database { String constructFilePath(String fullPath, const String & URL); }
-struct ExitErrorCallback : public Database::DatabaseConnection::ClassErrorCallback
-{
-    virtual void databaseErrorCallback(Database::DatabaseConnection * connection, const uint32 index, const ErrorType & error, const Database::String & message)
-    {
-        const char * errorType[] = { "UNK", "RQT", "CON" };
-        Logger::log(Logger::Error | Logger::Database, "DB ERROR(%d,%s): %s", index, errorType[(int)error], (const char*)message);
-        Logger::log(Logger::Error | Logger::Database, "DB ERROR : Database path used: %s", (const char*)Database::constructFilePath(DEFAULT_INDEX, Frost::DatabaseModel::databaseURL));
-
-        // Now exit the software
-        Database::SQLFormat::finalize((uint32)-1);
-        exit(EXIT_FAILURE);
-    }
-} exitErrorCallback;
-
 int main(int argc, char ** argv)
 {
-    // Install callbacks for errors and logging
-    Database::SQLFormat::setErrorCallback(exitErrorCallback);
-
-#else
-
-int main(int argc, char ** argv)
-{
-
+  #ifdef _POSIX
+     // Install memory signal handler
+     signal(SIGUSR2, Frost::asyncProcess);
+     signal(SIGINT, Frost::asyncProcess);
 #endif
+
     // Build the options array
     Strings::StringArray options(argv, (size_t)argc);
     if (options.getSize() < 2)
