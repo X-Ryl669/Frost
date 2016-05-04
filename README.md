@@ -11,3 +11,5 @@ Then even more data is preserved with compression (using either zLib or BSC libr
 
 
 More info, documentation and encryption algorithm description <a href="http://x-ryl669.github.io/Frost/">here</a>
+
+With version 2 and the Fuse implementation, it shows an interface that is equivalent to Time Machine (tm) by Apple, on any (decent) Posix system. It's feature equivalent, yet more efficient thanks to deduplication (so if you change 10 bytes on a 1GB file, with Time Machine, the complete new file is saved, with Frost, only the change), provides compression and encryption.
