@@ -319,6 +319,12 @@ namespace File
         /** Get the complete content as a String.
             @warning Beware that the whole content is read in memory so big file will exhaust your memory */
         String getContent() const;
+        /** Get the complete content in a user provided buffer.
+            @param buffer   A pointer to the buffer to read the file into
+            @param length   The length of the buffer in bytes
+            @return The amount of bytes read into the buffer, or -1 on error */
+        ssize_t getContent(uint8 * buffer, const size_t length) const;
+
         /** Replace the file content with the given string.
             The replacement is atomic (so the file contains either the previous content or the new one).
             If the file doesn't exist, it's created.
@@ -327,6 +333,16 @@ namespace File
                                  either it's not replaced atomically. @sa ContentMode
             @return false if it was not possible to set the content (either disk full, either permissions issues) */
         bool setContent(const String & content, const SetContentMode mode = AtomicReplace);
+        /** Replace the file content with the given buffer.
+            The replacement is atomic (so the file contains either the previous content or the new one).
+            If the file doesn't exist, it's created.
+            @param content       The new file's content.
+            @param size          The buffer size in bytes.
+                                 If you need more than 2GB, you should use Stream class instead, since you should not do that in one shot.
+            @param mode          Depending on the mode choosen, either the file is replaced atomically, either it's appended,
+                                 either it's not replaced atomically. @sa ContentMode
+            @return false if it was not possible to set the content (either disk full, either permissions issues) */
+        bool setContent(const uint8 * content, const uint32 size, const SetContentMode mode);
         /** Get the parent folder (if any applicable).
             This method actually resolves any symbolic link, path substitution and stack abuse */
         String getParentFolder() const;
@@ -362,6 +378,12 @@ namespace File
             @note If the current item is a symbolic link, it's not followed (so it returns 1)
             @param extension   If provided, only file with the given extension are counted. Expected value with leading dot like ".jpg" */
         uint32 getEntriesCount(const String & extension = "") const;
+
+        /** Create a non-existing name for a file, trying to keep the given template.
+            For example, if the instance is built with the full path "/something/file.jpg"
+            and such file already exists, this method will return "/something/file.1.jpg"
+            (or more until file.x.jpg does not exist for x) */
+        bool createNonExistingFilename(); 
 
 
 

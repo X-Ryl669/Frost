@@ -1,8 +1,8 @@
 #ifndef hpp_HashTable_hpp
 #define hpp_HashTable_hpp
 
-// We need types
-#include "../Types.hpp"
+// We need deleters
+#include "../Container/Deleters.hpp"
 // We need containers
 #include "../Container/Container.hpp"
 
@@ -37,20 +37,7 @@ namespace Container
         static inline bool compareKeys(const KeyType & first, const KeyType & second) { return first == second; }
     };
 
-    /** Default deletion for node's objects doing nothing (no deletion) */
-    template <typename T>
-    struct NoDeletion
-    {   inline static void deleter(T *) {} };
 
-    /** Default true deletion for node's objects  */
-    template <typename T>
-    struct DeletionWithDelete
-    {   inline static void deleter(T *& t) { delete t; t = 0; } };
-
-    /** Default true deletion for node's objects with free */
-    template <typename T>
-    struct DeletionWithFree
-    {   inline static void deleter(T *& t) { free((void*)t); t = 0; } };
 
 #if (_MSC_VER > 1200 || !defined(_MSC_VER))
     // The selector based on POD key type, this clear speed up the hash table with POD is used for key
@@ -292,6 +279,7 @@ namespace Container
                 {
                     next = current->next;
                     DeletionPolicy::deleter(current->value);
+                    PODKey::removeKey(current->key);
                     free(current);
                 }
             }

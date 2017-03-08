@@ -635,6 +635,18 @@ namespace File
 #endif
     }
 
+    // Create a non-existing name for a file, trying to keep the given template.
+    bool Info::createNonExistingFilename()
+    {
+        String baseName = name;
+        String file = baseName.splitFrom(".");
+        int counter = 1;
+        while (File::Info(getParentFolder() + PathSeparator + file + "." + baseName).doesExist()) { file = file.upToLast("."); file += String::Print(".%d", counter++); }
+        name = file + "." + baseName;
+        return true;
+    }
+
+
 
     // Get the complete content as a String.
     String Info::getContent() const
@@ -654,8 +666,25 @@ namespace File
         delete stream;
         return ret;
     }
+    // Get the complete content in a user provided buffer.
+    ssize_t Info::getContent(uint8 * buffer, const size_t length) const
+    {
+        // This is not the correct method to read such a huge buffer
+        if (length > 0x7FFFFFFFU) return -2;
+        BaseStream * stream = getStream(true, true, false);
+        if (!stream) return -3;
+        ssize_t ret = (ssize_t)stream->read((char*)buffer, (int)length);
+        delete stream;
+        return ret;
+    }
+
+
     // Replace the file content with the given string.
     bool Info::setContent(const String & content, const Info::SetContentMode mode)
+    {
+        return setContent((const uint8*)content, content.getLength(), mode);
+    }
+    bool Info::setContent(const uint8 * content, const uint32 size, const Info::SetContentMode mode)
     {
         if (mode.type != AtomicReplace)
         {
@@ -666,9 +695,9 @@ namespace File
             FILE * file = fopen(getFullPath(), mode.type == Overwrite ? "wb" : "a+b");
 #endif
             if (!file) return false;
-            size_t ret = fwrite((const char *)content, 1, content.getLength(), file);
+            size_t ret = fwrite((const char *)content, 1, size, file);
             fclose(file);
-            return ret == (size_t)content.getLength();
+            return ret == (size_t)size;
         }
 
         // Create a temporary file and save in it
@@ -677,7 +706,7 @@ namespace File
             tmpName += "_";
 
         BaseStream * stream = Info(tmpName).getStream(true, false, true);
-        bool ret = stream->write((const char*)content, content.getLength()) == content.getLength();
+        bool ret = stream->write((const char*)content, size) == size;
         delete stream;
 
         // Then move the file over the expected one.
@@ -1120,7 +1149,12 @@ namespace File
             // For example, on Linux, all symlink are 0777 anyway, so avoid calling lchmod which is not supported in that platform.
             // On BSD, this should still work as expected
             struct stat currentStat = {0};
+#if !defined(_LINUX)
             if (lstat(getFullPath(), &currentStat) == 0 && currentStat.st_mode != status.st_mode && lchmod(getFullPath(), status.st_mode) != 0) return false;
+#else
+            if (lstat(getFullPath(), &currentStat) == 0 && currentStat.st_mode != status.st_mode) return false;
+#endif
+
         } else if (chmod(getFullPath(), status.st_mode) != 0) return false;
         // Set the time now for this file and we are done
         struct timeval fix[2];
@@ -1380,6 +1414,8 @@ namespace File
     // Get the parent folder
     String Info::getParentFolder() const
     {
+        // If no path is defined, it's the current directory
+        if (!path) return General::getSpecialPath(File::General::Current);
         String realParent = Info(path).getRealFullPath();
         if (!realParent) return General::normalizePath(path);
         return realParent;
@@ -1498,6 +1534,7 @@ namespace File
         {
             finder = opendir(path);
             if (finder == 0) return false;
+            info.path = path.normalizedPath(Platform::Separator, false);
         }
 
         // Then read the directory (we don't use readdir_r here because it's unsafe, the dirent's size can't be known beforehand)
@@ -1559,6 +1596,7 @@ namespace File
         {
             finder = opendir(path);
             if (finder == 0) return false;
+            info.path = path.normalizedPath(Platform::Separator, false);
         }
 
         // Then read the directory (see above for why we don't use readdir_r)

@@ -6,7 +6,11 @@
 #include "../../include/Threading/Threads.hpp"
 #include "../../include/Utils/ScopePtr.hpp"
 
-#if (HasThreadLocalStorage == 1)
+#if (HasDatabase == 1)
+
+  #if (HasThreadLocalStorage != 1)
+    #warning SQLite driver requires enabling ThreadLocalStorage flag to be built
+  #else
 
 #if (DEBUG==1)
     #define SQLDEBUG
@@ -832,4 +836,5 @@ namespace Database
     }
 }
 
+#endif
 #endif

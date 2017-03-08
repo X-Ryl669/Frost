@@ -27,7 +27,7 @@
     - Threading::Event (useful to signal a condition atomically)
     - Threading::ReadWriteLock (multiple reader can access a reader-locked section, but only one write is allowed to enter a writer locked section)
     - Threading::SharedDataWriter / Threading::SharedDataReader / Threading::SharedDataReaderWriter are used to implement atomic operations on integers
-    - Threading::LockingObjPtr et al, are used to automatically lock an object on access transparently (à la serialize in Java) */
+    - Threading::LockingObjPtr et al, are used to automatically lock an object on access transparently (ï¿½ la serialize in Java) */
 namespace Threading
 {
     class RunCondition
@@ -276,7 +276,7 @@ namespace Threading
         /** The run condition */
         volatile RunCondition   run;
         /** This thread lock */
-        mutable  Lock           lock;
+        mutable  Lock           _lock;
 
 
         // Interface
@@ -290,7 +290,7 @@ namespace Threading
         /** The needed override */
         virtual uint32 runThread() = 0;
         /** Is the thread running ? (this is thread safe, as it locks the object) */
-        bool isRunning() const;
+        virtual bool isRunning() const;
 
 #ifdef _WIN32
         /** The run thread hook */
@@ -307,6 +307,9 @@ namespace Threading
 #ifdef _POSIX
         /** Stop the thread, get its stack and resume (Linux only) */
         Strings::FastString getStack();
+
+        /** Get the current thread's stack (Linux only) */
+        static Strings::FastString getCurrentThreadStack();
 
         /** Install the dump stack handler for main thread */
         static void installMainThreadHandler();

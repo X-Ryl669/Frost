@@ -101,7 +101,7 @@ namespace UniversalTypeIdentifier
     RegisterClassForVariantDecl(GetterSetterRef);
 
 
-#ifndef DontHaveDatabaseCode
+#if WantDatabase == 1
     // Database stuff is here
     #include "../../include/Database/Database.hpp"
     RegisterClassForVariantDecl(Database::Index)

@@ -6,6 +6,7 @@
 // We need database declarations
 #include "Database.hpp"
 
+#if WantDatabase == 1
 namespace Database
 {
     /** The pool of results after a query on the database.
@@ -1040,5 +1041,7 @@ namespace Database
         return true;
     }
 }
+
+#endif
 
 #endif

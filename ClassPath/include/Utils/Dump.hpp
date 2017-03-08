@@ -15,9 +15,9 @@ namespace Utils
     }
 
     /** Dump the given byte array to string as an hexadecimal string */
-    static Strings::FastString dumpToHexString(const uint8 * const array, const uint32 length)
+    static Strings::FastString dumpToHexString(const void * array, const uint32 length)
     {
-        Strings::FastString ret; dumpToHexString(ret, array, length); return ret;
+        Strings::FastString ret; dumpToHexString(ret, (const uint8 * const)array, length); return ret;
     }
 
     /** Produce a nice hexdump of the given byte array.
@@ -28,6 +28,12 @@ namespace Utils
         @param withAddress  If set, the relative address is display in the beginning of each line
         @param withCharVal  If set, a character map is displayed after each dumped line, impossible chars are replaced by '.' */
     void hexDump(Strings::FastString & out, const uint8 * const array, const uint32 length, const uint32 colSize = 16, const bool withAddress = false, const bool withCharVal = false);
+
+    /** Dump the given byte array to string as an hexadecimal string with ASCII display on right */
+    static Strings::FastString hexDump(const void * array, const uint32 length)
+    {
+        Strings::FastString ret; hexDump(ret, (const uint8 * const)array, length, 128, false, true); return ret;
+    }
 }
 
 

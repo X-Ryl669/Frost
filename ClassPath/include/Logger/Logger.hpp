@@ -15,6 +15,7 @@
 // We need strings too
 #include "../Strings/Strings.hpp"
 
+
 namespace Logger
 {
     /** The logger output sink interface */
@@ -22,6 +23,11 @@ namespace Logger
     {
         /** The allowed mask to log */
         const unsigned int logMask;
+        /** Check if a given message should go through the current mask */
+        virtual bool checkFlags(const unsigned int flags) const
+        {
+            return getVerbosity(flags) <= VerbosityLevel && (logMask & flags);
+        }
         /** Get an UTF-8 message, without end-of-line, to sink to output */
         virtual void gotMessage(const char * message, const unsigned int flags) = 0;
         /** Required virtual destructor */
@@ -40,7 +46,7 @@ namespace Logger
     public:
         virtual void gotMessage(const char * message, const unsigned int flags)
         {
-            if (logMask & flags)
+            if (checkFlags(flags))
             {
                 Threading::ScopedLock scope(lock);
                 #if defined(NEXIO)
@@ -86,7 +92,7 @@ namespace Logger
     public:
         virtual void gotMessage(const char * message, const unsigned int flags)
         {
-            if (logMask & flags)
+            if (checkFlags(flags))
             {
                 Threading::ScopedLock scope(lock);
                 OutputDebugStringA((const char*)message);
@@ -109,7 +115,7 @@ namespace Logger
     public:
         virtual void gotMessage(const char * message, const unsigned int flags)
         {
-            if (logMask & flags)
+            if (checkFlags(flags))
             {
                 Threading::ScopedLock scope(lock);
                 fprintf(stderr, "%s\n", (const char*)message);

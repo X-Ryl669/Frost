@@ -2423,7 +2423,7 @@ namespace Container
 
             if (!array.getSize()) return true;
             if (firstIndex > array.getSize()) return false;
-            if (lastIndex > array.getSize()) lastIndex = array.getSize() - 1;
+            if (lastIndex > array.getSize()) lastIndex = (uint32)(array.getSize() - 1);
             if (lastIndex < firstIndex) return false;
 
             if (!sortSameElements)

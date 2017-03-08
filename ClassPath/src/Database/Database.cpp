@@ -1,5 +1,6 @@
 #include "../../include/Database/Database.hpp"
 
+#if WantDatabase == 1
 
 const unsigned int  Database::Index::WantNewIndex = (unsigned int)-1;
 const unsigned int  Database::Index::DelayAction = 0;
@@ -853,4 +854,6 @@ namespace Database
 
 
 }
+
+#endif
 

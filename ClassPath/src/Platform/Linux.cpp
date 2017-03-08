@@ -84,6 +84,20 @@ namespace Platform
         return true;
     }
 
+    const char * getProcessName()
+    {
+        static Strings::FastString processName;
+        if (!processName)
+        {
+#ifdef _LINUX
+            processName = (const char*)File::Info("/proc/self/cmdline").getContent(); // Process name is the first on the command line and it's zero delimited so it'll be perfect
+#else
+            processName = getprogname();
+#endif
+        }
+        return processName;
+    }
+    
     DynamicLibrary::DynamicLibrary(const char * pathToLibrary)
         : handle(dlopen(pathToLibrary, RTLD_LAZY))
     {

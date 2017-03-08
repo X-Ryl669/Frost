@@ -1,16 +1,19 @@
 #ifndef hpp_RobinHoodHashTable_hpp
 #define hpp_RobinHoodHashTable_hpp
 
+// We need deleters
+#include "../Container/Deleters.hpp"
+
 namespace Container
 {
     /** Default function for uint32 */
-    uint32 hashIntegerKey(uint32 x) { x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x); return x ? (uint32)x : (uint32)1; } // Avoid 0 as it's reserved
+    inline uint32 hashIntegerKey(uint32 x) { x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x); return x ? (uint32)x : (uint32)1; } // Avoid 0 as it's reserved
     /** Default function for uint32 */
-    uint32 hashIntegerKey(uint64 x) { x = ((x >> 32) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x); return x ? (uint32)x : (uint32)1; }
+    inline uint32 hashIntegerKey(uint64 x) { x = ((x >> 32) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x); return x ? (uint32)x : (uint32)1; }
     /** Default function for uint32 */
-    uint32 hashIntegerKey(uint16 x) { uint32 r = x * 0x45d9f3b; r = ((r >> 16) ^ r); return r ? r : 1; }
+    inline uint32 hashIntegerKey(uint16 x) { uint32 r = x * 0x45d9f3b; r = ((r >> 16) ^ r); return r ? r : 1; }
     /** Default function for any other integer type is to avoid hashing */
-    template <typename T> uint32 hashIntegerKey(T x) { return x; }
+    template <typename T> inline uint32 hashIntegerKey(T x) { return x; }
 
 
     /** Implementation of the hashing policies for integers.
@@ -77,11 +80,16 @@ namespace Container
     };
 
 
-    /** This class implements a Hopscotch hash table.
+    /** This class implements a RobinHood hash table.
+        Unlike the HashTable, this table uses open addressing, that is, it does not allocate more memory in case of collision to store a chained list in the bucket array.
+        Instead, it relocates the existing entries to ensure a small proximity from the hashed position to the actual entry.
+        It's called RobinHood because the basic idea is to get from the rich (entries located close to their hashed positions) to give to the poor (entries located far from their
+        hashed positions). It does so by sequentially moving the items with hash collisions so their are (on average) relatively close to their expected position.
+
         For usage, @sa Tests::RobinHoodHashTableTests
      
         @warning The type must be a Plain Old Data (with no destructor), since no destructor are called, and data is moved
-        @param T            The data type. Must be very small and POD
+        @param T            The data type. Must be very small and POD (if you need to store non POD type, use Proxy or ProxyArray type)
         @param Key          The key type.
         @param HashPolicy   Defaults to integer based key (should be small and POD too)
         @param Bucket       The bucket type to use (default to a very simple bucket type, but can be made more compact by template specialization) */
@@ -100,6 +108,26 @@ namespace Container
         };
         /** The generator callback function used in resize */
         typedef bool (*ResizeGenFunc)(size_t index, T & t, Key & k, void * token);
+
+        /** The iterator type */
+        struct IterT
+        {
+            const RobinHoodHashTable & table;
+            mutable size_t       currentPos;
+
+            bool isValid() const { return currentPos < table.allocSize; }
+            inline const IterT & operator ++() const
+            {
+                ++currentPos;
+                while (currentPos < table.allocSize && table.table[currentPos].getHash(table.opaque) == HashPolicy::defaultHash()) ++currentPos;
+                return *this;
+            }
+            T * operator *() const { return currentPos < table.allocSize ? &table.table[currentPos].data : 0; }
+            Key getKey() const { return currentPos < table.allocSize ? table.table[currentPos].getKey(table.opaque) : (Key)0; }
+            void Reset() const { currentPos = (size_t)-1; operator++(); }
+
+            IterT(const RobinHoodHashTable & table) : table(table), currentPos((size_t)-1) { operator++(); }
+        };
 
         // Members
     private:
@@ -206,12 +234,12 @@ namespace Container
             return true;
         }
 
-        /** Extract a value from the table. The value is forget from the table (done by swapping 0 with the value) */
+        /** Extract a value from the table. The value is forgotten from the table (done by swapping 0 with the value) */
         T extractValue (const Key & key)
         {
             const HashKeyT hash = HashPolicy::Hash(key);
             size_t initPos = hash % allocSize;
-            size_t current = 0, probeCurrent = 0;
+            size_t current = 0;
             T ret = 0;
 
             for(size_t i = 0; i < probingMaxSize; i++)
@@ -268,6 +296,15 @@ namespace Container
         size_t getSize() const { return count; }
         /** Get the current memory usage for this table (in bytes) */
         size_t getMemUsage() const { return sizeof(*this) + allocSize * sizeof(*table); }
+
+        /** Get an iterator to this table.
+            The iterator is only valid while the table is not modified. */
+        IterT getFirstIterator() { return IterT(*this); }
+        /** Get an iterator to this table.
+            The iterator is only valid while the table is not modified. */
+        const IterT getFirstIterator() const { return IterT(*this); }
+
+
 
         /** Check if the table need resizing */
         bool shouldResize() const { return (count + 1) >= allocSize * loadFactor; }
@@ -341,6 +378,8 @@ namespace Container
             // We want to use realloc here, so new[] and delete[] are inaccessible here
             Clear();
         }
+
+        friend struct IterT;
     };
 
 }

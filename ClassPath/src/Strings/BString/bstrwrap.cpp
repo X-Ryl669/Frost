@@ -1577,6 +1577,7 @@ namespace Bstrlib
             }
             return n;
         }
+        if (c) ++array;
         return c;
     }
     int getUnicodeCharCount(const unsigned char * array)

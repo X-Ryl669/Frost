@@ -6,6 +6,8 @@
 // We need variant too
 #include "../Variant/Variant.hpp"
 
+#if WantDatabase == 1
+
 namespace Database
 {
     typedef Strings::FastString String;
@@ -203,6 +205,6 @@ namespace Database
 
 }
 
-
+#endif
 
 #endif

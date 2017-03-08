@@ -1285,7 +1285,9 @@ namespace Frost
             }
 
             /** Allocate a multichunk ID */
-            uint16 allocateMultichunkID() const { return maxMultichunkID + 1; }
+            uint16 nextMultichunkID() const { return maxMultichunkID + 1; }
+            /** Allocate a multichunk ID */
+            uint16 allocateMultichunkID() { return ++maxMultichunkID; }
             /** Allocate a chunklist ID */
             uint32 allocateChunkListID() const { return maxChunkListID + 1; }
             /** Allocate a chunk ID */

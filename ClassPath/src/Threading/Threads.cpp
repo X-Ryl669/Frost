@@ -19,6 +19,7 @@ using namespace Threading;
   // We need them for the semaphore code, since unnamed POSIX semaphore are not supported.
   #include <mach/mach.h>
   #include <mach/task.h>
+  #define SIGSTACK SIGUSR2
 #endif
 
 #if defined(_LINUX)
@@ -34,6 +35,7 @@ using namespace Threading;
   #elif defined R15
     #define REG_PC R15
   #endif
+  #define SIGSTACK SIGRTMIN
 #endif // Linux
 
 #if defined(_POSIX)
@@ -161,7 +163,7 @@ using namespace Threading;
     extern "C" void GetSigStack(int sig,  siginfo_t * siginfo, void * _ucontext)
     {
         // Need to dump the stack here
-        if (sig == SIGUSR1)
+        if (sig == SIGUSR1 || sig == SIGSTACK)
         {
             ucontext_t * ucontext = (ucontext_t*)_ucontext;
             // 30 stack frame should be enough
@@ -183,7 +185,7 @@ using namespace Threading;
             {
                 // Get the this pointer in the TLS
                 Thread * pThis = (Thread*)pthread_getspecific(Thread::threadThisKey);
-                if (pThis != NULL)
+                if (sig != SIGSTACK && pThis != NULL)
                 {
                     pThis->stack = "";
                     for (size_t i = 0; i < size; i++)
@@ -296,9 +298,9 @@ Thread::Thread(const char * name) :
     threadName(0),
 #endif
 #ifdef _WIN32
-    thread(NULL), threadID(0), leaving(0), run(false), lock(name) {}
+    thread(NULL), threadID(0), leaving(0), run(false), _lock(name) {}
 #else
-    leaving(0), run(false), lock(name), isCreated(false)
+    leaving(0), run(false), _lock(name), isCreated(false)
 {
     memset(&thread, 0, sizeof(thread));
 #ifdef _POSIX
@@ -313,9 +315,9 @@ Thread::Thread(const Strings::FastString & name) :
     threadName(new Strings::FastString(name)),
 #endif
 #ifdef _WIN32
-    thread(NULL), threadID(0), leaving(0), run(false), lock(name) {}
+    thread(NULL), threadID(0), leaving(0), run(false), _lock(name) {}
 #else
-    leaving(0), run(false), lock(name), isCreated(false)
+    leaving(0), run(false), _lock(name), isCreated(false)
 {
     memset(&thread, 0, sizeof(thread));
 #ifdef _POSIX
@@ -349,13 +351,13 @@ void setThreadName(const char * name, DWORD threadID)
 
 bool Thread::createThread(const int stackSize) volatile
 {
-    LockingObjPtr<RunCondition> pRun(run, lock);
+    LockingObjPtr<RunCondition> pRun(run, _lock);
     if (pRun->isRunning())
     {
         // Need to release the RunCondition object lock
-        lock.Release();
+        _lock.Release();
         if (!destroyThread()) return 0;
-        lock.Acquire();
+        _lock.Acquire();
     }
 
     pRun->start();
@@ -365,7 +367,7 @@ bool Thread::createThread(const int stackSize) volatile
     {   pRun->stop();   thread = NULL; threadID = 0; return false; }
 
     #if (DEBUG==1)
-        setThreadName(threadName ? (const char*)*threadName : lock.getName(), threadID);
+        setThreadName(threadName ? (const char*)*threadName : _lock.getName(), threadID);
     #endif
     return true;
 #else
@@ -439,9 +441,9 @@ void * Thread::RunThread(void * pVoid)
             }
         }
 #if defined(_LINUX) && (DEBUG==1)
-        if (pThread->threadName || pThread->lock.getName()) prctl (PR_SET_NAME, pThread->threadName ? (const char*)*pThread->threadName : pThread->lock.getName(), 0, 0, 0);
+        if (pThread->threadName || pThread->_lock.getName()) prctl (PR_SET_NAME, pThread->threadName ? (const char*)*pThread->threadName : pThread->_lock.getName(), 0, 0, 0);
 #elif defined(_MAC) && (DEBUG==1)
-        if (pThread->threadName || pThread->lock.getName()) pthread_setname_np(pThread->threadName ? (const char*)*pThread->threadName : pThread->lock.getName());
+        if (pThread->threadName || pThread->_lock.getName()) pthread_setname_np(pThread->threadName ? (const char*)*pThread->threadName : pThread->_lock.getName());
 #endif
 
 #endif
@@ -449,7 +451,7 @@ void * Thread::RunThread(void * pVoid)
 #endif
 
         // Stop the run condition anyway
-        LockingPtr<RunCondition> pRun(pThread->run, pThread->lock);
+        LockingPtr<RunCondition> pRun(pThread->run, pThread->_lock);
         pRun->stop();
 
 #if (HasThreadLocalStorage == 1)
@@ -466,7 +468,7 @@ void * Thread::RunThread(void * pVoid)
 // Check if the thread is running
 bool Thread::isRunning() const
 {
-    LockingConstObjPtr<RunCondition> pRun(run, lock);
+    LockingConstObjPtr<RunCondition> pRun(run, _lock);
     return pRun->isRunning();
 }
 
@@ -479,7 +481,7 @@ bool Thread::destroyThread(const bool & rcbDontWait) volatile
     // Force calling the locking destructor
     {
         // Access volatile boolean
-        LockingObjPtr<RunCondition> pRun(run, lock);
+        LockingObjPtr<RunCondition> pRun(run, _lock);
         // Check if the thread is running
         if (!pRun->isRunning())
         {
@@ -616,6 +618,15 @@ Strings::FastString GetMainThreadStack()
     return sStack;
 }
 
+/** Get the current thread's stack (Linux only) */
+Strings::FastString Thread::getCurrentThreadStack()
+{
+    pthread_kill(pthread_self(), SIGSTACK);
+    SemWait(xSemaphore);
+    return sStack;
+}
+
+
 void Thread::installMainThreadHandler()
 {
     if (!isTIDValid(&mainThreadT))
@@ -629,6 +640,7 @@ void Thread::installMainThreadHandler()
         sa.sa_flags = SA_SIGINFO;
         sigemptyset(&sa.sa_mask);
         sigaction(SIGUSR1, &sa, NULL);
+        sigaction(SIGSTACK, &sa, NULL);
         // Use thread local storage to store this pointer
         pthread_key_create(&threadThisKey, NULL);
         pthread_setspecific(threadThisKey, (void*)NULL);

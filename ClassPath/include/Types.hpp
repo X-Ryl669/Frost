@@ -358,6 +358,10 @@ inline uint64 BigEndian(uint64 a)
         return a;
     return 0;
 }
+/** Round up the given number to the given word size
+    @param x        The number to round up
+    @param wordSize The word size in bytes to round up to */
+inline size_t Monsanto(const size_t x, const size_t wordSize = 4) { return (x + wordSize - 1) & ~(wordSize - 1); }
 
 
 
@@ -642,6 +646,14 @@ public:
         #define _AIOFlagName _
     #endif
 
+    #if (WantDatabase == 1)
+        #define _DBFlag    524288
+        #define _DBFlagName DB
+    #else
+        #define _DBFlag 0
+        #define _DBFlagName _
+    #endif
+
 
     #if (DEBUG==1)
         #define _DebugFlag         1073741824
@@ -674,7 +686,7 @@ public:
 
     #define _ClassPathFlags (_SSLFlag + _AESFlag + _TypeFlag + _FFMPEGFlag + _TLSFlag + _BaseFlag + _FloatFlag + \
                              _ChronoFlag + _AtomicFlag + _MD5Flag + _ExLockFlag + _SOAPFlag + _CompressFlag + \
-                             _OwnPicFlag + _RegExFlag + _PingFlag + _BSCFlag + _JSFlag + _AIOFlag + _DebugFlag)
+                             _OwnPicFlag + _RegExFlag + _PingFlag + _BSCFlag + _JSFlag + _AIOFlag + _DBFlag + _DebugFlag)
 
 
     #define _String(X) #X
@@ -691,8 +703,8 @@ public:
         // This is going to break your software in a very subtle way, since the binary will not match the sources, so debugging will be painful, if not impossible.
         // The solution is simple, make sure you are using the same flags for the both projects.
         enum { ClassPathFlags = _ClassPathFlags };
-        extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DebugFlagName);
-        inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DebugFlagName); }
+        extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DBFlagName), _DebugFlagName);
+        inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DBFlagName), _DebugFlagName); }
         extern const char * getBuildFlagsName();
         /** This get the Git's HEAD SHA1 added with -dirty if dirty or "" if not supported */
         extern const char * getBuildRepoVer();
@@ -766,6 +778,10 @@ public:
 
     #undef _AIOFlag
     #undef _AIOFlagName
+
+    #undef _DBFlag
+    #undef _DBFlagName
+
 
     #undef _DebugFlag
     #undef _DebugFlagName

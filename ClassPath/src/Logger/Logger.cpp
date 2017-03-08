@@ -71,7 +71,7 @@ namespace Logger
 #if defined(_WIN32) || defined(_POSIX)
     void FileOutputSink::gotMessage(const char * message, const unsigned int flags)
     {
-        if ((logMask & flags) && file)
+        if (checkFlags(flags) && file)
         {
             Threading::ScopedLock scope(lock);
             fprintf(file, "%s" ENDOFLINE, (const char*)message);
@@ -92,7 +92,7 @@ namespace Logger
 
     void StructuredFileOutputSink::gotMessage(const char * message, const unsigned int flags)
     {
-        if ((logMask & flags) == 0 || file == 0) return;
+        if (!checkFlags(flags) || file == 0) return;
         // Need to structure the file
         // Find out the time
         time_t now = time(NULL);

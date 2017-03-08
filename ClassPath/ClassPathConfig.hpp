@@ -11,7 +11,7 @@
     Either you provide a buildConfig file that's included by the Makefile to make these flags:
     Such file is never included in the repository so the format should be like this:
     @verbatim
-    WantSSLCode WantDynamicEngine WantPingCode WantAES WantMD5Hashing WantThreadLocalStorage WantBaseEncoding WantFloatParsing WantRegularExpressions WantTimedProfiling WantAtomicClass WantExtendedLock WantSOAP WantCompression WantBSCCompression WantLightImageCode WantAsyncFile
+    WantSSLCode WantDynamicEngine WantPingCode WantAES WantMD5Hashing WantThreadLocalStorage WantBaseEncoding WantFloatParsing WantRegularExpressions WantTimedProfiling WantAtomicClass WantExtendedLock WantSOAP WantCompression WantBSCCompression WantLightImageCode WantAsyncFile WantDatabase
     @endverbatim
     Please notice that the former does not change the link dependencies (like on miniupnpc or openssl even if disabled), while the later
     change them, the Makefile adapts to the flags.
@@ -125,12 +125,18 @@
 /** If you want Dynamic object, JSON parsing, Javascript engine, enable this.
     This activate compilation of DynamicObject, JSON parser, and Javascript engine.
     Default: enabled */
-#define WantDynamicEngine 0
+#define WantDynamicEngine 1
 
 /** If you want asynchronous file IO, enable this. This provides the AsyncStream class in the File namespace.
     This requires linking with libaio on linux system.
     Default: enabled */
 #define WantAsyncFile 1
+
+/** If you want database code, enable this. This provides all the Database related functions in Database namespace.
+    This requires a database driver, typically, with this version of ClassPath, only sqlite3 is supported.
+    This requires linking with SQLite3 library
+    Default: enabled */
+#define WantDatabase 1
 
 
 /** If you want ...

@@ -401,7 +401,7 @@ namespace Stream
 
     uint64 AESInputStream::read(void * const _buffer, const uint64 size) const throw()
     {
-        if (!_buffer || !size) return 0;
+        if (!_buffer || !size || !keySize) return 0;
         // Need to return the already decoded buffer
         uint8 * const outBuf = (uint8 * const)_buffer;
         uint32 pos = 0;
@@ -539,7 +539,7 @@ namespace Stream
 
     uint64 AESOutputStream::write(const void * const _buffer, const uint64 size) throw()
     {
-        if (!_buffer || !size) return 0;
+        if (!_buffer || !size || !keySize) return 0;
         // Need to return the already decoded buffer
         uint8 * const inBuf = (uint8 * const)_buffer;
         uint32 pos = 0;

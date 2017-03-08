@@ -65,7 +65,8 @@
      SocketOutputStream           | An output stream that's writing to a socket
      CompressOutputStream         | An output stream that's compressing data on the fly
      HeaderBodyStream             | An output stream based on a memory buffer for an fixed size header and a output stream for data, that allow out-of time write to the header after data is written.
-*/
+     
+    On platform supporting it, you'll find a MemoryMappedFileStream that's a mutant between a MappableStream and a BaseStream. */
 namespace Stream
 {
     /** All the fullSize() method in each stream can return this value if the stream is not opened correctly, or broken */
@@ -504,7 +505,7 @@ namespace Stream
         OutputFileStream(const OutputFileStream &);
     };
 
-#if defined(_WIN32) || defined(_POSIX)
+#if defined(_WIN32) || defined(_POSIX) || defined(DOXYGEN)
     /** A memory mapped file stream.
         On most operating system, it's possible to map a file from disk as a memory area.
 
@@ -1500,7 +1501,7 @@ namespace Stream
         @param os               The output stream to copy to
         @param callback         The callback object with a copiedData method that'll be called while copy is in progress
         @param forceInputSize   If provided, this override the input stream size by this one. You can use this to limit the copy to a certain size.
-        @warning If you don't care about the copy progress, don't use a callback as it's much slower. */
+        @note If you don't care about the copy progress, don't use a callback as it's much slower. */
     bool copyStream(const InputStream & is, OutputStream & os, CopyCallback & callback, const uint64 forceInputSize = 0);
 
     /** Clone a stream.
@@ -1513,7 +1514,7 @@ namespace Stream
         @param is   The input stream to read from
         @param stop The stop character(s) to look for
         @return the maximum string found that's not including the stop character(s).
-        @warning The stream has been read until one of the stop character was consumed. */
+        @warning The stream has been read until one of the stop character was consumed. Place a sentinel if reading from user generated stream. */
     Strings::FastString readString(const InputStream & is, const Strings::FastString & stop = "");
 
     /** Read a Base16 (hexadecimal) C string out of an input stream.
@@ -1530,7 +1531,7 @@ namespace Stream
         @param is   The input stream to read from
         @param stop The stop character to look for
         @return the maximum string found that's not including the stop character(s)
-        @warning The stream has been read until one of the stop character was consumed. */
+        @warning The stream has been read until one of the stop character was consumed. Place a sentinel if reading from user generated stream. */
     Strings::FastString readHexNumber(const InputStream & is, const Strings::FastString & stop = "");
 
 }

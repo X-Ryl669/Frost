@@ -8,6 +8,13 @@
 // Need Universal Type Identifier
 #include "UTI.hpp"
 
+#if __GNUC__ >= 6
+  #ifndef __clang__
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wplacement-new"
+  #endif
+#endif
+
 
 /** Manipulate any type generically.
     This namespace main contribution is the variant type called Var (or Ref).
@@ -364,6 +371,9 @@ namespace Type
         /** Comparison operator expect that both the stored type and the value to be the same.
             For loose comparison, use the similar member function instead */
         inline bool operator ==(const VarT& x) const { return table == x.table && table->Compare(inner, x.inner); }
+        /** Comparison operator expect that both the stored type and the value to be the same.
+            For loose comparison, use the similar member function instead */
+        inline bool operator !=(const VarT& x) const { return table != x.table || !table->Compare(inner, x.inner); }
 
     public:
 	    /** Allow conversion to a datasource */
@@ -706,5 +716,11 @@ namespace Type
     /** The invoker for pointer parameters */
     typedef InvokeT<ObjectPtrPolicy> InvokeRef;
 }
+
+#ifdef __GNUC__
+  #ifndef __clang__
+  #pragma GCC diagnostic pop
+  #endif
+#endif
 
 #endif

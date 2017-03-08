@@ -401,8 +401,8 @@ namespace Strings
             // We dereference the pointer to 32 bits data access.
             // This is not allowed in current standard, as the data might not exist at this location (however no 32 bit processor can handle non-dword aligned access)
             unsigned int v = *dual.c++;
-            // This find a zero byte in a 32 bit word in only 2 operations (this can be extended to 64 bits easily)
-            hasZeroByte = (v - 0x01010101UL) /*& ~v*/ & 0x80808080UL;
+            // This find a zero byte in a 32 bit word in only 4 operations (this can be extended to 64 bits easily)
+            hasZeroByte = (v - 0x01010101UL) & ~v & 0x80808080UL;
             if (hasZeroByte)
             {
                 if (!(*(dual.c - 1) & 0x000000ff)) return (unsigned int)(dual.inp - input) - 4;

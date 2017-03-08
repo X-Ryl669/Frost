@@ -6,6 +6,8 @@
 // We also need constraint declaration
 #include "Constraints.hpp"
 
+#if WantDatabase == 1
+
 namespace Database
 {
 /** When the Constraint code is not flexible enough for your request, you might want to deal with low level SQL code.
@@ -805,5 +807,6 @@ namespace Query
 
 }
 
+#endif
 
 #endif

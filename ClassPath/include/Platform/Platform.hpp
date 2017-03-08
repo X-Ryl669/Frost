@@ -45,6 +45,7 @@ namespace Platform
         @param largeAccess  If set, then optimized functions are used for large page access.
                             Allocation for large access should call free with large access. */
     void * malloc(size_t size, const bool largeAccess = false);
+    
     /** The simple calloc overload.
         If you need to use another allocator, you should define this method
         @param elementCount  How many element to allocate
@@ -52,6 +53,8 @@ namespace Platform
         @param largeAccess  If set, then optimized functions are used for large page access.
                             Allocation for large access should call free with large access. */
     void * calloc(size_t elementCount, size_t size, const bool largeAccess = false);
+    /** A simpler version of calloc, with only one size specified */
+    inline void * zalloc(size_t size, const bool largeAccess = false) { return calloc(1, size, largeAccess); }
     /** The simple free overload.
         If you need to use another allocator, you should define this method
         @param p     A pointer to an area to return to the heap
@@ -95,7 +98,10 @@ namespace Platform
         @param size     On input, the buffer size, on output, it's set to the used buffer size
         @return false if it can not hide the input, or if it can't get any char in it  */
     bool queryHiddenInput(const char * prompt, char * buffer, size_t & size);
-
+    /** Get the current process name.
+        This does not rely on remembering the argv[0] since this does not exists on Windows.
+        This returns the name of executable used to run the process */
+    const char * getProcessName();
 
 	inline bool isUnderDebugger()
 	{
@@ -161,7 +167,16 @@ namespace Platform
 
     public:
         inline operator int() const { return fd; }
+        /** Mutate the file descriptor with a new descriptor. It closes the previous descriptor. */
         inline void Mutate(int newfd) { if (fd >= 0) close(fd); fd = newfd; }
+        /** Check if reading is possible on the file descriptor without blocking */
+        inline bool isReadPossible(const int timeoutMs)
+        {
+            fd_set fds; FD_ZERO(&fds); FD_SET(fd, &fds); int ret = 0;
+            struct timeval tv = { timeoutMs / 1000, (timeoutMs % 1000) * 1000 };
+            while ((ret = ::select(fd+1, &fds, NULL, NULL, &tv)) == -1 && errno == EINTR) { tv.tv_sec = timeoutMs / 1000; tv.tv_usec = (timeoutMs % 1000) * 1000; }
+            return ret == 1;
+        }
 
         FileIndexWrapper(int fd) : fd(fd) {}
         ~FileIndexWrapper() { if (fd >= 0) close(fd); fd = -1; }
@@ -171,6 +186,11 @@ namespace Platform
         Log will be redirected to syslog service, 
         Input and output file descriptor will be closed, and we'll detach from the 
         running terminal.
+        @warning If you intend to run a server or anything that does file-manipulation, please remember
+                 that this is forking and the parent must call _exit() or std::quick_exit() and not exit() or return from main.
+                 In the later case, the destructors will likely modify the file descriptors of the shared resources (with the child 
+                 daemon) and lead to hard to debug issues.
+                 
         @param pathToPIDFile    The path to the file containing the daemon PID (useful for system script typically)
         @param syslogName       The name of the syslog reported daemon
         @param parent           On parent process will be set to true, and false in child process

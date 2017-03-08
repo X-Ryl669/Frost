@@ -15,6 +15,8 @@
 #include "../Utils/StaticAssert.hpp"
 
 
+#if WantDatabase == 1
+
 /** A database can be seen as 2D matrix with variable-typed cells.
     Usually the columns are named and typed, and all cells in a column
     must match the type of the column
@@ -2008,6 +2010,7 @@ namespace UniversalTypeIdentifier
 #undef AsPOD
 #endif
 
-
+  #define HasDatabase 1
+#endif
 
 #endif

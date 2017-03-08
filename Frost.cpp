@@ -33,7 +33,8 @@ const int BailOut = 26748;
 namespace Frost
 {
 
-    bool dumpState = false, wasBackingUp = false, backupWorked = false, dumpTimeRequired = false, exitRequired = false;
+    bool wasBackingUp = false, backupWorked = false, dumpTimeRequired = false, exitRequired = false;
+    int dumpLevel = 0; // This is the verbosity level
     unsigned int previousRevID = 0;
 
 #ifdef _POSIX
@@ -51,7 +52,7 @@ namespace Frost
 
     void debugMem(const uint8 * buffer, const uint32 len, const String & title = "")
     {
-        if (!dumpState) return;
+        if (dumpLevel < 2) return;
         String out;
         Utils::hexDump(out, buffer, len, 16, true, false);
         fprintf(stdout, "%s%s\n", (const char*)title, (const char*)out);
@@ -227,7 +228,7 @@ namespace Frost
         Utils::ScopePtr<MemoryBlock> base85Encoded(cipherKey.toBase85());
         debugMem(base85Encoded->getConstBuffer(), base85Encoded->getSize(), "Base85 Encrypted content key");
 
-        if (!vault.setContent(String::Print("%d %s\n%s\n", (int)exportedKey.getSize(), (const char*)ID, (const char*)String(base85Encoded->getConstBuffer(), base85Encoded->getSize())), true)) return TRANS("Can't set the key vault file content");
+        if (!vault.setContent(String::Print("%d %s\n%s\n", (int)exportedKey.getSize(), (const char*)ID, (const char*)String(base85Encoded->getConstBuffer(), base85Encoded->getSize())), File::Info::Append)) return TRANS("Can't set the key vault file content");
         if (!vault.setPermission(0600)) return TRANS("Can't set the key vault file permission to 0600");
         return "";
     }
@@ -307,12 +308,11 @@ namespace Frost
         {
             if (readOnly || !mchunk || !list) return false;
             // Make sure it does not exists already
-            mchunk->UID = maxMultichunkID + 1;
             mchunk->listID = maxChunkListID + 1;
             list->UID = maxChunkListID + 1;
             if (multichunks.storeValue(mchunk->UID, mchunk) && chunkList.storeValue(list->UID, list))
             {
-                maxChunkListID++; maxMultichunkID++;
+                maxChunkListID++;
                 return true;
             }
             return false;
@@ -498,7 +498,7 @@ namespace Frost
             Catalog * c = catalog;
             while (c)
             {
-                if (dumpState) c->dump();
+                if (dumpLevel > 1) c->dump();
 
                 Chunks chunk(c->revision);
                 if (!chunk.loadReadOnly(filePtr + c->chunks.fileOffset(), file->fullSize() - c->chunks.fileOffset())) return String::Print(TRANS("Could not read the chunks for revision %d"), c->revision);
@@ -930,7 +930,7 @@ namespace Frost
             return true;
         }
 
-        bool closeMultiChunk(const String & backupTo, File::MultiChunk & multiChunk, ChunkListT multiChunkID, uint64 * totalOutSize, ProgressCallback & callback, uint64 & previousMultiChunkID, CompressorToUse actualComp)
+        bool closeMultiChunk(const String & backupTo, File::MultiChunk & multiChunk, ChunkListT multiChunkID, uint64 * totalOutSize, ProgressCallback & callback, uint64 & previousMultiChunkID, uint64 & currentMultiChunkID, CompressorToUse actualComp)
         {
             KeyFactory::KeyT chunkHash;
             String backPath = backupTo;
@@ -951,12 +951,13 @@ namespace Frost
                     return true;
                 }
             }
-            FileFormat::Multichunk * mc = new FileFormat::Multichunk(indexFile.allocateMultichunkID());
+            FileFormat::Multichunk * mc = new FileFormat::Multichunk(currentMultiChunkID);
             mc->filterArgIndex = getFilterArgumentIndex(actualComp);
             memcpy(mc->checksum, chunkHash, ArrSz(chunkHash));
             indexFile.appendMultichunk(mc, multiChunkID.Forget());
 
             multiChunk.Reset();
+            currentMultiChunkID = 0; // On next usage, will allocate a new one
             return true;
         }
 
@@ -1421,9 +1422,9 @@ namespace Frost
     /** Match the excluded files */
     class MatchExcludedFiles
     {
-        struct MatchAFile { virtual bool isExcluded(const String & relPath) const { return false; } virtual ~MatchAFile() {} };
-        struct MatchSimpleRule : public MatchAFile { String rule; virtual bool isExcluded(const String & relPath) const { return relPath.Find(rule) != -1; } MatchSimpleRule(const String & rule) : rule(rule) {} };
-        struct MatchRegEx : public MatchAFile { String regEx; bool inv; mutable void * capts; int capCount; virtual bool isExcluded(const String & relPath) const { int capCount = 0; bool a = relPath.regExFit(regEx, true, &capts, &capCount); return inv ? !a:a; }
+        struct MatchAFile { virtual bool isExcluded(const String & relPath) const { return false; } virtual String getRule() const { return ""; } virtual ~MatchAFile() {} };
+        struct MatchSimpleRule : public MatchAFile { String rule; String getRule() const { return rule; } bool isExcluded(const String & relPath) const { return relPath.Find(rule) != -1; } MatchSimpleRule(const String & rule) : rule(rule) {} };
+        struct MatchRegEx : public MatchAFile { String regEx; bool inv; mutable void * capts; int capCount; String getRule() const { return "Regexp: " + regEx; } bool isExcluded(const String & relPath) const { int capCount = 0; bool a = relPath.regExFit(regEx, true, &capts, &capCount); return inv ? !a:a; }
                                                 MatchRegEx(const String & regEx, const bool inv = false) : regEx(regEx), capts(0), capCount(0), inv(inv) {} ~MatchRegEx() { free(capts); capCount = 0; } };
 
         typedef Container::NotConstructible<MatchAFile>::IndexList MatchArray;
@@ -1446,12 +1447,25 @@ namespace Frost
             }
         }
     public:
-        bool isExcluded(const String & relPath) const
+        /** Get the rules used (this is used when verbose) */
+        String getRules() const
+        {
+            String ret = "Excluded:\n";
+            for (size_t i = 0; i < excMatches.getSize(); i++)
+                ret += excMatches[i].getRule() + "\n";
+            ret += "Included after exclusion:\n";
+            for (size_t i = 0; i < incMatches.getSize(); i++)
+                ret += incMatches[i].getRule() + "\n";
+            return ret;
+        }
+        /** Complete isExcluded function that applies the complete logic of exclusion and then inclusion */
+        bool isExcluded(const String & relPath, bool * isExcluded = 0) const
         {
             CondScopeProfiler;
             for (size_t i = 0; i < excMatches.getSize(); i++)
                 if (excMatches.getElementAtUncheckedPosition(i)->isExcluded(relPath))
                 {
+                    if (isExcluded) *isExcluded = true;
                     for (size_t j = 0; j < incMatches.getSize(); j++)
                         if (incMatches.getElementAtUncheckedPosition(j)->isExcluded(relPath))
                             return false;
@@ -1487,6 +1501,7 @@ namespace Frost
         File::MultiChunk  compMultiChunk, encMultiChunk;
         uint64            compMultiChunkListID, encMultiChunkListID;
         uint64            compPreviousMCID, encPreviousMCID;
+        uint64            compMCID, encMCID;
 
         String               prevParentFolder;
         MatchExcludedFiles   excludes;
@@ -1524,6 +1539,7 @@ namespace Frost
         virtual bool fileFound(File::Info & info, const String & strippedFilePath)
         {
             if (Frost::exitRequired) return false; // Premature stopping
+
             CondScopeProfiler;
             if (!fileTree) return WARN_CB(ProgressCallback::Backup, info.name, TRANS("Invalid File Tree found. Are you trying to backup using a bad revision ID ?"));
             // Compute stats first
@@ -1534,11 +1550,16 @@ namespace Frost
             // Ok, backup this file, if required (we lie about the size here)
             if (!callback.progressed(ProgressCallback::Backup, TRANS("Analysing: ") + info.name, 0, 1, seen, total, ProgressCallback::KeepLine))
                 return false;
-            if (excludes.isExcluded(strippedFilePath))
+            bool isExcludedInitially = false;
+            if (excludes.isExcluded(strippedFilePath, &isExcludedInitially))
             {   // This file is excluded
                 if (!callback.progressed(ProgressCallback::Backup, TRANS("Excluded: ") + info.name, 0, 0, seen, total, ProgressCallback::FlushLine))
                     return false;
                 return true;
+            } else if (isExcludedInitially)
+            {   // This file was excluded, but then later on was reincluded
+                if (!callback.progressed(ProgressCallback::Backup, TRANS("Excluded at first then reincluded: ") + info.name, 0, 1, seen, total, dumpLevel ?  ProgressCallback::FlushLine : ProgressCallback::KeepLine))
+                    return false;
             }
 
             // We will extract the metadata out of this file first
@@ -1551,7 +1572,7 @@ namespace Frost
                 if (needExtract) info.getMetaDataEx(metadataTmp.getBuffer(), metadataTmp.getSize());
             }
             String metadata = info.expandMetaData(metadataTmp.getConstBuffer(), metadataTmp.getSize());
-            if (dumpState)
+            if (dumpLevel > 1)
             {
                 String metadataCheck = info.getMetaData();
                 if (metadataCheck.fromFirst("/").fromFirst("/") != metadata.fromFirst("/").fromFirst("/"))
@@ -1670,14 +1691,19 @@ namespace Frost
                             FileFormat::Multichunk * mc = entropy <= Helpers::entropyThreshold ? compMultichunk : encMultichunk;
                             Helpers::ChunkListT & mcl = entropy <= Helpers::entropyThreshold ? compMultichunkList : encMultichunkList;
                             uint64 & previousMCID = entropy <= Helpers::entropyThreshold ? compPreviousMCID : encPreviousMCID;
-
+                            uint64 & currentMCID = entropy <= Helpers::entropyThreshold ? compMCID : encMCID;
 
                             if (!multiChunk.canFit(temporaryChunk.size))
                             {
                                 // Close this multichunk, and apply filters
-                                if (!Helpers::closeMultiChunk(backupTo, multiChunk, mcl, &totalOutSize, callback, previousMCID, entropy <= Helpers::entropyThreshold ? Helpers::Default : Helpers::None))
+                                if (!Helpers::closeMultiChunk(backupTo, multiChunk, mcl, &totalOutSize, callback, previousMCID, currentMCID, entropy <= Helpers::entropyThreshold ? Helpers::Default : Helpers::None))
                                     return false;
                             }
+                            
+                            // If no ID set for the multichunk, set one now
+                            if (!currentMCID)
+                                currentMCID = Helpers::indexFile.allocateMultichunkID();
+                            
                             // Make sure we have a chunk list to store too
                             if (!mcl) mcl = new FileFormat::ChunkList(0, true);
 
@@ -1692,7 +1718,7 @@ namespace Frost
                             chunkID = Helpers::indexFile.allocateChunkID();
                             mcl->appendChunk(chunkID, offsetInMC);
                             // And remember in which multichunk it is in too
-                            tmpChunk.multichunkID = Helpers::indexFile.allocateMultichunkID(); // This is safe because it returns the next multichunk's ID until it's closed & saved
+                            tmpChunk.multichunkID = currentMCID; // This is safe because it returns the next multichunk's ID until it's closed & saved
                             if (Helpers::indexFile.shouldResizeChunkIndexMap())
                             {
                                 if (!callback.progressed(ProgressCallback::Backup, TRANS("Resizing the chunk index table (too small)"), 0, 0, 0, 0, ProgressCallback::KeepLine))
@@ -1740,8 +1766,8 @@ namespace Frost
         /** Accessible wrapper from outside to finish the multichunks */
         bool finishMultiChunks()
         {
-            if (!finishMultiChunk(compMultiChunk, compMultichunkList, compPreviousMCID, Helpers::Default)) return false;
-            if (!finishMultiChunk(encMultiChunk, encMultichunkList, encPreviousMCID, Helpers::None)) return false;
+            if (!finishMultiChunk(compMultiChunk, compMultichunkList, compPreviousMCID, compMCID, Helpers::Default)) return false;
+            if (!finishMultiChunk(encMultiChunk, encMultichunkList, encPreviousMCID, encMCID, Helpers::None)) return false;
 
             // Do we have any deleted file ?
             if (prevFilesInDir.getSize()) worthSaving = true;
@@ -1773,13 +1799,13 @@ namespace Frost
 
 
         /** Finish the current multichunk, as it's the end of the backup process */
-        bool finishMultiChunk(File::MultiChunk & multiChunk, Helpers::ChunkListT & multiChunkList, uint64 & previousMCID, const Helpers::CompressorToUse comp)
+        bool finishMultiChunk(File::MultiChunk & multiChunk, Helpers::ChunkListT & multiChunkList, uint64 & previousMCID, uint64 & currentMCID, const Helpers::CompressorToUse comp)
         {
             // Check if we started a multichunk (need to close it in that case)
             if (multiChunk.getSize())
             {
                 Assert(multiChunkList);
-                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkList, &totalOutSize, callback, previousMCID, comp))
+                if (!Helpers::closeMultiChunk(backupTo, multiChunk, multiChunkList, &totalOutSize, callback, previousMCID, currentMCID, comp))
                     return false;
             }
             return true;
@@ -1789,7 +1815,7 @@ namespace Frost
             : callback(callback), backupTo(backupTo),
               folderToBackup(rootFolder.normalizedPath(Platform::Separator, true)), revID(revID), seen(0), total(1),
               fileCount(0), dirCount(0), totalInSize(0), totalOutSize(0),
-              compMultiChunkListID(0), encMultiChunkListID(0), compPreviousMCID(0), encPreviousMCID(0), prevParentFolder("*")
+              compMultiChunkListID(0), encMultiChunkListID(0), compPreviousMCID(0), encPreviousMCID(0), compMCID(0), encMCID(0), prevParentFolder("*")
               , prevParentID(0), fileTree(Helpers::indexFile.getFileTree(revID)), prevFileTree(Helpers::indexFile.getFileTree(revID - 1)), worthSaving(false)
         {
             /* TODO
@@ -1834,7 +1860,7 @@ namespace Frost
                 // Then search for this chunk in the consolidated chunks array
                 const FileFormat::Chunk * chunkIndex = Helpers::indexFile.findChunk(chunkID);
                 if (!chunkIndex)
-                    ERR(TRANS("Missing chunk index for this file: ") + chunkID);
+                    ERR(TRANS("While processing this file, it's missing chunk index: ") + chunkID);
 
                 // Find the multichunk who's storing this chunk
                 const FileFormat::Multichunk * mchunk = Helpers::indexFile.getMultichunk(chunkIndex->multichunkID);
@@ -1958,12 +1984,14 @@ namespace Frost
     {
         // The complete logic is here
 
+        File::FileItemArray items; File::Scanner::FileFilters filters;
+        BackupFile processor(callback, backupTo, revisionID, folderToBackup, strategy);
+        if (dumpLevel)
+            callback.progressed(ProgressCallback::Backup, TRANS("Exclusion and inclusion rules\n=============================\n") + processor.excludes.getRules(), 0, 0, 0, 0, ProgressCallback::FlushLine);
+        // Initiate the pump
         // Step one, we'll make a stack of data to find out what to backup
         if (!callback.progressed(ProgressCallback::Backup, TRANS("...scanning..."), 0, 1, 0, 1, ProgressCallback::KeepLine))
             return TRANS("Error with output");
-        File::FileItemArray items; File::Scanner::FileFilters filters;
-        BackupFile processor(callback, backupTo, revisionID, folderToBackup, strategy);
-        // Initiate the pump
         File::Info rootFolder(folderToBackup, true);
         processor.fileFound(rootFolder, PathSeparator);
         File::Scanner::EventIterator iterator(true, processor);
@@ -2053,7 +2081,7 @@ namespace Frost
         if (!count)
             fprintf(stdout, "%s", (const char*)TRANS("No revision found\n"));
         return count;
-            }
+    }
 
     // Purge old backups
     String purgeBackup(const String & chunkFolder, ProgressCallback & callback, const PurgeStrategy strategy, const unsigned int upToRevision)
@@ -2471,7 +2499,7 @@ namespace Frost
         if (error) return error;
 
         // Great, it should be finished by now, let's remove the initial index file, and useless multichunks
-        if (!dumpState)
+        if (dumpLevel < 2)
         {
             for (size_t i = 0; i < multichunksToRemove.getSize(); i++)
             {
@@ -2625,7 +2653,7 @@ int showHelpMessage(const Frost::String & error = "")
 {
     if (error) fprintf(stderr, "error: %s\n\n", (const char*)TRANS(error));
 
-    printf("Frost (C) Copyright 2015 - Cyril RUSSO (This software is BSD licensed) \n");
+    printf("Frost (C) Copyright 2017 - Cyril RUSSO (This software is BSD licensed) \n");
     printf(TRANS("Frost is a tool used to efficiently backup and restore files to/from a remote\n"
            "place with no control other the remote server software.\n"
            "No warranty of any kind is provided for the use of this software.\n"
@@ -2650,7 +2678,7 @@ int showHelpMessage(const Frost::String & error = "")
            "\t--keyvault file\t\tPath to a file containing the private key used to decrypt/encrypt the backup data. Default to '" DEFAULT_KEYVAULT "'. If the key does not exist, it'll be created\n"
            "\t--keyid id\t\tThe key identifier if storing multiple keys in the key vault.\n"
            "  Optional parameters for backup and restore:\n"
-           "\t--verbose\t\tEnable verbosity (beware, it's VERY verbose)\n"
+           "\t--verbose\t\tEnable verbosity (use -vv for VERY verbose mode)\n"
            "\t--cache [size]\t\tThe cache size (possible suffix: K,M,G) holding the decoded multichunks (default is 64M) - restore only\n"
            "\t--overwrite [policy]\tThe policy for overwriting/deleting files on the restore folder if they exists (either 'yes', 'no', 'update')\n"
            "\t--multichunk [size]\tWhile backing up, files are cut in variable sized chunk, and these chunks are concat in multichunk files saved on the target (default is 250K, possible suffix: K,M,G)\n"
@@ -2661,7 +2689,7 @@ int showHelpMessage(const Frost::String & error = "")
            "\t--strategy [mode]    \tThe purging strategy. By default 'fast', when purging from previous revision, a new index file is created that's built from the cleaned index.\n"
            "\t                     \tHowever, multichunks are not rebuild to remove lost chunks. When using 'slow', multichunks are rebuilt too to remove lost chunks. This incurs reading\n"
            "\t                     \tand writing many multichunk (which might not be desirable if storage is remote). If you enter a value x between 0 (slow) and 100 (fast), the multichunk will be\n"
-           "\t                     \tscanned and only get processed/cleaned if the number of chunks to remove is higher than x% from the number of chunks in the multichunks.\n"
+           "\t                     \tscanned and only get processed/cleaned if the number of chunks to remove is higher than x%% from the number of chunks in the multichunks.\n"
            "\t--exclude list.exc \tYou can specify a file containing the exclusion list for backup. This file is read line-by-line (one rule per line)\n"
            "\t                     \tIf a line starts by 'r/' the exclusion rule is considered as a regular expression otherwise the rule is matched if the analyzed file path contains the rule.\n"
            "\t                     \tThis also means that if you need to exclude a file whose name starts by 'r/', you need to write 'r/r/'.\n"
@@ -2724,14 +2752,14 @@ int showSecurityMessage()
            "\textremely slow (up to few seconds). Starting with version 2, the new index file format is being used,\n"
            "\tand this has some impact on your Frost settings:\n"
            "\t1- New index is much smaller. We expect to fit the index file in memory for usual backup set size\n"
-           "\t2- Access algorithm are all made 0(log N) when O(1) is not possible.\n"
+           "\t2- Access algorithm are all made O(log N) when O(1) is not possible.\n"
            "\t3- File format is made as less as mutable as possible. While backing up, no change is made past the\n"
            "\t   file header. File is recreated on purging, and no modification is done on restoring.\n"
            "\t4- File format is made to be memory mapped as much as possible. This means that accesses will be fast\n"
-           "\t   and the operating system will be able to swap the non-used part if memory is lacking\n\n"
+           "\t   and the operating system will be able to swap the non-used part if memory is lacking\n"
            "\t5- Index file are not endianness neutral. You can not save a backup on little endian system (amd64,\n"
            "\t   x86, ARM) and restore on a big endian system. However, the storage format used is type-size clear\n"
-           "\t   so a backup on a 32 bits system will be restoreable/continueable on a 64 bits system and viceversa."
+           "\t   so a backup on a 32 bits system will be restoreable/continueable on a 64 bits system and viceversa.\n\n"
            "\tSize limits have been selected to have as less impact as possible, yet, you must be aware of them:\n"
            "\t1- Index file format is limited to 16GB (typically a 100k files / 250GB dataset uses 500MB)\n"
            "\t   However, on a 32-bits machine, index file format will be limited to the maximum memory\n"
@@ -2796,7 +2824,6 @@ int checkTests(Strings::StringArray & options)
             printf("Frost (C) Copyright 2014 - Cyril RUSSO All right reserved \n");
             printf(TRANS("Current version: %d. \n\nTest mode help:\n"
                    "\tkey\t\tTest cryptographic system, by creating a new vault, and master key, and reading it back\n"
-                   "\tdb\t\tTest database code, by creating a default database, filling it and reading it back\n"
                    "\troundtrip\tTest a complete roundtrip backup and restore, of fake created file, with specific attributes\n"
                    "\tpurge\t\tTest an update to a previous roundtrip test, and purging the initial revision\n"
                    "\tfs\t\tTest some simple filesystem operations (independant from any other tests)\n"
@@ -2836,29 +2863,29 @@ int checkTests(Strings::StringArray & options)
             {
                 // Ok, then fill some content in some files
                 if (!File::Info("./test/basicFile.txt").setContent("This is a very basic file content"))
-                    ERR("Can't create basic file in the test directory");
+                    ERR("Can't create basic file in the test directory\n");
                 if (!File::Info("./ex/Hurt.txt").copyTo("./test/smallFile.txt"))
-                    ERR("Can't copy lyric file in the test directory");
+                    ERR("Can't copy lyric file from ex/Hurt.txt in the test directory\n");
                 if (!File::Info("./ex/RomeoAndJulietS2.txt").copyTo("./test/"))
-                    ERR("Can't copy scene 2 file in the test directory");
+                    ERR("Can't copy scene 2 file in the test directory\n");
                 if (!File::Info("./ex/RomeoAndJulietS3.txt").copyTo("./test/"))
-                    ERR("Can't copy scene 3 file in the test directory");
+                    ERR("Can't copy scene 3 file in the test directory\n");
                 if (!File::Info("./ex/TheMerchantOfVeniceA3S1.txt").copyTo("./test/"))
-                    ERR("Can't copy scene 1 file in the test directory");
+                    ERR("Can't copy scene 1 file in the test directory\n");
 
 
                 File::Info filePerms("./test/fileWithPerms.txt");
                 if (!filePerms.setContent("This is a file with some permissions"))
-                    ERR("Can't create basic file with permissions in the test directory");
+                    ERR("Can't create basic file with permissions in the test directory\n");
                 if (!filePerms.setPermission(0700))
-                    ERR("Can't set the file permissions for the test vectors");
+                    ERR("Can't set the file permissions for the test vectors\n");
 
                 if (!File::Info("./test/symLink.txt").createAsLinkTo("basicFile.txt"))
-                    ERR("Can't create a symbolic link to the basic file");
+                    ERR("Can't create a symbolic link to the basic file\n");
                 if (!File::Info("./test/subDir").makeDir())
-                    ERR("Can't create a subdirectory");
+                    ERR("Can't create a subdirectory\n");
                 if (!File::Info("./test/subDir/hardLink.txt").createAsLinkTo("./test/fileWithPerms.txt", true))
-                    ERR("Can't create a hard link to the permission file");
+                    ERR("Can't create a hard link to the permission file\n");
 
                 // Test a big file (32MB) with some redundancy to check for deduplication
                 Stream::OutputFileStream stream("./test/bigFile.bin");
@@ -2872,7 +2899,7 @@ int checkTests(Strings::StringArray & options)
                 bigFile.Append(bigFile.getConstBuffer() + 3, bigFile.getSize() - 3);
 
                 if (stream.write(bigFile.getConstBuffer(), bigFile.getSize()) != (uint64)bigFile.getSize())
-                    ERR("Can't fill the big file");
+                    ERR("Can't fill the big file\n");
             }
 
             // Then, let backup this!
@@ -2998,14 +3025,14 @@ int checkTests(Strings::StringArray & options)
             {
                 // Ok, then fill some content in some files
                 if (!File::Info("./test/basicFile.txt").setContent("This is a very basic file content"))
-                    ERR("Can't create basic file in the test directory");
+                    ERR("Can't create basic file in the test directory\n");
                 if (!File::Info("./ex/Hurt.txt").copyTo("./test/smallFile.txt"))
-                    ERR("Can't copy lyric file in the test directory");
+                    ERR("Can't copy lyric file from ex/Hurt.txt in the test directory\n");
                 if (!File::Info("./ex/RomeoAndJulietS2.txt").copyTo("./test/"))
-                    ERR("Can't copy scene 2 file in the test directory");
+                    ERR("Can't copy scene 2 file in the test directory\n");
                 // Change the user permission for this file
                 if (!File::Info("./test/basicFile.txt").setPermission(0600))
-                    ERR("Can't set the permission for the basic file");
+                    ERR("Can't set the permission for the basic file\n");
             }
 
             // Then, let backup this!
@@ -3051,7 +3078,7 @@ int checkTests(Strings::StringArray & options)
 
             // Add another file and backup
             if (!File::Info("./ex/RomeoAndJulietS3.txt").copyTo("./test/"))
-                ERR("Can't copy scene 3 file in the test directory");
+                ERR("Can't copy scene 3 file in the test directory\n");
 
             Frost::finalizeDatabase();
             result = Frost::initializeDatabase("test/", revisionID, cipheredMasterKey);
@@ -3262,7 +3289,7 @@ int checkTests(Strings::StringArray & options)
             while (chunker.createChunk(stream, temporaryChunk))
             {
                 // Ok, got a chunk, let's compute entropy for this chunk
-                
+
                 // The chunk does not exist, so let's append to the current multichunk, and create an entry for it
                 if (!multiChunk.canFit(temporaryChunk.size))
                 {
@@ -3281,7 +3308,7 @@ int checkTests(Strings::StringArray & options)
                 // Append to the current multichunk
                 uint8 * chunkBuffer = multiChunk.getNextChunkData(temporaryChunk.size, temporaryChunk.checksum);
                 if (!chunkBuffer)
-                    ERR("Unexpected behaviour for multichunk data extraction");
+                    ERR("Unexpected behaviour for multichunk data extraction\n");
 
                 memcpy(chunkBuffer, temporaryChunk.data, temporaryChunk.size);
                 double chunkEntropy = multiChunk.getChunkEntropy(&temporaryChunk);
@@ -3699,7 +3726,7 @@ public:
         filePath = "/" + path.fromFirst("/");
         ft = FrostFSOps::fileTrees.getValue(rev);
         if (!ft) return -ENOENT;
-        if (Frost::dumpState) fprintf(stdout, "checkPath: rev%u, path: %s\n", rev, (const char*)filePath);
+        if (Frost::dumpLevel) fprintf(stdout, "checkPath: rev%u, path: %s\n", rev, (const char*)filePath);
         return 0;
     }
 
@@ -3740,7 +3767,7 @@ public:
         Frost::FileFormat::FileTree::Item * item = ft->getItem(itemID);
         // Read the stat structure
         if (!item->fixed || !item->metaData) return -EIO;
-        if (Frost::dumpState) fprintf(stdout, "getattr path: %s [%s]\n", (const char*)path, (const char*)item->getMetaData());
+        if (Frost::dumpLevel) fprintf(stdout, "getattr path: %s [%s]\n", (const char*)path, (const char*)item->getMetaData());
         return File::Info::expandMetaDataNative(item->metaData, item->fixed->metadataSize, info) ? 0 : -EIO;
     }
 
@@ -3775,7 +3802,7 @@ public:
                 count++;
             }
         }
-        if (Frost::dumpState) fprintf(stdout, "readdir path: %s [%d]\n", (const char*)path, count);
+        if (Frost::dumpLevel) fprintf(stdout, "readdir path: %s [%d]\n", (const char*)path, count);
         return 0;
     }
 
@@ -3813,7 +3840,7 @@ public:
 
 
             fi->fh = (uint64)new ReadCache(index, item->getChunkListID());
-            if (Frost::dumpState) fprintf(stdout, "open path: %s [%u]\n", (const char*)path, item->getChunkListID());
+            if (Frost::dumpLevel) fprintf(stdout, "open path: %s [%u]\n", (const char*)path, item->getChunkListID());
             return 0;
         }
         return -ELOOP;
@@ -3824,7 +3851,7 @@ public:
         // We actually don't care about the file to close, since we don't open it anyway.
         if (!fi || !fi->fh) return 0;
         ReadCache * rc = (ReadCache*)fi->fh;
-        if (Frost::dumpState) fprintf(stdout, "close path: %s [%u]\n", pathStr, rc->chunkListID);
+        if (Frost::dumpLevel) fprintf(stdout, "close path: %s [%u]\n", pathStr, rc->chunkListID);
         delete rc;
         return 0;
     }
@@ -3836,7 +3863,7 @@ public:
         if (!fi || !fi->fh) return -EIO;
 
         ReadCache * rc = (ReadCache*)fi->fh;
-        if (Frost::dumpState) fprintf(stdout, "read path: %s [%lld to %lld]\n", pathStr, offset, offset + size);
+        if (Frost::dumpLevel) fprintf(stdout, "read path: %s [%lld to %lld]\n", pathStr, offset, offset + size);
 
         // Now we have the chunk list, let's find the chunks required for this operation
         const Frost::FileFormat::ChunkList * cl = Frost::Helpers::indexFile.getChunkList(rc->chunkListID);
@@ -3907,15 +3934,12 @@ public:
         int nameSize = min((int)size-1, (int)symlink.getLength());
         memcpy(buf, (const char*)symlink, nameSize);
         buf[nameSize] = 0;
-        if (Frost::dumpState) fprintf(stdout, "readlink path: %s [%s]\n", (const char*)path, (const char*)symlink);
+        if (Frost::dumpLevel) fprintf(stdout, "readlink path: %s [%s]\n", (const char*)path, (const char*)symlink);
         return 0;
     }
 
     static int statfs(const char *pathStr, struct statvfs *stat)
     {
-//        TLSIndex * index; String path; FileTree * ft = 0;
-//        int ret = checkPath(pathStr, path, ft, index);
-//        if (ret) return ret;
         // We are only interested in the last revision for the FS size
         const Frost::FileFormat::Catalog * c = Frost::Helpers::indexFile.getCatalogForRevision(FrostFSOps::maxRevisionID);
         if (!c) return -ENOENT;
@@ -3932,7 +3956,7 @@ public:
         const String & initialSize = md.findKey("InitialSize").fromFirst(": ");
         if (initialSize) stat->f_blocks = (int64)initialSize / stat->f_bsize;
         else stat->f_blocks = 0;
-        if (Frost::dumpState) fprintf(stdout, "statvfs path: %s [%u blocks]\n", (const char*)pathStr, (uint32)stat->f_blocks);
+        if (Frost::dumpLevel) fprintf(stdout, "statvfs path: %s [%u blocks]\n", (const char*)pathStr, (uint32)stat->f_blocks);
         return 0;
     }
 
@@ -3982,7 +4006,7 @@ int main(int argc, char ** argv)
 
     if (options.showHelp) fuse_opt_add_arg(&args, "-h");
     if (options.showVersion) fuse_opt_add_arg(&args, "-V");
-    if (options.showDebug) { Frost::dumpState = true; fuse_opt_add_arg(&args, "-f"); }
+    if (options.showDebug) { Frost::dumpLevel = 1; fuse_opt_add_arg(&args, "-f"); }
 
 
     if (options.showVersion)
@@ -4084,8 +4108,9 @@ int main(int argc, char ** argv)
     Frost::Helpers::compressor = Frost::Helpers::ZLib;
 
     Logger::ConsoleSink debugSink(~0);
-    Frost::dumpState = options.indexOf("--verbose") != options.getSize() || options.indexOf("-v") != options.getSize();
-    if (Frost::dumpState) Logger::setDefaultSink(&debugSink);
+    Frost::dumpLevel = options.indexOf("--verbose") != options.getSize() || options.indexOf("-v") != options.getSize();
+    Frost::dumpLevel += options.indexOf("-vv") != options.getSize() ? 2 : 0;
+    if (Frost::dumpLevel) Logger::setDefaultSink(&debugSink);
 
     // This also works for tests, so test it before entering any tests
     if (checkOption(options, "compression") == EXIT_SUCCESS) return EXIT_SUCCESS;

@@ -28,10 +28,49 @@ namespace Logger
         Crypto      =   0x00010000,   //!< Crypto based logs (warning, this can be a security risk)
         Packet      =   0x00020000,   //!< Log Packet related operations
 
+        // Verbosity
+        VerboseLow  =   0x00000000,   //!< Low verbosity
+        VerboseMed  =   0x10000000,   //!< Medium verbosity
+        VerboseHigh =   0x20000000,   //!< High verbosity
+        VerboseHype =   0x30000000,   //!< Super high verbosity
+
         // Compound
 
-        AllFlags    =   0xFFFFFFFF,         
+        AllFlags    =   0x0FFFFFFF,
     };
+
+    /** Check a given verbosity level */
+    inline unsigned int getVerbosity(const unsigned int flags) { return (unsigned int)((flags & 0x30000000) >> 28); }
+
+#ifndef VerbosityLevel
+  /** If not defined yet, need to set the minimum verbosity we are accepting */
+  #define VerbosityLevel 0
+#endif
+
+
+    /** If using these macros, then the logs might be silented in non-debug build.
+        Check is done with the verbosity level, if it does not match, the complete code is removed */
+#if DEBUG == 1
+  #if (VerbosityLevel >= 1)
+    #define VerbLogMed(X, F, ...)  Logger::log(X | Logger::VerboseMed, F, __VA_ARGS__)
+  #else
+    #define VerbLogMed(X, F, ...)  do {} while(0)
+  #endif
+  #if (VerbosityLevel >= 2)
+    #define VerbLogHigh(X, F, ...) Logger::log(X | Logger::VerboseHigh, F, __VA_ARGS__)
+  #else
+    #define VerbLogHigh(X, F, ...) do {} while(0)
+  #endif
+  #if (VerbosityLevel >= 3)
+    #define VerbLogHype(X, F, ...) Logger::log(X | Logger::VerboseHype, F, __VA_ARGS__)
+  #else
+    #define VerbLogHype(X, F, ...) do {} while(0)
+  #endif
+#else
+  #define VerbLogMed(X, F, ...)  do {} while(0)
+  #define VerbLogHigh(X, F, ...) do {} while(0)
+  #define VerbLogHype(X, F, ...) do {} while(0)
+#endif
 
     /** This is the main function for logging any information to the selected sink
         You'll use it like any other printf like function. 

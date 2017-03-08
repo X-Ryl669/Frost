@@ -571,14 +571,25 @@ namespace Threading
     {
         /** The required events */
         Event ping, pong, done;
+
         // Interface
     public:
+        /** @name Interrupting thread
+                  Methods for the interrupting thread
+            @{ */
         /** When you need to stop another thread, you have first to signal that you wait for it to pause its work */
         bool wantToDo(const TimeOut timeout) { ping.Set(); return pong.Wait(timeout); }
         /** If wantToDo returned true, you must release the other thread when you're done with your work */
         void doneWork() { ping.Reset(); pong.Reset(); done.Set(); }
+        /** @} */
+
+
+        /** @name Interrupted thread
+                  Methods for the thread being interrupted
+            @{ */
         /** The other thread will need to call this at "synchronization points" where it's safe to get paused */
         void checkHasToDo() { if (ping.Wait(InstantCheck)) { pong.Set(); done.Wait(); } }
+        /** @} */
 
         /** Construction */
         PingPong(const char * name = NULL) : done(name, Event::AutoReset) {}
@@ -830,6 +841,60 @@ namespace Threading
             LockingObjPtr& operator=(const LockingObjPtr&);
     };
 
+
+    /** Similar to LockingObjPtr but using transitive interface.
+        This is useful for code like this:
+        @code
+        struct A
+        {
+            Member m;
+            Lock   lock;
+
+            XXX getMember() {} // How to get a pointer on m making sure it's locked and unlock when going out of scope ?
+            Member * unsafeGetMember() { return &m; } // This is unsafe for multithreaded access
+            Member * anotherExample() { lock.Acquire(); return &m; } // What if the other thread never call lock.Release ?
+
+        };
+
+        // With LockingObjPtr:
+        struct A
+        {
+            volatile Member m;
+            volatile Lock lock;
+            LockedObjPtr<Member> getMember() volatile { return LockedObjPtr<Member>(m, lock); }
+        };
+
+        // When used: (Other thread)
+        A & a = ...
+        a.getMember()->doSomething(); // will be unlocked after the call
+        // or also valid
+        {
+            LockedObjPtr<Member> obj = a.getMember(); // This works because it's transitive
+            obj->doSomething();
+            obj->setWhatever(230);
+        } // The object is unlocked here
+        @endcode
+    */
+    template <class T>
+    class LockedObjPtr
+    {
+    public:
+        // Constructor
+        LockedObjPtr(volatile T& obj, volatile Lock& mtx) : pObj_(const_cast<T*>(&obj)), pMtx_(const_cast<Lock*>(&mtx))  { pMtx_->Acquire(); }
+        ~LockedObjPtr()                                     { if (pMtx_) pMtx_->Release(); }
+        LockedObjPtr(const LockedObjPtr & other) : pObj_(other.pObj_), pMtx_(other.pMtx_) { const_cast<LockedObjPtr&>(other).pMtx_ = 0; }
+        LockedObjPtr& operator=(const LockedObjPtr& other) { if (&other != this) new(this) LockedObjPtr(other); return *this; }
+
+        // Pointer behavior
+        T& operator*()          { return *pObj_; }
+        T* operator->()         { return pObj_;  }
+
+    private:
+        // The protected object pointer
+        T*              pObj_;
+        // The lock itself
+        Lock*           pMtx_;
+    };
 
     /** This template wraps a volatile object and give access to it while this object is alive.
         This provides enormous advantages, as accessing the volatile object while

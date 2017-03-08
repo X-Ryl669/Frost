@@ -104,7 +104,7 @@ RegisterClassFunctions(Database::TableDefinition*, ("<Value></Value>"), throw Co
     RegisterClassForVariantImpl(Type::GetterSetter          , 0x00000000, 0x00000000, 0x00000003, 0x00000002, ("<Value>[native gs at %p,%p]</Value>", ((GetterSetter*)pData)->getter, ((GetterSetter*)pData)->setter), sSrc.fromFirst("at ").Scan("%p", &((GetterSetter*)pData)->getter); sSrc.fromFirst(",").Scan("%p", &((GetterSetter*)pData)->setter) )
     RegisterClassForVariantImpl(Type::GetterSetterRef       , 0x00000000, 0x00000000, 0x00000003, 0x00000003, ("<Value>[native gs at %p,%p]</Value>", ((GetterSetterRef*)pData)->getter, ((GetterSetterRef*)pData)->setter), sSrc.fromFirst("at ").Scan("%p", &((GetterSetterRef*)pData)->getter); sSrc.fromFirst(",").Scan("%p", &((GetterSetterRef*)pData)->setter) )
 
-#ifndef DontHaveDatabaseCode
+#if WantDatabase == 1
     // Database stuff is here
     #include "../../include/Database/Database.hpp"
     RegisterClassForVariantImpl(Database::Index, 0x00000000, 0x00000000, 0x00000000, 0xf4e3de23, ("<Value>%u</Value>", ((Database::Index*)pData)->index), sSrc.Scan("%u", &((Database::Index*)pData)->index))
