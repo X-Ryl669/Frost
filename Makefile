@@ -7,8 +7,6 @@ CXXSOURCES = \
 ./ClassPath/src/Crypto/OpenSSLWrap.cpp \
 ./ClassPath/src/Crypto/Random.cpp \
 ./ClassPath/src/Crypto/SafeMemclean.cpp \
-./ClassPath/src/Database/Database.cpp \
-./ClassPath/src/Database/SQLite.cpp \
 ./ClassPath/src/Encoding/Encode.cpp \
 ./ClassPath/src/File/BaseChunker.cpp \
 ./ClassPath/src/File/File.cpp \
@@ -52,7 +50,7 @@ CFLAGS += -g -O0
 endif
 
 
-CXXFLAGS += -pthread -Wno-multichar -std=c++11
+CXXFLAGS += -pthread -Wno-multichar -std=c++11 -DCONSOLE=1 -D_FILE_OFFSET_BITS=64 -DDEBUG=1 -DHasClassPathConfig=1 -DWantSSLCode=1 -DWantAES=1 -DWantMD5Hashing=1 -DWantThreadLocalStorage=1 -DWantBaseEncoding=1 -DWantFloatParsing=1 -DWantRegularExpressions=1 -DWantTimedProfiling=1 -DWantAtomicClass=1 -DWantExtendedLock=1 -DWantCompression=1 -DWantBSCCompression=1 -DDontWantUPNPC=1
 CFLAGS += -pthread -Wno-multichar
 
 
@@ -66,7 +64,7 @@ MAIN_OBJ_BUILD = $(foreach object, $(MAINCXX:.cpp=.o),$(addprefix build/, $(obje
 OBJ_BUILD = $(OBJ_CXX_BUILD) $(OBJ_C_BUILD) $(MAIN_OBJ_BUILD)
 SYSLD := $(shell echo `whereis g++ | cut -d\  -f 2`)
 REALLD ?= $(SYSLD)
-SHAREDLIBS = -lssl -lcrypto -lsqlite3
+SHAREDLIBS = -lssl -lcrypto
 # On Linux, old Glib requires -lrt for aio and clock_gettime, and -ldl for dlclose
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)

@@ -359,14 +359,14 @@ namespace Threading
 
 #if (WantThreadLocalStorage == 1)
         /** Append a TLS variable.
-            Typically a TLS variable is a variable that's local (different) for each thread. 
+            Typically a TLS variable is a variable that's local (different) for each thread.
             Since the variable must exists for any thread (even future threads), then a constructor (respectively destructor) is required.
             Variable will be constructed if it was not constructed before (cost on first access, not on thread creation).
             Because it's C++, the variable type is remembered and checked, and a basic memory leak checking is performed on program ending.
 
             @param value    The value to set for this thread's local variable. Other thread will call the construction function.
             @param consFunc The construction function. This must be a pointer to a function that takes the given TLS's key identifier and the default operating system value for a TLS
-            @param desFunc  The destruction function. This must be a pointer to a function that takes the given TLS variable. 
+            @param desFunc  The destruction function. This must be a pointer to a function that takes the given TLS variable.
             @return The key that can be used to find the local variable to manipulate. It's an opaque value. */
         template <class T>
         inline static LocalVariable::Key appendLocalVariable(T * value, T * (*consFunc)(LocalVariable::Key, T*), void (*desFunc)(T*)) { return getLocalVariableList().addVariableWithFunc(value, consFunc, desFunc); }

@@ -43,23 +43,23 @@ namespace Crypto
     };
 
     static InitOpenSSL autoregisterOpenSSL;
-
+    
     /** SSL requires a context to handle the used SSL protocol, and certificates and keys */
     class SSLContext
     {
         SSL_CTX * context;
-
+        
         // Type definition and enumeration
     public:
         /** The allowed protocols for SSL */
         enum Protocol
         {
-            SSLv2     = 0,
+            SSLv2     = 0, 
             SSLv3     = 1,
             TLSv1     = 2,   //!< This is also known as SSLv3.1
             Any       = 3,   //!< This is the default, to allow any type of protocol
         };
-
+        
     private:
         /** Load one or multiple certificates from the given path.
             Certificate must be in PEM format, that means that the content of the pointed file should show at least one:
@@ -68,29 +68,29 @@ namespace Crypto
             ... (CA certificate in base64 encoding) ...
             -----END CERTIFICATE-----
             @endverbatim
-
+            
             @param fullPath     The filesystem fullpath to the certificate file to load (in UTF-8)
             @return true if the certificate is valid and was loaded correctly */
         bool loadCertificate(const char * fullPath);
-
+        
     public:
         /** @internal */
         inline operator SSL_CTX * () { return context; }
         /** Construct a SSL context, with the specified protocol.
             By default, a bundle of root certificate extracted from Mozilla's root store are loaded.
-            You need the file "ca-bundle.crt" to exist in the source folder, as such file will be converted
-            in the process to a binary data added to the final binary executable.
+            You need the file "ca-bundle.crt" to exist in the source folder, as such file will be converted 
+            in the process to a binary data added to the final binary executable. 
             @param protocol   Any of SSLv2, SSLv3, TLSv1 or Any (default) */
         SSLContext(const Protocol protocol = Any);
         /** Construct a SSL context, with the specified protocol, and the root bundle certificate
-            to load.
+            to load. 
             @param rootCertificateBundlePath   A path on the filesystem to the root bundle certificate to load from (in UTF-8).
             @param protocol                    Any of SSLv2, SSLv3, TLSv1 or Any (default) */
         SSLContext(const char* rootCertificateBundlePath, const Protocol protocol = Any);
         ~SSLContext();
     };
-
-    /** Get the default context using any protocol method, and the compile-time build root certificate store
+    
+    /** Get the default context using any protocol method, and the compile-time build root certificate store 
         extracted from Mozilla's source code. */
     SSLContext & getDefaultSSLContext();
 
@@ -1087,7 +1087,7 @@ namespace Crypto
     public:
         /** Establish the DH session.
             Please check the startSession method for example code.
-
+         
             @param privateKey       The private key used to decode the message
             @param message          The message that's received from the other party
             @param messageLen       The message length (in bytes)
@@ -1119,7 +1119,7 @@ namespace Crypto
                 Utils::MemoryBlock message(dh.getMessageLength());
                 Utils::MemoryBlock secret(dh.getSecretLength());
                 if (!dh.startSession(ephemeralPrivKey, message.getBuffer(), message.getSize(), secret.getBuffer(), secret.getSize())) return false;
-
+                
                 // Now you can use the secret on this side too
                 // If you don't need the private key anymore, destroy it
                 ephemeralPrivKey.Destroy();
@@ -1132,12 +1132,12 @@ namespace Crypto
                 Utils::MemoryBlock message = ... received from other side ...;
                 Utils::MemoryBlock secret(dh.getSecretLength());
                 if (!dh.establishSession(privKey, message.getConstBuffer(), message.getSize(), secret.getBuffer(), secret.getSize())) return false;
-
+                
                 // Now you can use the secret on this side too
                 // If you don't need the private key anymore, destroy it
                 privKey.Destroy();
             @endcode
-
+         
             @param privateKey       On output, contains the ephemeral privateKey used to generate the message. You unlikely need this key anymore.
             @param message          The public information that can be send on the wire after starting the session.
             @param messageLen       The public info length (in bytes)
@@ -1155,10 +1155,10 @@ namespace Crypto
             // Generate ephemeral keys for the session
             OSSL_ECDH ephemeral;
             if (!ephemeral.generateKeys(privateKey)) return false;
-
+            
             const PublicKey & pubKey = (const PublicKey &)ephemeral.getPublicKey();
             if (!pubKey.Export(message, messageLen)) return false;
-
+            
             return ::ECDH_compute_key(secret, secretLen, ::EC_KEY_get0_public_key(key.context), static_cast<PrivateKey&>(privateKey).context, ourKDF) > 0;
         }
 

@@ -21,12 +21,12 @@ namespace BSC
     class EOS
     {
         int output;
-
+        
     public:
         Error getError() const { return output <= 0 ? (Error)output : Success; }
         uint32 value() const { return output >= 0 ? (uint32)output : 0; }
-
-
+        
+        
         EOS(int value) : output(value) {}
         EOS(Error error) : output((int)error) {}
     };

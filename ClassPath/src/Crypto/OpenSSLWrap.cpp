@@ -14,7 +14,7 @@
 
 namespace Crypto
 {
-#if (OPENSSL_VERSION_NUMBER < 0x10000000)
+#if (OPENSSL_VERSION_NUMBER < 0x10000000) 
     #ifdef _WIN32
         static HANDLE * lock_cs = 0;
     #else
@@ -223,11 +223,11 @@ namespace Crypto
         :context(SSL_CTX_new(protocol == Any ? SSLv23_method() :
 #ifndef OPENSSL_NO_SSL3_METHOD
                             (protocol == TLSv1 ? TLSv1_method() :
-#ifndef OPENSSL_NO_SSL2
+  #ifndef OPENSSL_NO_SSL2
                             (protocol == SSLv3 ? SSLv3_method() : SSLv2_method()))))
-#else
+  #else
                             SSLv3_method())))
-#endif
+  #endif
 #else
                             TLSv1_method()))
 #endif
@@ -268,11 +268,11 @@ namespace Crypto
         : context ( ::SSL_CTX_new( protocol == Any ? SSLv23_method() :
 #ifndef OPENSSL_NO_SSL3_METHOD
                                 (protocol == TLSv1 ? TLSv1_method() :
-#ifndef OPENSSL_NO_SSL2
+    #ifndef OPENSSL_NO_SSL2
                                 (protocol == SSLv3 ? SSLv3_method() : SSLv2_method()))))
-#else
+    #else
                                 SSLv3_method())))
-#endif
+    #endif
 #else
                             TLSv1_method()))
 #endif

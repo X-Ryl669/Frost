@@ -85,7 +85,7 @@ namespace Strings
 	    const_cast<int&>(length) -= size;
 	    return ret;
 	}
-
+    
     VerySimpleReadOnlyString VerySimpleReadOnlyString::splitAt(int pos, int stripFromRet)
     {
         if (stripFromRet > pos) stripFromRet = pos;
@@ -99,7 +99,7 @@ namespace Strings
         }
         return ret;
     }
-
+    
 
     const VerySimpleReadOnlyString VerySimpleReadOnlyString::fromTo(const VerySimpleReadOnlyString & from, const VerySimpleReadOnlyString & to, const bool includeFind) const
 	{

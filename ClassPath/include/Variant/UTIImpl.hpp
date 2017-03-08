@@ -27,7 +27,7 @@ namespace UniversalTypeIdentifier
     // We use string from FastString lib here
     typedef Strings::FastString String;
     using namespace Type;
-
+    
     // Internal implementation for storing types
     class TextDataSource : public DataSource
     {
@@ -37,7 +37,7 @@ namespace UniversalTypeIdentifier
         Var        getValue() const          { Var var(sourceHolder); return var; }
         TextDataSource(const String & source) : sourceHolder(source) {}
     };
-
+    
 
     /** Some specializations for plain old data
         Those types never exists in run time (they are only compile time based)

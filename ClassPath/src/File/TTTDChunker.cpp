@@ -27,31 +27,31 @@ namespace File
             maxChunkSize = (uint32)(2800.0 * avgChunkSize / 1015.0 + .5);
             highDivider = (uint32)(540.0 * avgChunkSize / 1015.0 + .5);
             lowDivider = (uint32)(270.0 * avgChunkSize / 1015.0 + .5);
-
+            
             options.Clear();
             options.appendLines(String::Print("%d\n%d\n%d\n%d", minChunkSize, maxChunkSize, highDivider, lowDivider));
         }
-
+        
         // Make sure we don't overcome the implementation limits
         Assert(maxChunkSize < 65535);
     }
-
-
+    
+    
     // Extract a chunk from the given input stream
     bool TTTDChunker::createChunk(::Stream::InputStream & input, Chunk & chunk) const
     {
         // The 2 hash algorithm we are using for this algorithm
         Hashing::Adler32 rolling;
         rolling.Start();
-
+        
         Crypto::OSSL_SHA1 bigChecksum;
         bigChecksum.Start();
-
+        
         // The algorithm reads first the minimum amount of data out of the input stream
         uint64 curPos = input.currentPosition();
         uint64 read = input.read(chunk.data, (uint64)min((uint32)ArrSz(chunk.data), maxChunkSize));
         if (read == (uint64)-1 || !read) return false;
-
+        
         // Depending on the amount read, let's act accordingly
         if (read <= minChunkSize)
         {
@@ -62,7 +62,7 @@ namespace File
             // No need to rewind the stream, or anything like that
             return true;
         }
-
+        
         // Real algorithm here
         uint16 backupBreak = 0; // Using 16-bits because chunk don't overcome the 64KB limit
         uint16 breakPos = 0;
@@ -79,13 +79,13 @@ namespace File
                 break;
             }
         }
-
+        
         // If we can't find the high divider break, use the low divider break, or at least the chunk size
         if (breakPos == 0)
         {
             breakPos = backupBreak ? backupBreak : (uint16)read;
         }
-
+        
         chunk.size = breakPos;
         // Compute the SHA1 for this chunk,
         bigChecksum.Hash(chunk.data, (uint32)chunk.size);

@@ -13,7 +13,7 @@ namespace Utils
         for (uint32 i = 0; i < length; i++)
             out += Strings::FastString::Print("%02X", (unsigned int)array[i]);
     }
-
+    
     /** Dump the given byte array to string as an hexadecimal string */
     static Strings::FastString dumpToHexString(const void * array, const uint32 length)
     {

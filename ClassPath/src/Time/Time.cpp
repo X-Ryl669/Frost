@@ -20,7 +20,7 @@ namespace Time
         LARGE_INTEGER ul;
         ul.LowPart = fileTime.dwLowDateTime;
         ul.HighPart = fileTime.dwHighDateTime;
-
+    
         double currentTime = (double)((ul.QuadPart - EPOCH_DIFF) / (double)RATE_DIFF);
         return currentTime;
     }
@@ -51,7 +51,7 @@ namespace Time
 #define EPOCHFILETIME (116444736000000000LL)
 #endif
 
-struct timezone
+struct timezone 
 {
     int tz_minuteswest; /* minutes W of Greenwich */
     int tz_dsttime;     /* type of dst correction */
@@ -116,7 +116,7 @@ namespace Time
         ul.tv_usec = (long)(time * 1000000.0 - (double)ul.tv_sec * 1000000);
         return ul;
     }
-
+    
     // The maximum time no one can go further
 #define MaxValStep(t)   ( ((t)1) << (CHAR_BIT * sizeof(t) - 1 - ((t)-1 < 1)) )
     const Time MaxTime( MaxValStep(time_t) - 1 + MaxValStep(time_t), 999999);
@@ -126,28 +126,28 @@ namespace Time
     static inline time_t makeTime(struct tm * tmt)
     {
         static Threading::Lock mktimeLock;
-
+        
         // Only allow one thread creating the time
         Threading::ScopedLock scope(mktimeLock);
         return mktime(tmt);
     }
-
-
+    
+    
     static time_t timeGM(struct tm * tm)
     {
         // Common cummulative year days before the given month
         static const unsigned short moff[12] = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
 
         if ((unsigned)tm->tm_mon >= 12) return (time_t)-1;
-
+        
         if (tm->tm_year < 70)
             return (time_t) -1;
 
         int y = tm->tm_year + 1900 - (tm->tm_mon < 2);
-
+        
         int nleapdays = y / 4 - y / 100 + y / 400 - (1969 / 4 - 1969 / 100 + 1969 / 400);
         tm->tm_yday = moff[tm->tm_mon] + tm->tm_mday - 1; // Fix up tm_yday
-
+        
         time_t t = ((((time_t) (tm->tm_year - 70) * 365 + tm->tm_yday + nleapdays) * 24 +
             tm->tm_hour) * 60 + tm->tm_min) * 60 + tm->tm_sec;
 
@@ -159,7 +159,7 @@ namespace Time
         return (time_t)a->tm_sec + a->tm_min*60 + a->tm_hour*3600 + a->tm_yday*86400 + (a->tm_year-70)*31536000 + ((a->tm_year-69)/4)*86400 - ((a->tm_year-1)/100)*86400 + ((a->tm_year+299)/400)*86400;
     }*/
 
-
+    
     static inline void makeLocalTime(const time_t tim, struct tm & tmt)
     {
 #ifdef _WIN32
@@ -176,9 +176,9 @@ namespace Time
 #else
         gmtime_r(&tim, &tmt);
 #endif
-    }
-
-
+    }    
+    
+    
     Time fromLocal(const LocalTime & time)
     {
 /*
@@ -197,12 +197,12 @@ namespace Time
         return LocalTime(timeGM(&tmt), time.microSecond());*/
         return LocalTime(time.Second(), time.microSecond());
     }
-
+    
     LocalTime LocalTime::Now()
     {
         return toLocal(Time::Now());
     }
-
+    
     LocalTime::LocalTime(const int year, const int month, const int dayOfMonth, const int hour, const int min, const int sec)
         : Time(time(NULL), 0)
     {
@@ -244,7 +244,7 @@ namespace Time
         time_t offset = makeTime(&utcT) - start;
         return timeSinceEpoch.tv_sec - offset;
     }
-
+    
     bool Time::fromDate(const char * _date)
     {
 #if defined(_WIN32) || defined(_POSIX)
@@ -253,21 +253,21 @@ namespace Time
         struct tm ekT = {0};
 
         const char * monthName[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-
+        
         // Check for ISO8601 format first
         if (date.Find("T") >= 8 && date.fromFirst("T").getLength() > 6)
         {
             // Both format YYYY-MM-DDTHH:MM:SS and YYYYMMDDTHHMMSS exists and are valid
             date.findAndReplace("-", ""); date.findAndReplace("-", ""); date.findAndReplace("-", "");
             date.findAndReplace(":", ""); date.findAndReplace(":", ""); date.findAndReplace(":", "");
-
+            
             ekT.tm_year = (int)date.midString(0, 4) - 1900;
             ekT.tm_mon = (int)date.midString(4, 2) - 1; // Month are in [0 11] range
             ekT.tm_mday = (int)date.midString(6, 2);
             ekT.tm_hour = (int)date.midString(9, 2);
             ekT.tm_min = (int)date.midString(11, 2);
             ekT.tm_sec = (int)date.midString(13, 2);
-        }
+        } 
         // Try to figure out the format used (RFC1036 or RFC1123 or asctime)
         else if (date.Find(',') == -1)
         {
@@ -287,7 +287,7 @@ namespace Time
         else
         {   // Either RFC 1123 or RFC 1036
             String remain = date.fromFirst(" ");
-            int yearLength = remain.Find('-') != -1 ?
+            int yearLength = remain.Find('-') != -1 ? 
                                     remain.fromFirst("-").fromFirst("-").upToFirst(" ").getLength()
                                  :  remain.fromFirst(" ").fromFirst(" ").upToFirst(" ").getLength();
             ekT.tm_mday = (int)remain.midString(0, 2);
@@ -296,7 +296,7 @@ namespace Time
             for (ekT.tm_mon = 0; ekT.tm_mon < 12 && monthTxt != monthName[ekT.tm_mon]; ekT.tm_mon++);
             if (ekT.tm_mon == 12) return false;
 
-            ekT.tm_year = (int)remain.midString(7, yearLength);
+            ekT.tm_year = (int)remain.midString(7, yearLength); 
             if (ekT.tm_year > 1900) ekT.tm_year -= 1900; else if (ekT.tm_year < 70) ekT.tm_year += 100;
             ekT.tm_hour = (int)remain.midString(8 + yearLength, 2);
             ekT.tm_min  = (int)remain.midString(11 + yearLength, 2);
@@ -306,11 +306,11 @@ namespace Time
         timeSinceEpoch.tv_sec = timeGM(&ekT);
         timeSinceEpoch.tv_usec = 0;
         return true;
-#else
+#else        
         return false;
 #endif
     }
-
+    
     Time::Time(const int year, const int month, const int dayOfMonth, const int hour, const int min, const int sec)
     {
 #if defined(_WIN32) || defined(_POSIX)
@@ -328,7 +328,7 @@ namespace Time
         timeSinceEpoch.tv_usec = 0;
 #endif
     }
-
+    
     // Export a date to RFC 1123 format
     int Time::toDate(char * buffer, const bool iso8601) const
     {
@@ -336,7 +336,7 @@ namespace Time
         if (!buffer) return 30;
         const char * monthName[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
         const char * dayName[] = { "Sun", "Mon", "Tue", "Wed", "Thr", "Fri", "Sat" };
-
+        
         struct tm ekT = {0};
         time_t t = (time_t)preciseTime();
         makeUTCTime(t, ekT);
@@ -348,16 +348,16 @@ namespace Time
             return sprintf(buffer, "1970-01-01T00:00:00Z");
         strcpy(buffer, "Sun, 01 Jan 1970 00:00:00 GMT");
         return strlen(buffer);
-#endif
+#endif        
     }
-
+    
 	Strings::FastString Time::toDate(const bool iso8601) const
 	{
 		char buffer[30];
 		toDate(buffer, iso8601);
 		return Strings::FastString(buffer);
 	}
-
+    
     // Get the date information.
     void Time::getAsDate(int & year, int & month, int & dayOfMonth, int & hour, int & min, int & sec, int * dayOfWeek) const
     {
@@ -373,7 +373,7 @@ namespace Time
         if (dayOfWeek) *dayOfWeek = ekT.tm_wday;
 
     }
-
+    
 #if defined(_WIN32)
     static void (WINAPI* pGetSystemTimePreciseAsFileTime)(LPFILETIME) = 0;
     
@@ -535,10 +535,10 @@ namespace Time
             // Try to get the time since Epoch and then, the front clock time.
             gettimeofday(&now, NULL);
             uint64 ts = mach_absolute_time();
-
+            
             mach_timebase_info_data_t    sTimebaseInfo;
             mach_timebase_info(&sTimebaseInfo);
-
+            
             // Convert the clock to nanoseconds
             clock = (uint64)now.tv_sec * 1000000000 + (uint64)now.tv_usec * 1000;
             // Then back to the mach time format
@@ -552,7 +552,7 @@ namespace Time
     }
 #endif
 
-
+    
     uint64 multDiv(uint64 a, uint64 b, uint64 c)
     {
         uint64 const base = 1ULL<<32;
@@ -586,11 +586,11 @@ namespace Time
         p2 += p1 / base;
         p1 %= base;
         // p2 holds 2 digits, p1 and p0 one
-
+        
         // first digit is easy, not null only in case of overflow
         // uint64 q2 = p2 / c;
         p2 = p2 % c;
-
+        
         // second digit, estimate
         uint64 q1 = p2 / ch;
         // and now adjust
@@ -605,7 +605,7 @@ namespace Time
         p1 = ((p2 % base) * base + p1) - q1 * cl;
         p2 = (p2 / base * base + p1 / base) - q1 * ch;
         p1 = p1 % base + (p2 % base) * base;
-
+        
         // now p1 hold 2 digits, p0 one and p2 is to be ignored
         uint64 q0 = p1 / ch;
         rhat = p1 % ch;
@@ -617,7 +617,7 @@ namespace Time
         // in which case we have to divide it by norm)
         return res + q0 + q1 * base; // + q2 *base*base
     }
-
+    
     uint32 getTimeWithBase(const uint32 base)
     {
 #ifdef _WIN32
@@ -642,7 +642,7 @@ namespace Time
         gettimeofday(&now, NULL);
 
         uint64 fracPart = (uint64)now.tv_usec * base;
-        uint64 longTimeInBase = ((uint64)now.tv_sec * base) + (uint64)(fracPart / 1000000);
+        uint64 longTimeInBase = ((uint64)now.tv_sec * base) + (uint64)(fracPart / 1000000); 
         return (uint32)longTimeInBase;
 #endif
     }
@@ -658,7 +658,7 @@ namespace Time
         LARGE_INTEGER ul;
         ul.LowPart = ft.dwLowDateTime;
         ul.HighPart = ft.dwHighDateTime;
-
+    
         return multDiv(ul.QuadPart - EPOCH_DIFF, base, RATE_DIFF);
 #elif defined(_LINUX)
         struct timespec ts;
@@ -680,10 +680,10 @@ namespace Time
         uint64 now = mach_absolute_time() + getInitialTimespec();
 
         static mach_timebase_info_data_t    sTimebaseInfo;
-
+        
         if ( sTimebaseInfo.denom == 0 )
             (void) mach_timebase_info(&sTimebaseInfo);
-
+        
         return multDiv (now * sTimebaseInfo.numer, base, sTimebaseInfo.denom * 1000000000);
 #else
         TimeVal now;
@@ -694,7 +694,7 @@ namespace Time
         return longTimeInBase;
 #endif
     }
-
+    
 }
 
 

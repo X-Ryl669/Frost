@@ -14,7 +14,7 @@ namespace BSC
         hash.Hash(input, n);
         return hash.getChecksumLE();
     }
-
+    
 
     int EBSC::store(const uint8 * input, uint8 * output, size_t n)
     {
@@ -478,7 +478,7 @@ namespace BSC
 
         return lzSize == (int)dataSize ? (adler32_data == adler32(output, dataSize) ? Success : DataCorrupt) : DataCorrupt;
     }
-
+    
     Error EBSC::postProcess(uint8 * input, const size_t inputSize, const int8 sortingContext, const int8 recordSize)
     {
         if (sortingContext == 2)

@@ -8,7 +8,7 @@
 namespace Hashing
 {
     /** Hash the given buffer with Adler32 rolling checksum bits.
-
+     
         Using this class is a bit similar than the other hash class.
         @code
             Hashing::Adler32 hasher;
@@ -30,12 +30,12 @@ namespace Hashing
         {
             Base = 65521, //!< The base used for the modulo operation
         };
-
+        
         /** The first part of the checksum */
         uint32       a;
         /** The second part of the checksum */
         uint32       b;
-
+        
     public:
         /** Start the hashing */
         virtual void Start();
@@ -47,14 +47,14 @@ namespace Hashing
         virtual void Append(uint8 ch);
         /** Get the default hash size in byte */
         inline uint32 hashSize() const throw() { return sizeof(uint32); }
-        /** Get the checksum.
+        /** Get the checksum. 
             This is exactly equivalent to Finalize, but is likely more convenient for a fast access */
         inline uint32 getChecksum() const { return BigEndian((uint32)((b << 16) | a)); }
         /** Get the checksum as little endian.
             This returns a reversed checksum as specified in the default implementation (so it's not interoperable) but it's faster  */
         inline uint32 getChecksumLE() const { return (uint32)((b << 16) | a); }
     };
-
+    
 }
 
 #endif

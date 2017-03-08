@@ -13,7 +13,7 @@ namespace File
     {
         // Type definition and enumeration
     public:
-
+        
         // Members
     private:
         /** The minimum chunk size not to split below */
@@ -24,8 +24,8 @@ namespace File
         uint32 highDivider;
         /** The low divider for boundary finding */
         uint32 lowDivider;
-
-
+        
+        
         // Interface
     public:
         /** Extract a chunk from the given input stream */
@@ -34,16 +34,16 @@ namespace File
         inline size_t getMinimumChunkSize() const { return minChunkSize; }
         /** Get the maximum chunk size this chunker can spit out */
         inline size_t getMaximumChunkSize() const { return maxChunkSize; }
-
+                
         // Construction
     public:
         /** Build a Two Threshold Two Divider chunker
-            @param name  The chunker name and any additional options that'll
-                         be used to match the chunk process.
+            @param name  The chunker name and any additional options that'll 
+                         be used to match the chunk process. 
                          If you only provide one value, it's the average chunk size */
         TTTDChunker(const String & _options = "4096");
     };
-
+    
 }
 
 #endif

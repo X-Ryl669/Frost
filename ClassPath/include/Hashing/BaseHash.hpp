@@ -39,7 +39,7 @@ namespace Hashing
         /** Destructor */
         virtual ~Hasher(){}
     };
-
+    
     /** A rolling-hash algorithm interface.
         Rolling hash compute the hash of a sequence byte-per-byte, but there is a mathematical
         property that Hash(block_i+1) = function(Hash(block_i), block[i+1]) is very efficient.
@@ -50,7 +50,7 @@ namespace Hashing
         /** Append a single byte for the computed checksum */
         virtual void    Append(uint8 ch) = 0;
     };
-
+    
 
     struct SHA1;
     /** Key derivation function.
@@ -58,8 +58,8 @@ namespace Hashing
         The secret key is "derived" to the final size.
         Please notice that derivation is constant, that is the
         function doesn't change output for a same input.
-
-        You might want to use finalizeWithExtraInfo to given extra
+        
+        You might want to use finalizeWithExtraInfo to given extra 
         informations to harden the hash.
 
         @param outputSizeInBit  The expected output hash size in bits
@@ -136,21 +136,21 @@ namespace Hashing
         KDF1() : inputLen(0) { memset(hashInput, 0, sizeof(hashInput)); }
         virtual ~KDF1() { inputLen = 0; memset(hashInput, 0, sizeof(hashInput)); }
     };
-
+    
     /** Password based KDF function, following RSA's PBKDF1 recommandation.
-        This is used to get a hash out of a smaller (likely a password) input,
+        This is used to get a hash out of a smaller (likely a password) input, 
         in a way that's quite hard to brute-force all the possible passwords.
-
+        
         Unlike the KDF1 case above, this one is way slower by design, to avoid
         a fast brute force search for all the "low entropy" passwords.
-
-        You might want to use finalizeWithExtraInfo to given extra
+        
+        You might want to use finalizeWithExtraInfo to given extra 
         informations to harden the hash.
-
+        
         Beware that if you don't provide extra info, a default (fixed) salt
-        will be used so the security will be low as one could make a dictionary
-        of common password padded with this default salt to force it.
-
+        will be used so the security will be low as one could make a dictionary 
+        of common password padded with this default salt to force it.  
+          
         @param outputSizeInBit  The expected output hash size in bits
         @param inputSizeInBit   This is usually the secret size in bits
         @param BaseHasher       The internal hasher method to use (defaults to SHA1)
@@ -161,7 +161,7 @@ namespace Hashing
     {
     private:
         uint8       defaultSalt[8];
-
+ 
     public:
         /** Set the extra info (if any) */
         virtual void finalizeWithExtraInfo(uint8 * outBuffer, const uint8 * extra, const uint32 extraLen)
@@ -171,7 +171,7 @@ namespace Hashing
             if (extra && extraLen)
                this->hasher.Hash(extra, min(extraLen, (uint32)ArrSz(defaultSalt)));
             else this->hasher.Hash(defaultSalt, ArrSz(defaultSalt));
-
+            
             uint8 hashArray[outputSizeInBit / 8] = {0};
             this->hasher.Finalize(hashArray);
 
@@ -181,12 +181,12 @@ namespace Hashing
                 this->hasher.Hash(hashArray, ArrSz(hashArray));
                 this->hasher.Finalize(hashArray);
             }
-
+            
             if (outBuffer) memcpy(outBuffer, hashArray, this->OutputSize);
         }
         PBKDF1() { uint8 defaultSaltImpl[] = { 0xC1, 0xA5, 0x50, 'p', 'a', 'T', 'h', 0x8E }; memcpy(defaultSalt, defaultSaltImpl, ArrSz(defaultSaltImpl)); }
     };
-
+    
 
 
     /** The classical MAC (message authentication code) functions.
@@ -254,19 +254,19 @@ namespace Hashing
     };
 
     /** Password based key derivation function, following RSA's PBKDF2 recommandation.
-        This is used to get a hash out of a smaller (likely a password) input,
+        This is used to get a hash out of a smaller (likely a password) input, 
         in a way that's quite hard to brute-force all the possible passwords.
-
+        
         Unlike the KDF1 case above, this one is way slower by design, to avoid
         a fast brute force search for all the "low entropy" passwords.
-
-        You might want to use finalizeWithExtraInfo to given extra
+        
+        You might want to use finalizeWithExtraInfo to given extra 
         informations to harden the hash.
-
+        
         Beware that if you don't provide extra info, a default (fixed) salt
-        will be used so the security will be low as one could make a dictionary
-        of common password padded with this default salt to force it.
-
+        will be used so the security will be low as one could make a dictionary 
+        of common password padded with this default salt to force it.  
+          
         @param outputSizeInBit  The expected output hash size in bits
         @param inputSizeInBit   This is usually the secret size in bits (password maximum size)
         @param BaseHasher       The internal hasher method to use (defaults to SHA1)
@@ -279,7 +279,7 @@ namespace Hashing
         enum { OutputSize = outputSizeInBit / 8 };
         uint8       defaultSalt[8];
         uint8       PRFBuffer[BaseHasher::DigestSize];
-
+ 
         // Compute a single derivation function
         void PRF(uint8 * outBuffer, const uint8 * saltOrPrevDerivation, const uint32 saltLen)
         {
@@ -287,7 +287,7 @@ namespace Hashing
             hmac.Start(); hmac.Hash(saltOrPrevDerivation, saltLen);
             hmac.Finalize(outBuffer);
         }
-
+        
     public:
         /** Set the extra info (if any) */
         virtual void finalizeWithExtraInfo(uint8 * outBuffer, const uint8 * extra, const uint32 extraLen)
@@ -313,7 +313,7 @@ namespace Hashing
                 // First iteration is different
                 memset(PRFBuffer, 0, ArrSz(PRFBuffer));
                 PRF(tmpBuffer, salt, saltLen);
-
+                
                 for (int i = 1; i < iterations; i++)
                 {
                     for (size_t j = 0; j < BaseHasher::DigestSize; j++) PRFBuffer[j] ^= tmpBuffer[j];
@@ -321,7 +321,7 @@ namespace Hashing
                 }
                 // Output of F is U1 ^ U2 ^ ... ^ Uiterations
                 for (size_t j = 0; j < BaseHasher::DigestSize; j++) PRFBuffer[j] ^= tmpBuffer[j];
-
+                
                 memcpy(&outBuffer[done], PRFBuffer, min((size_t)(OutputSize - done), ArrSz(PRFBuffer)));
                 done += BaseHasher::DigestSize;
             }
@@ -333,13 +333,13 @@ namespace Hashing
 
     /** Get the hash from the given algorithm.
         This is a shortcut to calling all methods successively.
-        @param inBuffer     The input buffer to hash with the method
-        @param inSize       The input buffer size in bytes
+        @param inBuffer     The input buffer to hash with the method 
+        @param inSize       The input buffer size in bytes 
         @param output       On output, contains the hash. The output buffer must be at least hash size's byte */
     template <class Hasher>
     void getHashFor(const uint8 * inBuffer, const uint32 inSize, uint8 * output)
     { Hasher hash; hash.Start(); hash.Hash(inBuffer, inSize); hash.Finalize(output); }
-
+    
 #define HasHashingCode   1
 }
 

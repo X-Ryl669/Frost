@@ -99,15 +99,15 @@ namespace BSC
     private:
         /** The features to use */
         int features;
-
+    
         // Helpers
     private:
          int compressInPlace(uint8 * input, const size_t n,
                       const int lzpHashSize = defaultLZPHashSize, const int lzpMinLen = defaultLZPMinLen, const BlockSorter blockSorter = defaultBlockSorter,
                       const Coder coder = defaultCoder);
          Error decompressInPlace(uint8 * input, const size_t inputSize, const size_t outputSize);
-
-
+    
+    
         // Interface
     public:
         /** Compress a memory block.
@@ -145,7 +145,7 @@ namespace BSC
             @param outputSize                         The length of the output memory block. */
        Error decompress(const uint8 * input, const size_t inputSize, uint8 * output, const size_t outputSize);
 
-        /** Post process a decompressed block
+        /** Post process a decompressed block 
             @param input                              The input/output memory block of inputSize bytes.
             @param inputSize                          The length of the input/output memory block.
             @param sortingContext                     The sorting context used

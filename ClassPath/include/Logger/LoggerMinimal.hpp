@@ -73,7 +73,7 @@ namespace Logger
 #endif
 
     /** This is the main function for logging any information to the selected sink
-        You'll use it like any other printf like function. 
+        You'll use it like any other printf like function.
         @param flags    Any combination of the Logger::Flags value (the sink will check its own mask against these flags to allow logging or not)
         @param format   The printf like format */
     void log(const unsigned int flags, const char * format, ...);

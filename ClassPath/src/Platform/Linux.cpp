@@ -29,12 +29,12 @@ namespace Platform
     {
         return ::malloc(size);
     }
-
+    
     void * calloc(size_t elementNumber, size_t size, const bool)
     {
         return ::calloc(elementNumber, size);
     }
-
+   
     void free(void * p, const bool)
     {
         ::free(p);
@@ -43,11 +43,11 @@ namespace Platform
     {
         return ::realloc(p, size);
     }
-
+    
     bool queryHiddenInput(const char * prompt, char * buffer, size_t & size)
     {
         struct termios oflags, nflags;
-
+        
         // Don't allow multiple thread from running here
         static Threading::Lock lock;
         Threading::ScopedLock scope(lock);
@@ -74,16 +74,16 @@ namespace Platform
             if (in != stdin) fclose(in);
             return false;
         }
-
+ 
         if (in != stdin) fclose(in);
-
+        
         size = strlen(buffer);
         if (size && buffer[size - 1] == '\n')
             buffer[--size] = 0;
-
+            
         return true;
     }
-
+    
     const char * getProcessName()
     {
         static Strings::FastString processName;
@@ -101,15 +101,15 @@ namespace Platform
     DynamicLibrary::DynamicLibrary(const char * pathToLibrary)
         : handle(dlopen(pathToLibrary, RTLD_LAZY))
     {
-
+        
     }
-
+    
     DynamicLibrary::~DynamicLibrary()
     {
         if (handle) dlclose(handle); handle = 0;
     }
-
-
+    
+    
     // Load the given symbol out of this library
     void * DynamicLibrary::loadSymbol(const char * nameInUTF8) const
     {

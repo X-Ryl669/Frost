@@ -75,7 +75,7 @@ namespace UniversalTypeIdentifier
     private:
         TypeIDImpl();
     };
-
+    
     /** The type ID parser */
     class TypeIDParser
     {
@@ -115,7 +115,7 @@ namespace UniversalTypeIdentifier
         /** Check if the parsed type is the same as the one given */
         inline const bool operator == (const char * typeName) const { if (!typeName) return false; TypeIDParser other(typeName); return ID1 == other.ID1 && ID2 == other.ID2 && ID3 == other.ID3 && ID4 == other.ID4; }
     };
-
+    
 
     /** Qualifier cleaning template
         @cond Private
@@ -173,8 +173,8 @@ namespace UniversalTypeIdentifier
 #pragma GCC diagnostic ignored "-Wconversion-null"
 #endif
 
-            enum { Result = sizeof(checkI(E())) == sizeof(Type1)
-                         && sizeof(checkFISink((typename isFloat<E>::Type*)0)) == sizeof(Type1)
+            enum { Result = sizeof(checkI(E())) == sizeof(Type1) 
+                         && sizeof(checkFISink((typename isFloat<E>::Type*)0)) == sizeof(Type1) 
                          && sizeof(checkE(E())) == sizeof(Type1) };
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -216,7 +216,7 @@ namespace UniversalTypeIdentifier
     // Extract and test for enum value
     template<typename E, typename V = void>
     class IfEnum
-    {
+    { 
         struct ImpossibleTypeToInstantiate {};
         template <bool, int N> struct Test { typedef E Type; };
         template <int N> struct Test<false, N> { typedef ImpossibleTypeToInstantiate Type; };
@@ -260,7 +260,7 @@ namespace UniversalTypeIdentifier
 //        RegisterClassForVariant(YourClassHere, SomeUniqueID1, SomeUniqueID2, SomeUniqueID3, SomeUniqueID4);
 //        RegisterClassFunctions(YourClassHere, GetCode, SetCode);
         TypeID getTypeIDImpl(T*, Bool2Type< false > * );
-
+    
     // If you get linker error related to getTypeIDImpl, it can be hard to spot where the given type is referenced in your code
     // In that case, you can use this macro, on the FIRST line of the file to force the compiler to break on a specific implementation type T
     // So, for example, if you get Undefined reference error for type A in file X.o
@@ -276,8 +276,8 @@ namespace UniversalTypeIdentifier
 #define PreventTypeIDImplForwardDecl(N,type,T) \
     namespace N { type T; } \
     namespace UniversalTypeIdentifier { void getTypeID(N::T *); }
-
-
+    
+    
     template <typename T>
     static TypeID getTypeID(T* t) { return getTypeIDImpl(t, (Bool2Type< IsConst<T>::Result > *)0); }
 

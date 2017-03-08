@@ -9,8 +9,6 @@
 #include "ClassPath/include/Utils/Dump.hpp"
 // We need encoding too
 #include "ClassPath/include/Encoding/Encode.hpp"
-// We need database constraint too
-#include "ClassPath/include/Database/Constraints.hpp"
 // We need the folder scanner too
 #include "ClassPath/include/File/ScanFolder.hpp"
 // We need the chunker too
@@ -2835,7 +2833,7 @@ int checkTests(Strings::StringArray & options)
         }
         else if (testName == "key")
         {
-#define ERR(Msg, ...) { fprintf(stderr, ::Frost::__trans__(Msg), ##__VA_ARGS__); Database::SQLFormat::finalize((uint32)-1); return -1; }
+#define ERR(Msg, ...) { fprintf(stderr, ::Frost::__trans__(Msg), ##__VA_ARGS__); return -1; }
             // We will create a file vault, and an fake index file, and try to load it again and compare
             File::Info("./testVault").remove();
             Frost::MemoryBlock cipheredMasterKey;

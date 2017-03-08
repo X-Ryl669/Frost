@@ -390,9 +390,9 @@ template <typename T> inline void delete0(T*& t) { delete t; t = 0; }
 template <typename T> inline void deleteA0(T*& t) { delete[] t; t = 0; }
 /** Delete a pointer to an array, zero it, and zero the elements count too */
 template <typename T, typename U> inline void deleteA0(T*& t, U & size) { delete[] t; t = 0; size = 0; }
-/** Delete all items of an array, delete the array, zero it, and zero the elements count too */
+/** Delete all items of an array, delete the array, zero it, and zero the elements count too */ 
 template <typename T, typename U> inline void deleteArray0(T*& t, U & size) { for (U i = 0; i < size; i++) delete t[i]; delete[] t; t = 0; size = 0; }
-/** Delete all array items of an array, delete the array, zero it, and zero the elements count too */
+/** Delete all array items of an array, delete the array, zero it, and zero the elements count too */ 
 template <typename T, typename U> inline void deleteArrayA0(T*& t, U & size) { for (U i = 0; i < size; i++) delete[] t[i]; delete[] t; t = 0; size = 0; }
 
 
@@ -612,7 +612,7 @@ public:
         #define _RegExFlag   0
         #define _RegExFlagName   _
     #endif
-
+    
     #if (WantPingCode == 1)
         #define _PingFlag       32768
         #define _PingFlagName ICMP
@@ -620,7 +620,7 @@ public:
         #define _PingFlag 0
         #define _PingFlagName _
     #endif
-
+    
     #if (WantBSCCompression == 1)
         #define _BSCFlag       131072
         #define _BSCFlagName BSC

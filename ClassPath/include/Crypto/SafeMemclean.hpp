@@ -8,7 +8,7 @@ namespace Crypto
         So when you're cleaning your sensitive data, please use this function.
 
         @warning Only pass POD data to this method so use it in your destructor in case of complex object.
-
+    
         @param buffer   The buffer to clean
         @param size     The buffer size in bytes  */
     extern void SafeMemclean(unsigned char * buffer, const unsigned int size);

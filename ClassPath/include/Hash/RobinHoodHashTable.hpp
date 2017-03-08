@@ -57,7 +57,7 @@ namespace Container
         inline void setKey(const Key & k, void *) { key = k; }
         /** Reset the key to the default value */
         inline void resetKey(void *) { HashPolicy::resetKey(key); }
- 
+
         /** Swap the content of this bucket with the given parameters.
             @return On output, this key is set to k, this hash is set to h and data is set to value, and k is set to the previous key, h to the previous hash, value to the previous data */
         inline void swapBucket(Key & k, HashKeyT & h, T & value)
@@ -87,7 +87,7 @@ namespace Container
         hashed positions). It does so by sequentially moving the items with hash collisions so their are (on average) relatively close to their expected position.
 
         For usage, @sa Tests::RobinHoodHashTableTests
-     
+
         @warning The type must be a Plain Old Data (with no destructor), since no destructor are called, and data is moved
         @param T            The data type. Must be very small and POD (if you need to store non POD type, use Proxy or ProxyArray type)
         @param Key          The key type.
@@ -173,7 +173,7 @@ namespace Container
             for (size_t i = 0; i < allocSize; i++) table[i].~Bucket();
             allocSize = newSize;
             probingMaxSize = allocSize;
-            
+
             free(table);
             if (newSize)
             {   // And reconstruct
@@ -181,7 +181,7 @@ namespace Container
                 for (size_t i = 0; i < allocSize; i++) new (&table[i]) Bucket();
             }
         }
-    
+
         /** Check if this table contains the given key */
         bool containsKey(const Key & key) { return getValue(key) != 0; }
 

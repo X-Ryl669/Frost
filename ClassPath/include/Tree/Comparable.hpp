@@ -8,62 +8,62 @@
     However, when using complex keys, you'll preferable specialize the Comparable template or define a policy to compare your keys  */
 namespace Comparator
 {
-	/** The comparison result */
-	enum CompareType
-	{
+    /** The comparison result */
+    enum CompareType
+    {
         Less    = -1,           //!< The first value is less than the second one
         Equal   =  0,           //!< The first value is comparable with the second one
         Greater =  1,           //!< The first value is greater than the second one
         NotDecided = 0xBADC0DE, //!< There is not enough information to decide how the comparison would result
-	};
+    };
 
     /** This is a default comparator using operator < */
-	struct DefaultComparator
-	{
-		template <typename T>
-			inline static bool LessThan(const T & a, const T & b) { return (bool)(a < b); }
-		template <typename T>
-			inline static bool Equal(const T & a, const T & b) { return (bool)(a == b); }
-	};
+    struct DefaultComparator
+    {
+        template <typename T>
+            inline static bool LessThan(const T & a, const T & b) { return (bool)(a < b); }
+        template <typename T>
+            inline static bool Equal(const T & a, const T & b) { return (bool)(a == b); }
+    };
 
-	/** This is a very simple class used to compare against a given (templated) key
-	    at runtime.
-	    @code
-			// Let's use long as keys
-			Comparable<long> a(0), b(1);
-			if (a.Compare(b) == Comparable::Equal)
-				// Values are equal
-				printf("Equal!\n");
+    /** This is a very simple class used to compare against a given (templated) key
+        at runtime.
+        @code
+            // Let's use long as keys
+            Comparable<long> a(0), b(1);
+            if (a.Compare(b) == Comparable::Equal)
+                // Values are equal
+                printf("Equal!\n");
             else if (a.Compare(b) == Comparable::Less)
-				// In this example, we should get here as a is less than b
-				printf("Less!\n");
-			else
-				printf("Greater!\n");
-		@endcode
+                // In this example, we should get here as a is less than b
+                printf("Less!\n");
+            else
+                printf("Greater!\n");
+        @endcode
 
         While it may seems overkill for simple types like long, it's a very convenient
         class for type that aren't obvious to compare (like a String or a Variant)
-	*/
-	template <class KeyType, class Policy = DefaultComparator>
+    */
+    template <class KeyType, class Policy = DefaultComparator>
     struct Comparable
-	{
+    {
         /** The result type we are using */
-    	typedef CompareType Result;
+        typedef CompareType Result;
 
-		/** Compare this item against the given key */
+        /** Compare this item against the given key */
         inline Result Compare(const KeyType & _key) const { return BasicCompare(_key); }
         /** Basic compare that's never undecided */
         inline Result BasicCompare(const KeyType & _key) const { return Policy::Equal(_key, key) ? Equal : (Policy::LessThan(_key, key) ? Less : Greater); }
-		/** Return the key in this comparator */
+        /** Return the key in this comparator */
         inline KeyType Key() const { return key; }
 
-		/** No default constructor, must provide a key */
-		Comparable(KeyType  _key) : key(_key) {}
+        /** No default constructor, must provide a key */
+        Comparable(KeyType  _key) : key(_key) {}
 
-	private:
-		/** The key used in this comparator */
-		KeyType  key;
-	};
+    private:
+        /** The key used in this comparator */
+        KeyType  key;
+    };
 
     /** Comparable type with reserved key value.
         This is used to match unknown pattern at runtime. Obviously, the reserved key value will never be compared correctly.

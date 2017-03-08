@@ -18,7 +18,7 @@
 namespace Strings
 {
     /** Define the FastString type */
-	typedef Bstrlib::String FastString;
+    typedef Bstrlib::String FastString;
 
     typedef char const * const tCharPtr;
 
@@ -52,7 +52,7 @@ namespace Strings
             @return true on success */
         inline bool limitTo(const int newLength)   { if (newLength > length) return false; *const_cast<int*>(&length) = newLength; return true; }
         /** Get the substring from this string */
-		VerySimpleReadOnlyString midString(int left, int len) const { return VerySimpleReadOnlyString(left < length ? &data[left] : "", min(len, length - left)); }
+        VerySimpleReadOnlyString midString(int left, int len) const { return VerySimpleReadOnlyString(left < length ? &data[left] : "", min(len, length - left)); }
         /** Split at the given position.
             For example, the following code gives:
             @code
@@ -74,11 +74,11 @@ namespace Strings
         VerySimpleReadOnlyString trimRight(const char ch) const { int len = length; while(len > 1 && data && data[len - 1] == ch) len--; return VerySimpleReadOnlyString(data, len); }
         /** Trim the string from the given char (and direction) */
         VerySimpleReadOnlyString trimLeft(const char ch) const { int len = length; while(len > 1 && data && data[length - len] == ch) len--; return VerySimpleReadOnlyString(data + (length - len), len); }
-		/** Trim the string from any char in the given array (and direction) */
+        /** Trim the string from any char in the given array (and direction) */
         VerySimpleReadOnlyString leftTrim(const char* chars, int nlen = 0) const { int len = length; if (!nlen && chars) nlen = (int)strlen(chars); while(len > 1 && data && memchr(chars, data[length - len], nlen) != NULL) len--; return VerySimpleReadOnlyString(data + (length - len), len); }
-		/** Trim the string from any char in the given array */
+        /** Trim the string from any char in the given array */
         VerySimpleReadOnlyString rightTrim(const char* chars, int nlen = 0) const { int len = length; if (!nlen && chars) nlen = (int)strlen(chars); while(len > 1 && data && memchr(chars, data[len - 1], nlen) != NULL) len--; return VerySimpleReadOnlyString(data, len); }
-		/** Trim the string from any char in the given array (and direction) */
+        /** Trim the string from any char in the given array (and direction) */
         VerySimpleReadOnlyString Trimmed(const char* chars, int nlen = 0) const
         {
             int llen = length, rlen = length;
@@ -87,7 +87,7 @@ namespace Strings
             while(nlen && rlen > 1 && data && memchr(chars, data[rlen - 1], nlen) != NULL) rlen--;
             return VerySimpleReadOnlyString(data + (length - llen), rlen - (length  - llen));
         }
-		/** Trim the string from any char in the given array (and direction) */
+        /** Trim the string from any char in the given array (and direction) */
         VerySimpleReadOnlyString Trimmed(const VerySimpleReadOnlyString & t) const
         {
             int llen = length, rlen = length;
@@ -115,118 +115,118 @@ namespace Strings
             @warning For historical reasons, Strings::FastString::reverseFind returns -1 if not found */
         const unsigned int reverseFind(const VerySimpleReadOnlyString & needle, unsigned int pos = (unsigned int)-1) const;
         /** Count the number of times the given substring appears in the string */
-		const unsigned int Count(const VerySimpleReadOnlyString & needle) const;
+        const unsigned int Count(const VerySimpleReadOnlyString & needle) const;
 
-		/** Split a string when the needle is found first, returning the part before the needle, and
-		    updating the string to start on or after the needle.
-		    If the needle is not found, it returns an empty string if includeFind is false, or the whole string if true.
-		    For example this code returns:
-		    @code
-		        String text = "abcdefdef";
-		        String ret = text.splitFrom("d"); // ret = "abc", text = "efdef"
-		        ret = text.splitFrom("f", true);  // ret = "e", text = "fdef"
-		    @endcode
-		    @param find         The string to look for
-		    @param includeFind  If true the string is updated to start on the find text. */
-		const VerySimpleReadOnlyString splitFrom(const VerySimpleReadOnlyString & find, const bool includeFind = false);
+        /** Split a string when the needle is found first, returning the part before the needle, and
+            updating the string to start on or after the needle.
+            If the needle is not found, it returns an empty string if includeFind is false, or the whole string if true.
+            For example this code returns:
+            @code
+                String text = "abcdefdef";
+                String ret = text.splitFrom("d"); // ret = "abc", text = "efdef"
+                ret = text.splitFrom("f", true);  // ret = "e", text = "fdef"
+            @endcode
+            @param find         The string to look for
+            @param includeFind  If true the string is updated to start on the find text. */
+        const VerySimpleReadOnlyString splitFrom(const VerySimpleReadOnlyString & find, const bool includeFind = false);
 
-		/** Get the substring from the given needle up to the given needle.
-		    For example, this code returns:
-		    @code
-		        String text = "abcdefdef";
-		        String ret = text.fromTo("d", "f"); // ret = "e"
-		        ret = text.fromTo("d", "f", true);  // ret = "def"
-		        ret = text.fromTo("d", "g"); // ret = ""
-		        ret = text.fromTo("d", "g", true); // ret = "defdef"
-		        ret = text.fromTo("g", "f", [true or false]); // ret = ""
-		    @endcode
+        /** Get the substring from the given needle up to the given needle.
+            For example, this code returns:
+            @code
+                String text = "abcdefdef";
+                String ret = text.fromTo("d", "f"); // ret = "e"
+                ret = text.fromTo("d", "f", true);  // ret = "def"
+                ret = text.fromTo("d", "g"); // ret = ""
+                ret = text.fromTo("d", "g", true); // ret = "defdef"
+                ret = text.fromTo("g", "f", [true or false]); // ret = ""
+            @endcode
 
-		    @param from         The first needle to look for
-		    @param to           The second needle to look for
-		    @param includeFind  If true, the text searched for is included in the result
-		    @return If "from" needle is not found, it returns an empty string, else if "to" needle is not found,
-		            it returns an empty string upon includeFind being false, or the string starting from "from" if true. */
-		const VerySimpleReadOnlyString fromTo(const VerySimpleReadOnlyString & from, const VerySimpleReadOnlyString & to, const bool includeFind = false) const;
+            @param from         The first needle to look for
+            @param to           The second needle to look for
+            @param includeFind  If true, the text searched for is included in the result
+            @return If "from" needle is not found, it returns an empty string, else if "to" needle is not found,
+                    it returns an empty string upon includeFind being false, or the string starting from "from" if true. */
+        const VerySimpleReadOnlyString fromTo(const VerySimpleReadOnlyString & from, const VerySimpleReadOnlyString & to, const bool includeFind = false) const;
 
-		/** Get the string up to the first occurrence of the given string
-		    If not found, it returns the whole string unless includeFind is true (empty string in that case).
-		    For example, this code returns:
-		    @code
-		        String ret = String("abcdefdef").upToFirst("d"); // ret == "abc"
-		        String ret = String("abcdefdef").upToFirst("g"); // ret == "abcdefdef"
-		    @endcode
-		    @param find         The text to look for
-		    @param includeFind  If set, the needle is included in the result */
-		const VerySimpleReadOnlyString upToFirst(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
-		/** Get the string up to the last occurrence of the given string
-		    If not found, it returns the whole string unless includeFind is true (empty string in that case).
-		    For example, this code returns:
-		    @code
-		        String ret = String("abcdefdef").upToLast("d"); // ret == "abcdef"
-		        String ret = String("abcdefdef").upToLast("g"); // ret == "abcdefdef"
-		    @endcode
-		    @param find         The text to look for
-		    @param includeFind  If set, the needle is included in the result */
-		const VerySimpleReadOnlyString upToLast(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
-		/** Get the string from the last occurrence of the given string.
-		    If not found, it returns an empty string if includeFind is false, or the whole string if true
-		    For example, this code returns:
-		    @code
-		        String ret = String("abcdefdef").fromLast("d"); // ret == "ef"
-		        String ret = String("abcdefdef").fromLast("d", true); // ret == "def"
-		        String ret = String("abcdefdef").fromLast("g"); // ret == ""
-		    @endcode
-		    @param find         The text to look for
-		    @param includeFind  If set, the needle is included in the result */
-		const VerySimpleReadOnlyString fromLast(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
-		/** Get the string from the first occurrence of the given string
-		    If not found, it returns an empty string if includeFind is false, or the whole string if true
-		    For example, this code returns:
-		    @code
-		        String ret = String("abcdefdef").fromFirst("d"); // ret == "efdef"
-		        String ret = String("abcdefdef").fromFirst("d", true); // ret == "defdef"
-		        String ret = String("abcdefdef").fromFirst("g"); // ret == ""
-		    @endcode
-		    @param find         The text to look for
-		    @param includeFind  If set, the needle is included in the result */
-		const VerySimpleReadOnlyString fromFirst(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
-		/** Get the substring from the given needle if found, or the whole string if not.
-		    For example, this code returns:
-		    @code
-		        String text = "abcdefdef";
-		        String ret = text.dropUpTo("d"); // ret = "efdef"
-		        ret = text.dropUpTo("d", true); // ret = "defdef"
-		        ret = text.dropUpTo("g", [true or false]); // ret = "abcdefdef"
-		    @endcode
-		    @param find         The string to look for
-		    @param includeFind  If true the string is updated to start on the find text. */
+        /** Get the string up to the first occurrence of the given string
+            If not found, it returns the whole string unless includeFind is true (empty string in that case).
+            For example, this code returns:
+            @code
+                String ret = String("abcdefdef").upToFirst("d"); // ret == "abc"
+                String ret = String("abcdefdef").upToFirst("g"); // ret == "abcdefdef"
+            @endcode
+            @param find         The text to look for
+            @param includeFind  If set, the needle is included in the result */
+        const VerySimpleReadOnlyString upToFirst(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
+        /** Get the string up to the last occurrence of the given string
+            If not found, it returns the whole string unless includeFind is true (empty string in that case).
+            For example, this code returns:
+            @code
+                String ret = String("abcdefdef").upToLast("d"); // ret == "abcdef"
+                String ret = String("abcdefdef").upToLast("g"); // ret == "abcdefdef"
+            @endcode
+            @param find         The text to look for
+            @param includeFind  If set, the needle is included in the result */
+        const VerySimpleReadOnlyString upToLast(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
+        /** Get the string from the last occurrence of the given string.
+            If not found, it returns an empty string if includeFind is false, or the whole string if true
+            For example, this code returns:
+            @code
+                String ret = String("abcdefdef").fromLast("d"); // ret == "ef"
+                String ret = String("abcdefdef").fromLast("d", true); // ret == "def"
+                String ret = String("abcdefdef").fromLast("g"); // ret == ""
+            @endcode
+            @param find         The text to look for
+            @param includeFind  If set, the needle is included in the result */
+        const VerySimpleReadOnlyString fromLast(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
+        /** Get the string from the first occurrence of the given string
+            If not found, it returns an empty string if includeFind is false, or the whole string if true
+            For example, this code returns:
+            @code
+                String ret = String("abcdefdef").fromFirst("d"); // ret == "efdef"
+                String ret = String("abcdefdef").fromFirst("d", true); // ret == "defdef"
+                String ret = String("abcdefdef").fromFirst("g"); // ret == ""
+            @endcode
+            @param find         The text to look for
+            @param includeFind  If set, the needle is included in the result */
+        const VerySimpleReadOnlyString fromFirst(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
+        /** Get the substring from the given needle if found, or the whole string if not.
+            For example, this code returns:
+            @code
+                String text = "abcdefdef";
+                String ret = text.dropUpTo("d"); // ret = "efdef"
+                ret = text.dropUpTo("d", true); // ret = "defdef"
+                ret = text.dropUpTo("g", [true or false]); // ret = "abcdefdef"
+            @endcode
+            @param find         The string to look for
+            @param includeFind  If true the string is updated to start on the find text. */
         const VerySimpleReadOnlyString dropUpTo(const VerySimpleReadOnlyString & find, const bool includeFind = false) const;
-		/** Get the substring up to the given needle if found, or the whole string if not, and split from here.
-		    For example, this code returns:
-		    @code
-		        String text = "abcdefdef";
-		        String ret = text.splitUpTo("d"); // ret = "abc", text = "efdef"
-		        ret = text.splitUpTo("g", [true or false]); // ret = "efdef", text = ""
+        /** Get the substring up to the given needle if found, or the whole string if not, and split from here.
+            For example, this code returns:
+            @code
+                String text = "abcdefdef";
+                String ret = text.splitUpTo("d"); // ret = "abc", text = "efdef"
+                ret = text.splitUpTo("g", [true or false]); // ret = "efdef", text = ""
                 text = "abcdefdef";
-		        ret = text.splitUpTo("d", true); // ret = "abcd", text = "efdef"
-		    @endcode
-		    @param find         The string to look for
-		    @param includeFind  If true the string is updated to start on the find text. */
+                ret = text.splitUpTo("d", true); // ret = "abcd", text = "efdef"
+            @endcode
+            @param find         The string to look for
+            @param includeFind  If true the string is updated to start on the find text. */
         const VerySimpleReadOnlyString splitUpTo(const VerySimpleReadOnlyString & find, const bool includeFind = false);
 
-		/** The basic conversion operators */
-		operator int() const;
-		/** The basic conversion operators */
-		operator unsigned int() const;
+        /** The basic conversion operators */
+        operator int() const;
+        /** The basic conversion operators */
+        operator unsigned int() const;
         /** The basic conversion operators */
         operator int64() const;
-		/** The basic conversion operators */
-		operator double() const;
+        /** The basic conversion operators */
+        operator double() const;
 
         /** So you can check the string directly for emptiness */
-		inline bool operator !() const { return length == 0; }
+        inline bool operator !() const { return length == 0; }
         /** So you can check the string directly for emptiness */
-		inline operator bool() const { return length > 0; }
+        inline operator bool() const { return length > 0; }
         /** Operator [] to access a single char */
         char operator[] (int index) const { return index < length ? data[index] : 0; }
 
@@ -256,44 +256,44 @@ namespace Strings
         inline const bool operator != (const FastString & copy) const { return !operator ==(copy); }
 
 #if (DEBUG==1)
-		// Prevent unwanted conversion
-	private:
-	    /** Prevent unwanted conversion */
-	    template <typename T> bool operator == (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
-	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
-	        CompileTimeAssertFalse(T); return false;
-	    }
-	    /** Prevent unwanted conversion */
-	    template <typename T> bool operator < (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
-	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
-	        CompileTimeAssertFalse(T); return false;
-	    }
-	    /** Prevent unwanted conversion */
-	    template <typename T> bool operator > (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
-	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
-	        CompileTimeAssertFalse(T); return false;
-	    }
-	    /** Prevent unwanted conversion */
-	    template <typename T> bool operator <= (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
-	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
-	        CompileTimeAssertFalse(T); return false;
-	    }
-	    /** Prevent unwanted conversion */
-	    template <typename T> bool operator >= (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
-	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
-	        CompileTimeAssertFalse(T); return false;
-	    }
-	    /** Prevent unwanted conversion */
-	    template <typename T> bool operator != (const T & t) const
-	    {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
-	        // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
-	        CompileTimeAssertFalse(T); return false;
-	    }
+        // Prevent unwanted conversion
+    private:
+        /** Prevent unwanted conversion */
+        template <typename T> bool operator == (const T & t) const
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
+            // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
+            CompileTimeAssertFalse(T); return false;
+        }
+        /** Prevent unwanted conversion */
+        template <typename T> bool operator < (const T & t) const
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
+            // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
+            CompileTimeAssertFalse(T); return false;
+        }
+        /** Prevent unwanted conversion */
+        template <typename T> bool operator > (const T & t) const
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
+            // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
+            CompileTimeAssertFalse(T); return false;
+        }
+        /** Prevent unwanted conversion */
+        template <typename T> bool operator <= (const T & t) const
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
+            // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
+            CompileTimeAssertFalse(T); return false;
+        }
+        /** Prevent unwanted conversion */
+        template <typename T> bool operator >= (const T & t) const
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
+            // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
+            CompileTimeAssertFalse(T); return false;
+        }
+        /** Prevent unwanted conversion */
+        template <typename T> bool operator != (const T & t) const
+        {   // If compiler stops here, it's because you're trying to compare a string with a type it doesn't understand.
+            // Try to cast this type to (const char*) or (String), but don't rely on default, the compiler can't read your mind.
+            CompileTimeAssertFalse(T); return false;
+        }
 #endif
     };
 

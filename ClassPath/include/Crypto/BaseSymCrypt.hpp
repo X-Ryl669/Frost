@@ -24,7 +24,7 @@ namespace Crypto
             /** The maximum block size is 256 bits */
             MaxBlockSize = 32,
         };
-
+        
         /** Get the configured block size */
         virtual BlockSize getBlockSize() const = 0;
 
@@ -54,11 +54,11 @@ namespace Crypto
         /** Required destructor */
         virtual ~BaseSymCrypt() {}
     };
-
+    
     /** Useful method to perform CTR mode if the underlying primitive does not support it.
-        Don't set any IV for the algorithm cipher (it's ignored anyway), but you need to
+        Don't set any IV for the algorithm cipher (it's ignored anyway), but you need to 
         set the key.
-
+        
         To encrypt call this way:
         @code
             uint8 nonce[BlockSize] = {0};
@@ -68,19 +68,19 @@ namespace Crypto
             for (uint128 i = 0; i < blocksToEncrypt; i++)
             {
                 uint8 plainText[BlockSize] = ...;
-                uint8 cipherText[BlockSize];
+                uint8 cipherText[BlockSize]; 
                 uint8 processingBuffer[BlockSize];
-
+                
                 fillCounter(nonce + BlockSize / 2, i); // eq. to: *(uint128*)&nonce[BlockSize/2] = i;
-
+                
                 if (!CTR_BlockProcess(cipher, nonce, processingBuffer)) return false;
                 Xor(cipherText, plainText, processingBuffer); // cipherText = plainText ^ processingBuffer
                 memset(processingBuffer, 0, sizeof(processingBuffer)); // Don't let the algorithm code leak
-
+                
                 saveCipherText(cipherText);
             }
         @endcode
-
+        
         To decrypt, call this way:
         @code
             uint8 nonce[BlockSize] = {0};
@@ -92,12 +92,12 @@ namespace Crypto
                 uint8 plainText[BlockSize];
                 uint8 cipherText[BlockSize] = ...;
                 uint8 processingBuffer[BlockSize];
-
+                
                 fillCounter(nonce + BlockSize / 2, i); // eq. to: *(uint128*)&nonce[BlockSize/2] = i;
-
+                
                 if (!CTR_BlockProcess(cipher, nonce, processingBuffer)) return false;
                 Xor(plainText, cipherText, processingBuffer); // plainText = cipherText ^ processingBuffer
-
+                
                 savePlainText(cipherText);
             }
         @endcode */
@@ -105,9 +105,9 @@ namespace Crypto
     {
         return cipher.Encrypt(nonceCounter, result, (size_t)cipher.getBlockSize());
     }
-
+    
     /** Xor a memory block.
-        This one is used to perform the operation out = a ^ b, with both out, a, and b being
+        This one is used to perform the operation out = a ^ b, with both out, a, and b being 
         heap allocated like this:
         @code
             uint8 * out = ..., * a = ..., * b = ...;
@@ -127,7 +127,7 @@ namespace Crypto
         for(size_t i = 0; i < size; i++) out[i] = a[i] ^ b[i];
     }
     /** Xor a memory block.
-        This one is used to perform the operation out = a ^ b, with both out, a, and b being
+        This one is used to perform the operation out = a ^ b, with both out, a, and b being 
         stack allocated like this:
         @code
             uint8 out[2], a[2], b[2];
@@ -138,7 +138,7 @@ namespace Crypto
     {
         Xor(out, a, b, size);
     }
-
+    
 }
 
 

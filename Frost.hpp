@@ -2,8 +2,6 @@
 #include "ClassPath/include/Streams/Streams.hpp"
 // We need files too
 #include "ClassPath/include/File/File.hpp"
-// We need ClassPath database too
-#include "ClassPath/include/Database/SQLFormat.hpp"
 // We need strings
 #include "ClassPath/include/Strings/Strings.hpp"
 // And hash tables too
@@ -12,10 +10,6 @@
 // We need crypto code too for the key stuff
 #include "ClassPath/include/Crypto/OpenSSLWrap.hpp"
 
-// We need database model declaration (we are using SQLite here) too
-#include "ClassPath/include/Database/Database.hpp"
-// We need database querys too
-#include "ClassPath/include/Database/Query.hpp"
 
   #define DEFAULT_INDEX	  "index.frost"
   #define PROTOCOL_VERSION  "2.0"

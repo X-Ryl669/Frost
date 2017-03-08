@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <time.h>
 #ifdef _WIN32
-#include <share.h>
+  #include <share.h>
 #endif
 
 // We need the minimal declaration
@@ -64,7 +64,7 @@ namespace Logger
 
 #if defined(_WIN32) || defined(_POSIX)
     /** The Tee sink.
-        This redirect the logs to up to two different sinks. 
+        This redirect the logs to up to two different sinks.
         Because each sink can have its own log flags, you can have a console and a file sink only capturing whatever you want. */
     struct TeeSink : public OutputSink
     {
@@ -81,7 +81,7 @@ namespace Logger
         ~TeeSink() { if (ownSinks) { delete0(sinks[0]); delete0(sinks[1]); } }
     };
 
-#ifdef _WIN32
+  #ifdef _WIN32
     /** The output sink to the debug console.
         To see this error sink, you need either to run the software under Visual Studio's debugger, or have DebugView installed and running. */
     struct DebugConsoleSink : public OutputSink
@@ -101,9 +101,9 @@ namespace Logger
         }
         DebugConsoleSink(const unsigned int logMask) : OutputSink(logMask) {}
     };
-#else
+  #else
     typedef ConsoleSink DebugConsoleSink;
-#endif
+  #endif
 
     /** The output sink to the error console.
         Under POSIX and Win32 system, this writes the log to the error's file descriptor (that is, what's under stderr FILE pointer). */
@@ -124,7 +124,7 @@ namespace Logger
         ErrorConsoleSink(unsigned int logMask) : OutputSink(logMask) {}
     };
 
-#if defined(_WIN32) || defined(_POSIX)
+  #if defined(_WIN32) || defined(_POSIX)
     /** The output sink to a file.
         Output the logs to a file for either appending or replacing.
         No limit whatsoever is used, so you can fill your entire hard drive with such logger. */
@@ -143,7 +143,7 @@ namespace Logger
     };
 
     /** Structured output sink.
-        This sink captures time and flag for each log output. 
+        This sink captures time and flag for each log output.
         It detects repetitions and avoid writing them (adding a "repeated x times" marker in the log).
         It also alternates automatically between two output files so that each file are never bigger than the given break size.
         This means that depending on your log amount, only a small history is kept whose size is based on bytes.
@@ -187,7 +187,7 @@ namespace Logger
         StructuredFileOutputSink(unsigned int logMask, const Strings::FastString & fileName, const bool appendToFile = true, const int breakSize = 2*1024*1024);
         ~StructuredFileOutputSink() { if (file) { flushLastMessage(); fclose(file); } }
     };
-#endif // Files
+  #endif // Files
 #endif // Win32 & Linux
 
     /** Set the sink to use */

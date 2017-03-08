@@ -1,7 +1,7 @@
 #ifndef hpp_CPP_BSCLib_CPP_hpp
 #define hpp_CPP_BSCLib_CPP_hpp
 
-// We need base class declaration
+// We need base class declaration 
 #include "BaseCompress.hpp"
 // We need files too
 #include "../File/File.hpp"
@@ -46,8 +46,8 @@ namespace Compression
             uint32 curBlock;
             DecompressHeader() : valid(false), blockSize(0), dataSize(0), recordSize(1), sortingContext(1), curBlock(0) {}
         };
-
-
+        
+    
         // Helpers
     private:
         /** Basic set and mark error method */
@@ -75,12 +75,12 @@ namespace Compression
         int64   dataSize;
         /** Check if the header was emmited or not */
         bool    headerWritten;
-
-
+        
+        
         /** The opaque holder */
         BSC::EBSC *  opaque;
 
-
+    
         // Interface
     public:
         /** Set the compression factor (from 0.0 (fastest) to 1.0f (best) */
@@ -104,7 +104,7 @@ namespace Compression
             @param inSize       The uncompressed buffer size in bytes
             @return true on success, false on bad input buffer */
         virtual bool compressData(uint8 *& out, size_t & outSize, const uint8 * in, const size_t inSize);
-
+        
         /** Continuous compression process.
             Not all compressor support this (in that case, it's probably emulated or might return false).
 
@@ -122,16 +122,16 @@ namespace Compression
             @param amountToProcess  The number of decompressed bytes to reach. Set to 0 to process the whole stream.
             @return true on success, false if not supported or an error occurred on the input stream */
         virtual bool decompressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, const uint32 amountToProcess = 0);
-
-
+        
+        
         /** Construct with a BSC format.
-            @param expectedDataSize     If the output stream does not support rewinding, there is no way for the compressor
+            @param expectedDataSize     If the output stream does not support rewinding, there is no way for the compressor 
                                         to write the final header to the stream. So you need to specify the source data size
-                                        at construction so the header is written once (on first output) and not rewind.
+                                        at construction so the header is written once (on first output) and not rewind. 
                                         This is only used for compression */
         BSCLib(const uint64 expectedDataSize = 0);
         virtual ~BSCLib();
-    };
+    };    
 }
 #endif
 

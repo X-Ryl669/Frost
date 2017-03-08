@@ -4,13 +4,13 @@
 #if (WantCompression == 1)
 #define EZ_COMPRESSMAXDESTLENGTH(n) (n+(((n)/1000)+1)+12)
 
-extern "C"
+extern "C" 
 {
     int ezcompress( unsigned char* pDest, long* pnDestLen, const unsigned char* pSrc, long nSrcLen, const int factor );
     int ezuncompress( unsigned char* pDest, long* pnDestLen, const unsigned char* pSrc, long nSrcLen );
     int ezgzcompress( z_stream * stream, unsigned char* pDest, long* pnDestLen, const unsigned char* pSrc, long * nSrcLen, const int factor, const int endNow, const int skipLoop);
     int ezgzuncompress( z_stream * stream, unsigned char* pDest, long* pnDestLen, const unsigned char* pSrc, long * nSrcLen, const int endNow, const int skipLoop);
-
+    
     int setDeflateState( z_stream * ptr, const char * fileName, const unsigned int time );
     int getDeflateState( z_stream * ptr, unsigned int * time );
     int getInflateState( z_stream * ptr, char * fileName, unsigned int * time );
@@ -59,7 +59,7 @@ namespace Compression
         lastError = (Error)ezcompress(out, &destLen, in, (long)inSize, compressionFactor);
         return lastError == Success;
     }
-
+    
     ZLib::ZLib() : CommonZlib("zlib")
     {
         opaque = initZStream(-1, 1);
@@ -80,31 +80,31 @@ namespace Compression
         }
     }
 
-
-    // Set the file source information
+    
+    // Set the file source information 
     void GZip::setFileSourceInfo(const File::Info & info) { fileName = info.getFullPath(); setDeflateState(opaque, fileName, (unsigned int)(modifTime = info.modification)); }
     void GZip::setFileSourceInfo(const String & name, const double _modifTime) { fileName = name; modifTime = _modifTime; setDeflateState(opaque, fileName, (unsigned int)modifTime); }
-    void GZip::setCompressionFactor(const float factor)
-    {
-        compressionFactor = (int)(factor * 9 + .5f);
-        Reset(true);
+    void GZip::setCompressionFactor(const float factor) 
+    { 
+        compressionFactor = (int)(factor * 9 + .5f); 
+        Reset(true); 
     }
     void GZip::Reset(const bool isCompressing)
     {
-        expectedFileSize = 0;
-        releaseGZStream(opaque);
+        expectedFileSize = 0; 
+        releaseGZStream(opaque); 
         workBufferLength = 0;
-        opaque = initGZStream(isCompressing ? compressionFactor : -2);
-        if (isCompressing) setDeflateState(opaque, fileName, (unsigned int)modifTime);
+        opaque = initGZStream(isCompressing ? compressionFactor : -2); 
+        if (isCompressing) setDeflateState(opaque, fileName, (unsigned int)modifTime); 
     }
-
-
+    
+    
     GZip::GZip() : CommonZlib("gzip"), modifTime(0), expectedFileSize(0)
     {
         opaque = initGZStream(-1);
     }
     GZip::~GZip() { releaseGZStream(opaque); }
-
+    
     bool GZip::decompressData(uint8 *& out, size_t & outSize, const uint8 * in, const size_t _inSize)
     {
         // Need to exchange the opaque object to a decompression one
@@ -116,7 +116,7 @@ namespace Compression
         long destLen = (long)(out ? outSize : sizeof(ch)), inSize = (long)_inSize;
         lastError = (Error)ezgzuncompress(opaque, dest, &destLen, in, &inSize, 1, 0);
         if (lastError != BufferError && lastError != Success) return false;
-
+        
         if (!out || (long)outSize < destLen)
         {
             if (!out && outSize) { outSize = destLen; lastError = MemoryError; return false; }
@@ -134,7 +134,7 @@ namespace Compression
         unsigned int time = 0;
         char filename[256] = {0};
         getInflateState(opaque, filename, &time);
-        fileName = filename;
+        fileName = filename; 
         modifTime = time;
         return lastError == Success;
     }
@@ -145,7 +145,7 @@ namespace Compression
         long destLen = (long)(out ? outSize : sizeof(ch)), inSize = (long)_inSize;
         lastError = (Error)ezgzcompress(opaque, dest, &destLen, in, &inSize, compressionFactor, 1, 0);
         if (lastError != BufferError && lastError != Success) return false;
-
+        
         if (!out || (long)outSize < destLen)
         {
             if (!out && outSize) { outSize = destLen; lastError = MemoryError; return false; }
@@ -158,8 +158,8 @@ namespace Compression
             Reset(true);
             inSize = (long)_inSize;
         }
-
-
+        
+        
         lastError = (Error)ezgzcompress(opaque, dest, &destLen, in, &inSize, compressionFactor, 1, 0);
         return lastError == Success;
     }
@@ -168,18 +168,18 @@ namespace Compression
     {
         // Check if we are compressing or decompressing
         bool ret = CommonZlib::decompressStream(outStream, inStream, amountToProcess);
-        if (ret)
+        if (ret) 
         {
             unsigned int time = 0;
             char filename[256] = {0};
             getInflateState(opaque, filename, &time);
-            fileName = filename;
+            fileName = filename; 
             modifTime = time;
         }
         return ret;
     }
 
-    // Required
+    // Required 
     const float CommonZlib::HeaderLess = 2.0f;
     bool CommonZlib::decompressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, uint32 amountToProcess)
     {
@@ -187,14 +187,14 @@ namespace Compression
         if (!opaque) return false;
         if (!isDecompressing(opaque))
             Reset(false);
-
+        
         // We are either limited to the quantity of output data to process or the whole input stream
         bool consumeAllInput = amountToProcess == 0;
 
         // Read some data to decompress
         uint8 baseBuffer[8192];
         uint32 inputAmount = consumeAllInput ? (uint32)inStream.fullSize() : sizeof(baseBuffer);
-
+        
         // That fills the buffer of the min(buffer size, amountLeft)
         uint8 * buffer = baseBuffer; uint64 inSize = 0;
 
@@ -211,10 +211,10 @@ namespace Compression
             }
             workBufferLength = 0;
             amountToProcess -= outAmount;
-
+            
             unsigned char * dest = workBuffer;
             long destLen = (long)sizeof(workBuffer);
-
+            
             // Check if there is still some data required
             if (!inSize)
             {
@@ -224,14 +224,14 @@ namespace Compression
                 if (inSize == 0) // No more data in input
                     break;
             }
-
+                
             long dataSize = (long)inSize;
             lastError = (Error)ezgzuncompress(opaque, dest, &destLen, buffer, &dataSize, 0, 1);
             workBufferLength = destLen;
 
             if (lastError != Success && lastError != EndOfStream)
                 return false;
-
+            
             // Check if we actually got any data, and if not, let's exit the loop anyway
             if (lastError == EndOfStream)
             {
@@ -244,7 +244,7 @@ namespace Compression
                 }
                 return true;
             }
-
+                
             // Adjust buffer head
             buffer += inSize - (uint64)dataSize;
             if (amountToProcess < workBufferLength)
@@ -257,9 +257,9 @@ namespace Compression
             }
             inSize = (uint64)dataSize;
         }
-
+        
         // Flush the stream ?
-        if (inStream.fullSize() == 0)
+        if (inStream.fullSize() == 0) 
         {
             // Need to flush the output now
             while (1)
@@ -267,7 +267,7 @@ namespace Compression
                 // Flush the output
                 if (outStream.write(workBuffer, workBufferLength) != workBufferLength) return false;
                 workBufferLength = 0;
-
+                
                 // Then compress and finish the output
                 unsigned char * dest = workBuffer;
                 long destLen = sizeof(workBuffer), dataSize = 0;
@@ -280,7 +280,7 @@ namespace Compression
                     return false;
             }
         }
-
+        
         return true;
     }
 
@@ -288,7 +288,7 @@ namespace Compression
     {
         // Special cases first
         if (!opaque) return false;
-
+        
         if (!amountToProcess) amountToProcess = (uint32)inStream.fullSize();
 
         // Read some data to compress
@@ -296,17 +296,17 @@ namespace Compression
         uint8 * buffer = baseBuffer;
         uint64 inSize = inStream.read(buffer, (uint64)min((uint32)sizeof(baseBuffer), amountToProcess));
         if (inSize == (uint64)-1) return false;
-
+        
         while (amountToProcess)
         {
             // Flush the output first
             if (outStream.write(workBuffer, workBufferLength) != workBufferLength) return false;
             workBufferLength = 0;
-
+            
             unsigned char * dest = workBuffer;
             long destLen = sizeof(workBuffer);
-
-
+            
+            
             if (!inSize)
             {   // Refill the input buffer
                 buffer = baseBuffer;
@@ -322,17 +322,17 @@ namespace Compression
                 workBufferLength = 0;
                 return (uint32)outStream.write(dest, (uint64)destLen) != (uint64)destLen;
             }
-
+            
             if (lastError != Success)
                 return false;
-
+                
             buffer += inSize - (uint64)dataSize;
             amountToProcess -= (uint32)inSize - (uint32)dataSize;
             inSize = (uint64)dataSize;
         }
-
+        
         // Flush the stream ?
-        if (inStream.fullSize() == 0)
+        if (inStream.fullSize() == 0) 
         {
             // Need to flush the output now
             while (1)
@@ -340,7 +340,7 @@ namespace Compression
                 // Flush the output
                 if (outStream.write(workBuffer, workBufferLength) != workBufferLength) return false;
                 workBufferLength = 0;
-
+                
                 // Then compress and finish the output
                 unsigned char * dest = workBuffer;
                 long destLen = sizeof(workBuffer), dataSize = 0;
@@ -353,21 +353,21 @@ namespace Compression
                     return false;
             }
         }
-
+        
         return true;
-    }
+    } 
 #if 0
         // Helpers
     public:
         /** The magic codes */
-	    enum
-	    {
-	        Magic1 = 0x1f,
-	        Magic2 = 0x8b,
-
-		    Deflated = 8,
-		    Slow     = 2,
-		    Fast     = 4,
+	    enum 
+	    { 
+	        Magic1 = 0x1f, 
+	        Magic2 = 0x8b,   
+	        
+		    Deflated = 8, 
+		    Slow     = 2, 
+		    Fast     = 4, 
         };
         /** The used flags */
         enum Flags
@@ -375,7 +375,7 @@ namespace Compression
             AsciiText   = 1,    //!< Optional, mark the file as ascii text
 		    CRC16Header = 2,    //!< Optional, a 16 bits CRC checksum for the header is present
 		    ExtraFields = 4,    //!< Extra fields are present
-		    Filename    = 8,    //!< A file name is present
+		    Filename    = 8,    //!< A file name is present 
 		    Comments    = 16,   //!< File comments are present too
         };
         /** Write header */
@@ -387,7 +387,7 @@ namespace Compression
         /** Consume a given amount of bytes */
         bool consumeData(const uint8 * & in, size_t & inSize, void * out, size_t outSize);
 
-    // Consume a given amount of bytes
+    // Consume a given amount of bytes 
     bool GZip::consumeData(const uint8 * & in, size_t & inSize, void * out, size_t outSize)
     {
         if (inSize < outSize) return false;
@@ -408,36 +408,36 @@ namespace Compression
         uint8 flag = out[3];
         if (flag & (225 | CRC16Header)) // Anything except supported flags
             return false;
-
+        
         // Modification time
         out += 4; outSize -= 4;
-        uint32 mtime;
-        if (!consumeData(out, outSize, &mtime, sizeof(mtime))) return false;
+        uint32 mtime; 
+        if (!consumeData(out, outSize, &mtime, sizeof(mtime))) return false; 
         fileModifTime = (double)mtime;
-
+        
         // We don't care about extra flags or OS type
         if (!consumeData(out, outSize, 0, 2)) return false;
-
+        
         if (flag & ExtraFields)
         {
-            uint16 length;
+            uint16 length; 
             if (!consumeData(out, outSize, &length, sizeof(length))) return false;
             // We drop the resulting length anyway
             if (!consumeData(out, outSize, 0, length)) return false;
         }
-
+        
         if (flag & Filename)
-        {
+        {   
             size_t nameLen = 0;
             while (out[nameLen++] != 0 && nameLen < outSize);
             if (nameLen == outSize) return false;
-
+            
             fileName = String(out, (int)nameLen);
-            out += nameLen; outSize -= nameLen;
+            out += nameLen; outSize -= nameLen; 
         }
-
+        
         if (flag & Comments)
-        {
+        {   
             size_t nameLen = 0;
             while (out[nameLen++] != 0 && nameLen < outSize);
             if (nameLen == outSize) return false;
@@ -463,30 +463,30 @@ namespace Compression
         PutW(uint8, Deflated);
         PutW(uint8, (uint8)(fileName ? Filename : 0));
         PutW(uint32, fileModifTime)
-        PutW(uint8, compressionFactor == 1 ? Fast : (compressionFactor == 9 ? Slow : 0));
+        PutW(uint8, compressionFactor == 1 ? Fast : (compressionFactor == 9 ? Slow : 0)); 
         PutW(uint8, 255); // Don't try to fool the end-of-line
 
-        if (fileName)
+        if (fileName) 
         {
             memcpy(&out[pos], (const char*)fileName, fileName.getLength() + 1);
             pos += fileName.getLength()+1;
         }
         return pos;
     }
-
+    
     size_t GZip::writeFooter(uint8 * out, size_t & outSize)
     {
         size_t pos = outSize - 8;
         uint8 outCRC[4] = {0};
         crc32.Finalize(outCRC);
         // Already inverted in the hasher
-        PutW(uint8, outCRC[0]); PutW(uint8, outCRC[1]); PutW(uint8, outCRC[2]); PutW(uint8, outCRC[3]);
+        PutW(uint8, outCRC[0]); PutW(uint8, outCRC[1]); PutW(uint8, outCRC[2]); PutW(uint8, outCRC[3]); 
         PutW(uint32, fullSize);
-#undef PutW
+#undef PutW     
         return pos;
     }
 #endif
-
+    
 }
 
 

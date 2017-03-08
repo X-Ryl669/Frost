@@ -978,7 +978,7 @@ namespace File
             }
             // Every other case should get a standard output
             return true;
- 
+
             #undef RdCondE
             #undef RdCond
             #undef Rd
@@ -2115,18 +2115,18 @@ namespace File
     }
 
 #if WantAsyncFile == 1
-#if defined(_POSIX)
+  #if defined(_POSIX)
     void aioCompleted( union sigval sigval )
     {
         MonitoringPool::AsyncCompleted * completed = (MonitoringPool::AsyncCompleted *)sigval.sival_ptr;
         if (completed) completed->wasCompleted();
     }
-#endif
+  #endif
 
     // Read the stream of the given amount of bytes.
     int AsyncStream::read(char * buffer, int length)
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         if (asyncSize && tmpBuffer)
         {
             DWORD dwRead = 0;
@@ -2175,7 +2175,7 @@ namespace File
             return Asynchronous;
         }
         return -1;
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         if (file < 0) return -1;
         if (asyncSize && over.aio_buf)
         {
@@ -2227,7 +2227,7 @@ namespace File
             if (ret == 0) asyncSize = -1;
             return ret == 0 ? Asynchronous : -1;
         }
-#endif
+  #endif
     }
 
     // Read a line from the stream.
@@ -2240,7 +2240,7 @@ namespace File
     // Write the given amount of bytes to the stream .
     int AsyncStream::write(const char * buffer, int length)
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         // Writing is an atomic operation. It's either completed successfully, or not at all.
         if (asyncSize && tmpBuffer)
         {
@@ -2276,7 +2276,7 @@ namespace File
             return Asynchronous;
         }
         return -1;
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         if (file < 0) return -1;
         if (asyncSize && over.aio_buf)
         {
@@ -2323,60 +2323,60 @@ namespace File
             if (ret == 0) asyncSize = -1;
             return ret == 0 ? Asynchronous : -1;
         }
-#endif
+  #endif
     }
 
     // Get the stream size (if known by advance)
     uint64 AsyncStream::getSize() const
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         DWORD lo, hi;
         lo = GetFileSize(file, &hi);
         return ((uint64)(hi)<<32) | lo;
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         if (file < 0) return 0;
         uint64 position = getPosition();
         lseek(file, 0, SEEK_END);
         uint64 size = getPosition();
         const_cast<AsyncStream*>(this)->setPosition(position);
         return size;
-#endif
+  #endif
     }
     // Get the current pointer position in the stream.
     uint64 AsyncStream::getPosition() const
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         return currentPos;
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         if (file < 0) return 0;
         return (uint64)lseek(file, 0, SEEK_CUR);
-#endif
+  #endif
     }
     // Set the current pointer position in the stream
     bool AsyncStream::setPosition(const uint64 offset)
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         // Can't change the position while an operation is pending
         if (asyncSize) return false;
         currentPos = offset;
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         if (file < 0) return false;
         return lseek(file, (off_t)offset, SEEK_SET) != -1;
-#endif
+  #endif
         return true;
     }
 
     // Set the stream size.
     bool AsyncStream::setSize(const uint64 offset)
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         LONG lo = LONG(offset & 0xFFFFFFFF), hi = LONG(offset >> 32);
         if (SetFilePointer(file, lo, &hi, FILE_BEGIN) == INVALID_SET_FILE_POINTER) return false;
         return SetEndOfFile(file) == TRUE;
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         if (file < 0) return false;
         return ftruncate(file, offset) != -1;
-#endif
+  #endif
         return true;
     }
 
@@ -2389,7 +2389,7 @@ namespace File
     AsyncStream::AsyncStream(const String & fullPath, const OpenMode mode)
         : priv(0), currentPos(0), readPos(0), asyncSize(0)
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         tmpBuffer = 0;
         if (fullPath.getLength())
         {
@@ -2399,7 +2399,7 @@ namespace File
             file = CreateFileW(fileName.getData(), (mode == Read ? GENERIC_READ : (mode == Write ? GENERIC_WRITE : GENERIC_WRITE | GENERIC_READ))
                                 , FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
         }
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         if (fullPath.getLength())
         {
             if (mode != Read)
@@ -2420,12 +2420,12 @@ namespace File
             over.aio_fildes = file;
             monitored = 0;
         }
-#endif
+  #endif
     }
 
     AsyncStream::~AsyncStream()
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         if (file != INVALID_HANDLE_VALUE)
         {
             CancelIo(file);
@@ -2434,10 +2434,10 @@ namespace File
         if (over.hEvent)
             CloseHandle(over.hEvent);
         deleteA0(tmpBuffer);
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         aio_cancel(file, &over);
         if (file >= 0) close(file); file = -1;
-#endif
+  #endif
         priv = 0;
     }
 
@@ -2445,7 +2445,7 @@ namespace File
     bool AsyncStream::isReadPossible(const Time::TimeOut & timeout) const
     {
         if (timeout <= 0) return false;
-#ifdef _WIN32
+  #ifdef _WIN32
         if (asyncSize && tmpBuffer)
         {
             DWORD dwRead = 0;
@@ -2453,7 +2453,7 @@ namespace File
                 return true;
         }
         return false;
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         if (file < 0) return false;
         fd_set set;
         FD_ZERO(&set);
@@ -2470,13 +2470,13 @@ namespace File
         }
         timeout.filterError(ret);
         return ret >= 1;
-#endif
+  #endif
     }
     // Check if it's possible to write to this stream
     bool AsyncStream::isWritePossible(const Time::TimeOut & timeout) const
     {
         if (timeout <= 0) return false;
-#ifdef _WIN32
+  #ifdef _WIN32
         if (asyncSize && tmpBuffer)
         {
             DWORD dwRead = 0;
@@ -2484,7 +2484,7 @@ namespace File
                 return true;
         }
         return false;
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         if (file < 0) return false;
         fd_set set;
         FD_ZERO(&set);
@@ -2501,21 +2501,21 @@ namespace File
         }
         timeout.filterError(ret);
         return ret >= 1;
-#else
+  #else
         return 0;
-#endif
+  #endif
     }
 
     // Get the internal object
     void * AsyncStream::getInternal() const
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         return (void*)over.hEvent;
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         return (void*)(int64)file;
-#else
+  #else
         return 0;
-#endif
+  #endif
     }
 
 
@@ -2529,7 +2529,7 @@ namespace File
         if (newPool == NULL) return false;
         pool = newPool;
         pool[size++] = stream;
-#ifdef _WIN32
+  #ifdef _WIN32
         HANDLE * rSet = (HANDLE*)realloc(readSet, size * sizeof(*readSet));
         if (rSet == NULL) return false;
         readSet = rSet;
@@ -2542,7 +2542,7 @@ namespace File
         if (bSet == NULL) return false;
         bothSet = bSet;
         bothSet[size - 1] = (HANDLE)stream->getInternal();
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         uint16 * newIndexPool = (uint16*)realloc(indexPool, size * sizeof(*indexPool));
         if (newIndexPool == NULL) return false;
         indexPool = newIndexPool;
@@ -2550,7 +2550,7 @@ namespace File
         AsyncCompleted * async = new AsyncCompleted(*this, size-1);
         asyncCB.Append(async);
         stream->monitored = async;
-#endif
+  #endif
         return true;
     }
     // Remove a stream from the pool
@@ -2570,18 +2570,18 @@ namespace File
 
                 // BTW, if we own the stream, we must delete it now
                 if (own) delete stream;
-#ifdef _WIN32
+  #ifdef _WIN32
                 readSet[size] = 0;
                 writeSet[size] = 0;
                 bothSet[size] = 0;
-#else
+  #else
                 // Swap the removed index with the last one
                 asyncCB.Swap(i, size);
                 asyncCB.Remove(size);
                 // Fix the index in the swapped value (so all other CB are still at the same place)
                 Threading::SharedDataWriter sdw(asyncCB[i].index);
                 sdw = i;
-#endif
+  #endif
                 // We don't realloc smaller anyway
                 return true;
             }
@@ -2595,14 +2595,14 @@ namespace File
     bool MonitoringPool::select(const bool reading, const bool writing, const Time::TimeOut & timeout) const
     {
         if (timeout <= 0) return false;
-#ifdef _WIN32
+  #ifdef _WIN32
         waitSet = reading ? (writing ? bothSet : readSet) : (writing ? writeSet : 0);
         triggerCount = WaitForMultipleObjects(size, waitSet, FALSE, timeout);
         timeout.success(); // If we timed out, this will be marked as such too
         if (triggerCount >= WAIT_OBJECT_0 && triggerCount <= (WAIT_OBJECT_0 + size))
             return true;
         return false;
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         // wait for something to do...
         {
             Threading::ScopedLock scope(indexLock);
@@ -2634,7 +2634,7 @@ namespace File
         bool ret = eventReady.Wait((Threading::TimeOut::Type)(int)timeout);
         timeout.success(); // If we timed out, this will be marked as such too
         return ret;
-#endif
+  #endif
     }
 
     // Check if at least a stream in the pool is ready for reading
@@ -2645,19 +2645,19 @@ namespace File
     // Check which stream was ready in the given pool
     int MonitoringPool::getNextReadyStream(const int index) const
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         return index == -1 ? (triggerCount - WAIT_OBJECT_0) : -1;
-#else
+  #else
         Threading::ScopedLock scope(indexLock);
         return index + 1 < triggerCount ? index + 1 : -1;
-#endif
+  #endif
     }
     // Get the stream at the given position
     AsyncStream * MonitoringPool::operator[] (const int index) { return index >= 0 && index < (int)size ?  pool[index] : 0; }
     // Get the ready stream at the given position
     AsyncStream * MonitoringPool::getReadyAt(const int index)
     {
-#ifdef _WIN32
+  #ifdef _WIN32
         if (waitSet && (triggerCount - WAIT_OBJECT_0) == (DWORD)index)
         {
             // Need to find out which stream the event refers to
@@ -2668,18 +2668,18 @@ namespace File
             }
         }
         return 0;
-#else
+  #else
         Threading::ScopedLock scope(indexLock);
         return (uint32)index < (uint32)triggerCount ? pool[indexPool[index]] : 0;
-#endif
+  #endif
     }
 
     MonitoringPool::MonitoringPool(const bool own)
-#ifdef _WIN32
+  #ifdef _WIN32
         : pool(0), size(0), readSet(0), writeSet(0), bothSet(0), triggerCount(0), own(own), waitSet(0)
-#else
+  #else
         : pool(0), size(0), indexPool(0), eventReady(NULL, Threading::Event::ManualReset), triggerCount(0), own(own)
-#endif
+  #endif
     { }
 
     MonitoringPool::~MonitoringPool()
@@ -2691,11 +2691,11 @@ namespace File
         }
         size = 0;
         Platform::safeRealloc(pool, 0);
-#ifdef _WIN32
+  #ifdef _WIN32
         Platform::safeRealloc(readSet, 0);
         Platform::safeRealloc(writeSet, 0);
         Platform::safeRealloc(bothSet, 0);
-#elif defined(_POSIX)
+  #elif defined(_POSIX)
         if (!own)
         {
             // Need to cancel all pending streams
@@ -2703,7 +2703,7 @@ namespace File
                 aio_cancel(pool[i]->file, &pool[i]->over);
         }
         Platform::safeRealloc(indexPool, 0);
-#endif
+  #endif
         triggerCount = 0;
         pool = 0;
     }

@@ -32,14 +32,14 @@ namespace Threading
     {
         /** Possible shortcut for timeout */
         enum Type
-    {
+        {
            InstantCheck = 0,      //!< Check if the condition is valid, but does not wait
 #ifdef _WIN32
            Infinite = INFINITE,   //!< Wait until the condition is valid
 #else
            Infinite = 0xFFFFFFFF, //!< Wait until the condition is valid
 #endif
-    };
+        };
         /** The actual timeout duration in millisecond */
         uint32 duration;
 
@@ -1148,14 +1148,14 @@ namespace Threading
     };
 
 #if (WantAtomicClass == 1)
-    /** Delays the current operation a given number of times. Unlike traditional lock, this does not 
-        need any operating system helper upon contention. Instead, it burns CPU cycles, so this kind 
+    /** Delays the current operation a given number of times. Unlike traditional lock, this does not
+        need any operating system helper upon contention. Instead, it burns CPU cycles, so this kind
         of lock should not be used for any large section of code.
         Spin are only used in a single thread (it's not multithread safe).
         The basic usage for this class is in the lock-free classes, when blocking behaviour is asked for.
-        In that case, since we know the system will progress, it's faster to simply loop with a SpinDelay 
+        In that case, since we know the system will progress, it's faster to simply loop with a SpinDelay
         rather than giving back our time slice to the operating system.
-        
+
         Typically used like this:
         @code
             if (!isResultAvailableFromOtherThread())
@@ -1170,7 +1170,7 @@ namespace Threading
     private:
         /** The internal counter. */
         int counter;
-        
+
         // Interface
     public:
         /** Default constructor */
@@ -1326,7 +1326,7 @@ namespace Threading
                 comparand = read();
                 return false;
             @endcode
-            It's typically used like this: 
+            It's typically used like this:
             @code
                 while (!atomic.compareAndSet(comparand, newValue)) {}
             @endcode
@@ -1344,7 +1344,7 @@ namespace Threading
         /** Atomic copy operator. */
         inline Atomic& operator= (const Atomic& other) { save(other.read()); return *this; }
         /** Atomic copy operator. */
-        inline Atomic& operator= (const T & newValue)    { save(newValue); return *this; }
+        inline Atomic& operator= (const T & newValue)  { save(newValue); return *this; }
 
         // Helpers
     private:
@@ -1360,10 +1360,10 @@ namespace Threading
         // Not defined as it has no sense to use post increment and atomic variables
         T operator++ (int);
     };
-    
-    
-    
-    
+
+
+
+
 #else
     /** @internal The internal virtual table function that's selected in the atomic class to avoid runtime cost based on choosing the right function */
     template <int size>
@@ -1645,7 +1645,7 @@ namespace Threading
         /** Atomic copy operator. */
         inline Atomic& operator= (const Atomic& other) { swap(other.read()); return *this; }
         /** Atomic copy operator. */
-        inline Atomic& operator= (const T & newValue)    { swap(newValue); return *this; }
+        inline Atomic& operator= (const T & newValue)  { swap(newValue); return *this; }
 
         // Helpers
     private:
@@ -1670,7 +1670,7 @@ namespace Threading
         The queue owns the objects passed it (and delete them with delete) for the remaining objects.
         However, when enqueued objects are dequeued, this queue does not own them anymore.
         The basic idea being that if you can reach your object you are responsible for its lifetime.
-     
+
         This algorithm used is based on this page: http://www.1024cores.net/home/lock-free-algorithms/queues/intrusive-mpsc-node-based-queue
         The fast version is an optimization that's not 100% correct (it's not linearizable when the queue is empty) but still behaves correctly. */
     template <typename T>
@@ -1685,11 +1685,11 @@ namespace Threading
             T *                         obj;
             /** The next node pointer */
             Atomic<Node *>              next;
-            
+
             /** Forward constructor */
             Node(T * obj = 0) : obj(obj), next(0) {}
         };
-        
+
         // Members
     private:
         /** The head of the queue */
@@ -1701,7 +1701,7 @@ namespace Threading
         /** A dumb node that's used to detect inconsistency in the queue */
         Node            null;
 #endif
-    
+
         // Interface
     public:
         /** Default construction. */
@@ -1719,12 +1719,12 @@ namespace Threading
             delete (Node*)head.unsafeAccess();
 #endif
         }
-        
+
         /** Check if the queue is possibly empty.
             @warning This is only a guess, since there is no way to ensure this check atomically. */
         bool isPossiblyEmpty() const volatile { return head.unsafeAccess() == tail.unsafeAccess(); }
-        
-        /** Enqueue an object to this queue. There might be multiple producer calling this method 
+
+        /** Enqueue an object to this queue. There might be multiple producer calling this method
             at any time.
             @param input  A pointer to a new allocated element that's stored in the queue
             @return true if the queue was previously empty */
@@ -1742,7 +1742,7 @@ namespace Threading
             If there is contention, this actually waits and retry until contention is resolved.
             This can not deadlock as there'll always be advancement from the other thread, and it'll ends up
             in a given element, or 0 if the queue is empty.
-            In the worst case, this will relinguish its remaining thread's timeslice. 
+            In the worst case, this will relinguish its remaining thread's timeslice.
             @return 0 if the queue is empty, or the stored pointer if any available */
         T* dequeue() volatile
         {
@@ -1754,10 +1754,10 @@ namespace Threading
             }
             return ret;
         }
-        
+
         /** Try to dequeue from the queue.
             This will dequeue from the queue if it's possible to do so.
-            In that case, ret will be modified to point to the first element queued to the queue. 
+            In that case, ret will be modified to point to the first element queued to the queue.
             @return false in case of contention (meaning that the operation must be re-attempted), true on succcessful dequeueing
             @warning You must delete by yourself the returned pointer */
         bool tryDequeue(T* & ret) volatile
@@ -1765,7 +1765,7 @@ namespace Threading
             Node * tailNode = tail.unsafeAccess();
             Node * next = tailNode->next.readSync();
             ret = 0;
-            
+
             if (tailNode == &null)
             {
                 if (!next)
@@ -1784,7 +1784,7 @@ namespace Threading
                 delete tailNode;
                 return true;
             }
-            
+
             // Then make sure the queue is consistent when it's empty
             Node * headNode = head.unsafeAccess();
             if (headNode == tailNode)
@@ -1801,12 +1801,12 @@ namespace Threading
                     return true;
                 }
             }
-            
+
             // If another thread enqueued here, then we'll not see the element unless we chech again.
             return headNode == tail.unsafeAccess(); // If it's the case, the queue is really empty
         }
 #else
-        /** Get the first element stored from the queue. 
+        /** Get the first element stored from the queue.
             @return 0 if the queue is empty, or gives you back the pointer to the stored element if any available
             @warning You must delete by yourself the returned pointer
             @note It's possible to get back 0 when called while a producer thread has not updated the single element yet.  */
@@ -1828,13 +1828,13 @@ namespace Threading
         MultipleProducerSingleConsumerQueue(const MultipleProducerSingleConsumerQueue & );
         void operator = (const MultipleProducerSingleConsumerQueue & );
     };
-    
+
     /** A multiple producer, multiple consumer lock-free, wait-free circular buffer (queue).
         This queue does not do any memory allocation once constructed (the complete size is required for construction).
-        You can only store pointer in it (or plain old data). 
+        You can only store pointer in it (or plain old data).
         The pointed objects are not owned (so you must dequeue them and delete them yourself if you need leak-free code).
-        
-        The algorithm comes from http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue (public domain), 
+
+        The algorithm comes from http://www.1024cores.net/home/lock-free-algorithms/queues/bounded-mpmc-queue (public domain),
         althrough the code is completely genuine */
     template<typename T>
     class MultipleProducerMultipleConsumerQueue
@@ -1870,11 +1870,11 @@ namespace Threading
         Atomic<size_t>      readingPos;
         // And here
         uint8               padding3[64];
-    
-    
+
+
         // Interface
     public:
-        /** Dequeue data from the queue 
+        /** Dequeue data from the queue
             @param data     On output, it's filled with the dequeued data upon success (else it's not modified)
             @return true if the queue was not empty and dequeueing went as expected */
         bool dequeue(T & data) volatile
@@ -1911,8 +1911,8 @@ namespace Threading
             Assert(false);
             return false;
         }
-    
-    
+
+
         /** Enqueue the given data in the queue.
             @param data The data to enqueue
             @return false if the queue is full */

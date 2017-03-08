@@ -47,7 +47,7 @@ namespace Random
 
     /** Get a random number inside the given range inclusive */
     uint32 numberBetween(const uint32 lowest = 0, const uint32 highest = (uint32)-1);
-    /** Fill the given block of data with random bytes
+    /** Fill the given block of data with random bytes 
         @param buffer   The buffer to fill randomness into
         @param size     The number of bytes inside the given buffer
         @param reSeed   When true, the generator is reseeded with the local entropy data */
