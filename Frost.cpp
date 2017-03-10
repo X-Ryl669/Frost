@@ -857,12 +857,13 @@ namespace Frost
             return String::Print("%d:%s:AES_CTR", File::MultiChunk::MaximumSize, compressorName[actualComp]);
         }
 
-        static uint16 getFilterArgumentIndex(CompressorToUse actualComp)
+        static uint16 getFilterArgumentIndex(CompressorToUse actualComp, FileFormat::IndexFile * idxFile = 0)
         {
             const String & filterArg = getFilterArgument(actualComp);
-            uint16 index = indexFile.getFilterArguments().getArgumentIndex(filterArg);
-            if (index == indexFile.getFilterArguments().arguments.getSize())
-                return indexFile.getFilterArguments().appendArgument(filterArg);
+            FileFormat::IndexFile & idx = idxFile ? *idxFile : indexFile;
+            uint16 index = idx.getFilterArguments().getArgumentIndex(filterArg);
+            if (index == idx.getFilterArguments().arguments.getSize())
+                return idx.getFilterArguments().appendArgument(filterArg);
             return index;
         }
         typedef Utils::ScopePtr<FileFormat::ChunkList> & ChunkListT;
@@ -2228,6 +2229,10 @@ namespace Frost
         String error = newIndex.createNew(tempIndexPath, Helpers::indexFile.getCipheredMasterKey(), initialBackupPath);
         if (error) return error;
 
+        // We need to pre-copy all the filter arguments from the current index to the new index since they might get modified while purging
+        newIndex.getFilterArguments().arguments = Helpers::indexFile.getFilterArguments().arguments;
+        newIndex.getFilterArguments().modified = true;
+
 
         // Ok, now we have a sorted list of multichunks (from 0 (no chunks to remove) to 1 (all chunks to remove))
         // Let's act accordingly now to remove or rework the given multichunks.
@@ -2284,7 +2289,7 @@ namespace Frost
             Utils::ScopePtr<FileFormat::ChunkList> &  outCL = !shouldCompress ? encMultichunkList : compMultichunkList;
             File::MultiChunk &      destMC = !shouldCompress ? encMC : compMC;
 
-            // If UID not assigned yet, let's assigned it now, we are reusing an existing multichunk
+            // If UID not assigned yet, let's assign it now, we are reusing an existing multichunk
             if (outCL->UID == 0) { outCL->UID = currentMC->listID; outMC->UID = currentMC->UID; outMC->listID = outCL->UID; }
 
             // Then we'll open the chunklist refered by this multichunk and for each chunk in the list assert if it's used
@@ -2316,7 +2321,7 @@ namespace Frost
                             return TRANS("Error: Closing multichunk failed");
 
                         mcGuard.appendMC(chunkFile);
-                        outMC->filterArgIndex = Helpers::indexFile.getFilterArguments().getArgumentIndex(filterMode);
+                        outMC->filterArgIndex = Helpers::getFilterArgumentIndex(shouldCompress ? Helpers::Default : Helpers::None, &newIndex);
                         memcpy(outMC->checksum, chunkHash, ArrSz(chunkHash));
 
                         uint16 mcID = outMC->UID;
@@ -2371,7 +2376,7 @@ namespace Frost
                 return TRANS("Error: Closing multichunk failed");
 
             mcGuard.appendMC(chunkFile);
-            encMultichunk->filterArgIndex = getFilterArgumentIndex(Helpers::None);
+            encMultichunk->filterArgIndex = getFilterArgumentIndex(Helpers::None, &newIndex);
             memcpy(encMultichunk->checksum, chunkHash, ArrSz(chunkHash));
 
             newChunkList.storeValue(encMultichunk->listID, encMultichunkList.Forget());
@@ -2385,7 +2390,7 @@ namespace Frost
                 return TRANS("Error: Closing multichunk failed");
 
             mcGuard.appendMC(chunkFile);
-            compMultichunk->filterArgIndex = getFilterArgumentIndex(Helpers::Default);
+            compMultichunk->filterArgIndex = getFilterArgumentIndex(Helpers::Default, &newIndex);
             memcpy(compMultichunk->checksum, chunkHash, ArrSz(chunkHash));
 
             newChunkList.storeValue(compMultichunk->listID, compMultichunkList.Forget());
@@ -2467,12 +2472,8 @@ namespace Frost
                 if (!Helpers::indexFile.LoadRO(newIndex.getMetaData(), catalog->optionMetadata)) TRANS("Error: Could not load metadata for revision: ") + rev;
                 newIndex.getMetaData().modified = true;
             }
-            // Then filter arguments
-            if (catalog->optionFilterArg.fileOffset())
-            {
-                if (!Helpers::indexFile.Load(newIndex.getFilterArguments(), catalog->optionFilterArg)) TRANS("Error: Could not load filterarg for revision: ") + rev;
-                newIndex.getFilterArguments().modified = true;
-            }
+            // Filter arguments should already be copied to the last index value
+            
             // Finally save the file tree
             Utils::OwnPtr<FileFormat::FileTree> newFT = newIndex.getFileTree(rev - upToRevision);
             if (!Helpers::indexFile.Load(*newFT, catalog->fileTree)) TRANS("Error: Could not load the file tree for revision: ") + rev;

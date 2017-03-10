@@ -1,0 +1,35 @@
+Build number:        Comment
+[0000 -> 0046]  Initial alpha version, for saving backups
+[0046 -> 0092]  Initial alpha version, restoring is working
+[0092 -> 0118]  Improve the textual output when on a console to include current speed and estimated time.  
+[0118 -> 0139]  Implementation of fast purging.
+[0139 -> 0198]  Rewrote the command line parsing to support more options and better code, fix DB bugs
+[0198 -> 0238]  Rewrote the database code to allow optimal search in the index, resulting in fast restoring
+[0238 -> 0279]  Implementation of purging, fast mode mostly done.
+[0279 -> 0281]  Implementation of purging, fast mode done and working.
+[0281 -> 0284]  Implementation of purging, slow mode written, testing underway
+[0281 -> 0289]  Implementation of purging both mode done, and tested.
+[0289 -> 0293]  Add support for database optimization (to gain the last few bytes), and fixed a user output bug 
+[0293 -> 0295]  Add support for Block Sorting Compression (better compression, but a bit slower)
+[0295 -> 0314]  Add better file listing mode, and fix few bugs
+[0314 -> 0318]  Improve the error reports, and fix purge options parsing 
+[0318 -> 0338]  Add support for excluded file list with regular expression support
+[0338 -> 0344]  Fix a bug reported on GitHub issue #3
+[0344 -> 0384]  Fix a bug with EBSC compression library data corruption.
+[0384 -> 0399]  Fix a bug in database iteration code that created bad file lists to delete from index. Improved output responsiveness.
+[0399 -> 0402]  Improve output in restore, and improve multichunk caching so restore is faster.
+[0402 -> 0404]  Have a real cache for multichunk so restoring is way faster.
+[0404 -> 0412]  Add --cat option to only extract a single file.
+[0412 -> 0418]  Support --strategy slow in backup mode to reopen last multichunk in order to avoid creating new multichunk each time a backup is run.
+[0418 -> 0420]  Fix a bug for directory with space in name (GitHub issue #6)
+[0420 -> 0421]  Add support for entropy computation per chunk and a --test entropy to compute entropy for a file
+[0421 -> 0430]  Add support for dual multichunk in backup process (one is compressed but not the other)
+[0430 -> 0437]  Add --include to re-include what should be excluded with --exclude, RC1 for 1.0.0 version
+[0437 -> 0484]  Add support for new index file format (getting rid of SQLite3 index file that are huge and slow)
+[0484 -> 0511]  This version with new index file format is feature equivalent to 1.0.0 version (with old SQLite3 database format)
+[0511 -> 0515]  Add support for FUSE filesystem mounting of the backup set (read only, obviously)
+[0515 -> 0517]  Fix a bug for supporting Linux too
+[0517 -> 0556]  Add support for interruptible backup, reworked algorithms to be much faster (10x ?), reduce memory size by at least 50%
+[0556 -> 0568]  Bug fix for bug identified when doing parameter fuzzing
+
+[0000 -> xxxx]
