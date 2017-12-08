@@ -430,7 +430,7 @@ namespace Frost
         {
             File::Info info(filePath, true);
             if (info.doesExist()) return TRANS("File already exists: ") + filePath;
-            if (cipheredMasterKey.getSize() != ArrSz(MainHeader::cipheredMasterKey)) return TRANS("Invalid ciphered master key format");
+            if (cipheredMasterKey.getSize() != MainHeader::CipheredMasterKeySize) return TRANS("Invalid ciphered master key format");
             file = new Stream::MemoryMappedFileStream(info.getFullPath(), true);
             if (!file) return TRANS("Out of memory");
             // Compute the size required for the metadata and filter arguments and header

@@ -1217,6 +1217,8 @@ namespace Frost
         /** The main file header. */
         struct MainHeader
         {
+	    /** The ciphered master key size */
+	    enum { CipheredMasterKeySize = 108 };
             /** The magic number */
             union { uint32 number; char text[4]; } magic;
             /** The file version and state */
@@ -1224,7 +1226,7 @@ namespace Frost
             /** The catalog offset */
             Offset catalogOffset;
             /** The ciphered master key */
-            uint8 cipheredMasterKey[108];
+            uint8 cipheredMasterKey[CipheredMasterKeySize];
 
             /** Assert the file is valid */
             bool isSupportedFormat() const { return memcmp(magic.text, "Frst", 4) == 0 && version == 3; }
