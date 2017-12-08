@@ -447,6 +447,8 @@ namespace File
 #endif
         /** The search path */
         String          path;
+        /** The normalized path (this is a cache to avoid recomputations) */
+        mutable String  normalizedPath;
 
         // Interface
     public:

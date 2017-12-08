@@ -52,7 +52,7 @@ namespace Strings
             @return true on success */
         inline bool limitTo(const int newLength)   { if (newLength > length) return false; *const_cast<int*>(&length) = newLength; return true; }
         /** Get the substring from this string */
-        VerySimpleReadOnlyString midString(int left, int len) const { return VerySimpleReadOnlyString(left < length ? &data[left] : "", min(len, length - left)); }
+        VerySimpleReadOnlyString midString(int left, int len) const { return VerySimpleReadOnlyString(left < length ? &data[left] : "", max(0, min(len, length - left))); }
         /** Split at the given position.
             For example, the following code gives:
             @code
@@ -222,6 +222,19 @@ namespace Strings
         operator int64() const;
         /** The basic conversion operators */
         operator double() const;
+
+        /** Get the integer out of this string.
+            This method support any usual encoding of the integer, and detect the integer format automatically.
+            This method is optimized for speed, and does no memory allocation on heap
+            Supported formats examples: "0x1234, 0700, -1234, 0b00010101"
+            @param base     If provided, only the given base is supported (default to 0 for auto-detection).
+            @param consumed If provided, will be filled with the number of consumed characters.
+            @return The largest possible integer that's parseable. */
+        int64 parseInt(const int base = 0, int * consumed = 0) const { char * end = 0; int64 out = strtoll((const char*)data, &end, base); if (consumed) *consumed = (int)(end - (char*)data); return out; }
+        /** Get the double stored in this string
+            @param consumed If provided, will be filled with the number of consumed characters.
+            @return The largest possible double number that's parseable. */
+        double parseDouble(int * consumed = 0) const { char * end = 0; double out = strtod((const char*)data, &end); if (consumed) *consumed = (int)(end - (char*)data); return out; }
 
         /** So you can check the string directly for emptiness */
         inline bool operator !() const { return length == 0; }
@@ -400,7 +413,7 @@ namespace Strings
         {
             if (!amount) amount = allocatedSize >= 2 ? allocatedSize + (allocatedSize >> 1) : 2;
             size_t newAllocatedSize = allocatedSize + amount;
-            TPtr * newArray = (TPtr*)realloc(array, newAllocatedSize * sizeof(array[0]));
+            TPtr * newArray = (TPtr*)Platform::safeRealloc(array, newAllocatedSize * sizeof(array[0]));
             if (!newArray) { Clear(); return; }
             memset(&newArray[currentSize], 0, (newAllocatedSize - currentSize) * sizeof(newArray[0]));
             array = newArray;
@@ -431,7 +444,7 @@ namespace Strings
         inline void Grow(const size_t count, T * const elements) throw()
         {
             Enlarge(count);
-            if (elements) memmove(&array[currentSize], elements, count * sizeof(T*));
+            if (elements) memmove(&array[currentSize], elements, count * sizeof(T));
             else for (size_t i = currentSize; i < currentSize + count; i++) new(&array[i]) T();
             currentSize += count;
         }
@@ -457,7 +470,7 @@ namespace Strings
             // Reduce the size only if we have enough space left later on
             if (allocatedSize > 2 && currentSize < allocatedSize / 2)
             {
-                TPtr * newArray = (TPtr*)realloc(array, allocatedSize / 2 * sizeof(array[0]));
+                TPtr * newArray = (TPtr*)Platform::safeRealloc(array, allocatedSize / 2 * sizeof(array[0]));
                 if (newArray) { array = newArray; allocatedSize /= 2; }
             }
         }
@@ -480,7 +493,7 @@ namespace Strings
 
 
         /** Classic copy operator */
-        inline const StringArrayT& operator = (const StringArrayT & other)
+        inline StringArrayT & operator = (const StringArrayT & other)
         {
             if (&other == this) return *this;
             Clear(); array = (TPtr*)Platform::realloc(array, other.allocatedSize * sizeof(array[0]));
@@ -557,10 +570,12 @@ namespace Strings
             @return the element index of the given element or getSize() if not found. */
         inline size_t lookUp(const T & objectToSearch, const size_t fromPos = 0, int * internalPos = 0) const
         {
-            int startPos = internalPos ? *internalPos : 0, foundPos = -1;
+            int startPos = internalPos ? *internalPos : 0;
             for (size_t i = fromPos; i < currentSize; i++)
-                if ((foundPos = array[i]->Find(objectToSearch, startPos)) != -1)
-                { if (internalPos) *internalPos = foundPos; return i; }
+            {
+                int foundPos = array[i]->Find(objectToSearch, startPos);
+                if (foundPos != -1) { if (internalPos) *internalPos = foundPos; return i; }
+            }
             return currentSize;
         }
         /** Extract only a subpart of the array into another array.
@@ -603,7 +618,7 @@ namespace Strings
             if (text.midString(-separator.getLength(), separator.getLength()) != separator)
                 allocatedSize++;
 
-            array = (TPtr*)realloc(array, allocatedSize * sizeof(array[0]));
+            array = (TPtr*)Platform::safeRealloc(array, allocatedSize * sizeof(array[0]));
             if (!array) { allocatedSize = 0; return; }
 
             int lastPos = 0;

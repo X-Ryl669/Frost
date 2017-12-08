@@ -159,13 +159,14 @@ namespace Platform
 #endif
     }
     
-#if defined(_POSIX)
+#if defined(_POSIX) || defined(_DOXYGEN)
     /** Useful RAII class for Posix file index */
     class FileIndexWrapper
     {
         int fd;
 
     public:
+        /** So it can be used in place of usual int */
         inline operator int() const { return fd; }
         /** Mutate the file descriptor with a new descriptor. It closes the previous descriptor. */
         inline void Mutate(int newfd) { if (fd >= 0) close(fd); fd = newfd; }

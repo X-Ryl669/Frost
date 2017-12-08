@@ -1092,9 +1092,13 @@ namespace Bstrlib
         struct tagbstring t;
         if (len < 0)
         {   // Want data from the right of the string, without specifying the start point
-            // For example String("abcdefgh").midString(0, -3) => "fgh" (whatever the left start point)
-            left = -len < slen ? slen + len : 0;
-            len = -len;
+            // For example String("abcdefgh").midString(0, -3) => "abcde"
+            if (-len >= slen) left = 0;
+            else
+            {   // Check for String("abcdef").midString(-3, -1) => "de"
+                if (left < 0) { left = max(0, slen + left); len = slen + len - left; }
+                else len += slen;
+            }
         }
         if (left < 0)
         {   // Want data from the right of the string
@@ -2217,4 +2221,3 @@ namespace Bstrlib
     }
 #endif
 } // namespace Bstrlib
-

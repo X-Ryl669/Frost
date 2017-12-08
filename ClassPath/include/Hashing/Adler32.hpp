@@ -22,7 +22,7 @@ namespace Hashing
         @endcode
      
         @sa Tests::Adler32Tests */
-    struct Adler32 : public Hasher
+    struct Adler32 : public RollingHasher
     {
         // Members
     private:
@@ -35,6 +35,9 @@ namespace Hashing
         uint32       a;
         /** The second part of the checksum */
         uint32       b;
+        /** For the rolling checksum part, we need to know how many bytes 
+            where accumulated in this checksum */
+        uint32       len;
         
     public:
         /** Start the hashing */
@@ -45,6 +48,8 @@ namespace Hashing
         virtual void Finalize(uint8 * outBuffer);
         /** Append a single byte for the computed checksum */
         virtual void Append(uint8 ch);
+        /** Roll the checksum with a limited window size */
+        virtual void Roll(uint8 ch);
         /** Get the default hash size in byte */
         inline uint32 hashSize() const throw() { return sizeof(uint32); }
         /** Get the checksum. 

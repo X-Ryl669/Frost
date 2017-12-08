@@ -46,9 +46,24 @@ namespace Hashing
     */
     struct RollingHasher : public Hasher
     {
+    protected:
+        /** The window size for rolling checksum computation */
+        const uint32  windowSize;
+        /** The window for rolling checksum computation */
+        uint8 * window;
+        /** The window current position (usually always increasing) */
+        uint32  windowPos;
+        
     public:
+        /** Start the hashing */
+        virtual void    Start() { memset(window, 0, windowSize); windowPos = 0; }
         /** Append a single byte for the computed checksum */
         virtual void    Append(uint8 ch) = 0;
+        /** Roll the checksum with a given window size */
+        virtual void    Roll(uint8 ch) = 0;
+        
+        RollingHasher(const uint32 windowSize = 48) : windowSize(windowSize), window(new uint8[windowSize]), windowPos(0) {}
+        virtual ~RollingHasher() { deleteA0(window); windowPos = 0; }
     };
     
 

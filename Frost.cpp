@@ -18,7 +18,8 @@
 #include "ClassPath/include/Compress/BSCLib.hpp"
 // We need loggers too
 #include "ClassPath/include/Logger/Logger.hpp"
-
+// We need StringMap too
+#include "ClassPath/include/Hash/StringMap.hpp"
 
 // The global option map
 Strings::StringMap optionsMap;
@@ -32,6 +33,7 @@ namespace Frost
 {
 
     bool wasBackingUp = false, backupWorked = false, dumpTimeRequired = false, exitRequired = false;
+    bool safeIndex = false;
     int dumpLevel = 0; // This is the verbosity level
     unsigned int previousRevID = 0;
 
@@ -119,16 +121,16 @@ namespace Frost
         debugMem(cipherKey->getConstBuffer(), cipherKey->getSize(), "Encrypted content key");
 
         // Then try to decode it with the given password
-        KeyT pwKey;
-        derivePassword(pwKey, password);
-        debugMem(pwKey, ArrSz(pwKey), "Password key");
+        KeyT derivedPassword;
+        derivePassword(derivedPassword, password);
+        debugMem(derivedPassword, ArrSz(derivedPassword), "Password key");
 
 
         // Then create the block to decrypt
         SymmetricT sym;
-        sym.setKey(pwKey, (SymmetricT::BlockSize)ArrSz(pwKey), 0, (SymmetricT::BlockSize)ArrSz(pwKey));
+        sym.setKey(derivedPassword, (SymmetricT::BlockSize)ArrSz(derivedPassword), 0, (SymmetricT::BlockSize)ArrSz(derivedPassword));
 
-        MemoryBlock decKey( (uint32)((encryptedKeySize + (ArrSz(pwKey) - 1) ) / ArrSz(pwKey)) * ArrSz(pwKey) );
+        MemoryBlock decKey( (uint32)((encryptedKeySize + (ArrSz(derivedPassword) - 1) ) / ArrSz(derivedPassword)) * ArrSz(derivedPassword) );
         MemoryBlock clearKey(decKey.getSize());
         sym.Decrypt(cipherKey->getConstBuffer(), clearKey.getBuffer(), cipherKey->getSize()); // ECB mode used for a single block anyway
         debugMem(clearKey.getConstBuffer(), clearKey.getSize(), "Encryption key");
@@ -848,6 +850,91 @@ namespace Frost
             }
 
             return true;
+        }
+        // Encrypt or decrypt using AES counter mode.
+        bool AESCounterProcess(const KeyFactory::KeyT & key, const KeyFactory::KeyT & nonceRandom, const ::Stream::InputStream & input, ::Stream::OutputStream & output, ProgressCallback & callback, uint8 * inputHash, uint8 * outputHash)
+        {
+            Crypto::OSSL_AES cipher;
+            cipher.setKey(key, (Crypto::BaseSymCrypt::BlockSize)ArrSz(key), 0, (Crypto::BaseSymCrypt::BlockSize)ArrSz(key));
+            
+            KeyFactory::KeyT nonce = {}, inputData = {}, tmp = {}, outputData = {};
+            memcpy(&nonce[0], &nonceRandom[0], 8);
+    
+            Crypto::OSSL_SHA256 hash;
+            hash.Start();
+
+            callback.progressed(inputHash ? ProgressCallback::Backup : ProgressCallback::Restore, "Processing: " DEFAULT_INDEX, 0, input.fullSize(), 1, 1, ProgressCallback::KeepLine);
+            uint64 counter = 0;
+            for (uint64 i = 0; i < input.fullSize(); i += ArrSz(nonce))
+            {
+                // Increment the nonce including the counter
+                counter++;
+                memcpy(&nonce[8], &counter, sizeof(counter));
+                // Read the data
+                uint64 inputSize = input.read(inputData, (uint64)ArrSz(inputData));
+                if (inputSize == (uint64)-1)
+                    return callback.warn(inputHash ? ProgressCallback::Backup : ProgressCallback::Restore, DEFAULT_INDEX, "Could not read from file") && false;
+
+                callback.progressed(inputHash ? ProgressCallback::Backup : ProgressCallback::Restore, "Processing: " DEFAULT_INDEX, i, input.fullSize(), 1, 1, ProgressCallback::KeepLine);
+
+                // Hash the data
+                if (inputHash) hash.Hash(inputData, inputSize);
+                
+                // And encrypt the data (yes, even for decrypting)
+                if (!Crypto::CTR_BlockProcess(cipher, nonce, tmp))
+                    return callback.warn(inputHash ? ProgressCallback::Backup : ProgressCallback::Restore, DEFAULT_INDEX, "Could not encrypt or decrypt data") && false;
+                // Encrypt or decrypt the data
+                Crypto::Xor(outputData, inputData, tmp, (size_t)inputSize);
+                // Hash the output data if requested
+                if (outputHash) hash.Hash(outputData, inputSize);
+
+                if (output.write(outputData, inputSize) != inputSize)
+                    return callback.warn(inputHash ? ProgressCallback::Backup : ProgressCallback::Restore, DEFAULT_INDEX, "Could not write to file") && false;
+            }
+            // Then store the hash back at the right position
+            if (inputHash) hash.Finalize(inputHash);
+            if (outputHash) hash.Finalize(outputHash);
+            callback.progressed(inputHash ? ProgressCallback::Backup : ProgressCallback::Restore, "Processing: " DEFAULT_INDEX, input.fullSize(), input.fullSize(), 1, 1, ProgressCallback::FlushLine);
+            
+            // Ok, done
+            return true;
+        }
+        
+        // Ensure the index file is available or recreate if not
+        String ensureValidIndexFile(const String & encryptedIndexPath, const String & localIndexPath, const KeyFactory::KeyT & key, ProgressCallback & callback, const bool forceDecryption)
+        {
+            File::Info encFile(encryptedIndexPath, true);
+            File::Info decFile(localIndexPath, true);
+            if (!encFile.doesExist() && forceDecryption) return TRANS("Encrypted file does not exist :") + encryptedIndexPath;
+            if (!encFile.doesExist())
+            {
+                if (!decFile.doesExist()) return TRANS("Both encrypted and cached index file are missing");
+                return ""; // Nothing we can do here
+            }
+            // Ok, now we need to decrypt the file or use the existing cached file
+            if (!forceDecryption)
+            {
+                if (decFile.modification == encFile.modification && encFile.size == (decFile.size + sizeof(FileFormat::CipheredIndexHeader)))
+                    return ""; // Use the existing cached file (don't try to decrypt first)
+            }
+            // Ok, here, we must decrypt the index file so let's process!
+            callback.progressed(ProgressCallback::Restore, "Decrypting: " DEFAULT_INDEX, 0, encFile.size, 1, 1, ProgressCallback::KeepLine);
+            Stream::InputFileStream input(encFile.getFullPath());
+            Stream::OutputFileStream output(decFile.getFullPath());
+            
+            FileFormat::CipheredIndexHeader indexHeader;
+            if (input.read(&indexHeader, sizeof(indexHeader)) != sizeof(indexHeader)) return TRANS("Could not read header in encrypted file: ") + encryptedIndexPath;
+            if (!indexHeader.isValid()) return TRANS("Invalid header from encrypted index");
+            
+            // Extract the nonce from it now
+            KeyFactory::KeyT nonce = {}, hash = {};
+            memcpy(nonce, indexHeader.nonce, ArrSz(indexHeader.nonce));
+            // Then decrypt the file
+            if (!AESCounterProcess(key, nonce, input, output, callback, 0, hash)) return TRANS("Error while decrypting the index file: ") + encryptedIndexPath;
+            // Assert it's valid
+            if (memcmp(hash, indexHeader.hash, sizeof(hash))) return TRANS("The hash of the decrypted index does not match the input file.");
+            // Ok, done
+            return "";
         }
 
         static String getFilterArgument(CompressorToUse actualComp)
@@ -2656,9 +2743,10 @@ int showHelpMessage(const Frost::String & error = "")
     printf(TRANS("Frost is a tool used to efficiently backup and restore files to/from a remote\n"
            "place with no control other the remote server software.\n"
            "No warranty of any kind is provided for the use of this software.\n"
-           "Current version: 2 build %d. \n\n"
-           "Backup set from Frost version 2 use a different index file format and are not compatible with version 1's SQLite based files.\n"
-           "If you need to upgrade to version 2, run a new backup of your directory, you'll loose history for your backup set using version 1.\n\n"
+           "Current version: 3 build %d. \n\n"
+           "Backup set from Frost version 3 use a different index file format and are not compatible with version 1's SQLite based files.\n"
+           "In version 3, deduplication improved but also broke previous duplication detection from version 2.\n"
+           "If you need to upgrade to version 3, run a new backup of your directory, you'll loose history for your backup set using previous versions.\n\n"
            "Usage:\n"
            "  Actions:\n"
            "\t--restore dir [rev]\tRestore the revision (default: last) to the given directory (either backup or restore mode is supported)\n"
@@ -2670,6 +2758,7 @@ int showHelpMessage(const Frost::String & error = "")
            "\t--test [name]\t\tRun the test with the given name -developer only- use -v for more verbose mode, 'help' to get a list of available tests\n"
            "\t--password pw\t\tSet the password so it's not queried on the terminal. Avoid this if launched from prompt as it'll end in your bash's history\n"
            "\t--dump\t\t\tDump the object content for the specified index (required). This is a kind of index file check done manually ;-)\n"
+           "\t--decryptindex\t\tDecrypt the specified ciphered index (required). This is required if your local copy is missing\n"
            "\t--help [security]\tGet help on the security features and advices of Frost\n"
            "  Required parameters for backup, purge and restore:\n"
            "\t--remote url\t\tThe URL (can be a directory) to save/restore backup to/from\n"
@@ -2677,6 +2766,7 @@ int showHelpMessage(const Frost::String & error = "")
            "\t--keyvault file\t\tPath to a file containing the private key used to decrypt/encrypt the backup data. Default to '" DEFAULT_KEYVAULT "'. If the key does not exist, it'll be created\n"
            "\t--keyid id\t\tThe key identifier if storing multiple keys in the key vault.\n"
            "  Optional parameters for backup and restore:\n"
+           "\t--safeindex\t\tEnable ciphering the index file and store it in the remote folder too (backup only), --index is required for the clear index file path\n"
            "\t--verbose\t\tEnable verbosity (use -vv for VERY verbose mode)\n"
            "\t--cache [size]\t\tThe cache size (possible suffix: K,M,G) holding the decoded multichunks (default is 64M) - restore only\n"
            "\t--overwrite [policy]\tThe policy for overwriting/deleting files on the restore folder if they exists (either 'yes', 'no', 'update')\n"
@@ -2768,6 +2858,12 @@ int showSecurityMessage()
            "\t   --multichunk option), so the maximum backup set can be 65536*25MB = 1.64TB at worse\n"
            "\t   If your backup set is made of very big files, you should increase the multichunks' size\n"
            "\t   If your backup set is made of many small files, you should split your backup set in many backups\n"
+           "\n\tStarting from version 3, the chunker algorithm was changed for a more efficient version, but this\n"
+           "\tbreaks the previous detected chunk and thus, backing up could no detect chunk from previous version\n"
+           "\tas duplicate. It's safer to rebackup everything so a version change in the file format was triggered.\n"
+           "\tAlso, index file can be automatically ciphered (using --safeindex option) and then stored in the\n"
+           "\thostile remote folder. This is safer but takes more time per backup to cipher the index file.\n"
+           
            ),
 #include "build/build-number.txt"
     );
@@ -3403,6 +3499,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
     Strings::StringArray params;
     if (!getOptionParameters(options, action, params)) return BailOut;
 
+    if (Frost::safeIndex && !optionsMap["index"]) return showHelpMessage("If using --safeindex you need to specify the clear index path with --index");
     if (!optionsMap["index"]) return showHelpMessage("Bad argument for " + action + ", index path missing");
 
 
@@ -3435,7 +3532,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         Frost::String result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
         if (result)
         {
-            fprintf(stderr, "%s", (const char*)TRANS("Can't read or initialize the database:" + Frost::DatabaseModel::databaseURL + "/" DEFAULT_INDEX));
+            fprintf(stderr, "%s", (const char*)TRANS("Can't read or initialize the index (do you need to decrypt it ?):" + Frost::DatabaseModel::databaseURL + "/" DEFAULT_INDEX));
             fprintf(stderr, "%s", (const char*)result);
             return EXIT_FAILURE;
         }
@@ -3448,7 +3545,7 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
     if (action == "dump")
     {
         Frost::String result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
-        if (result) ERR("Can't re-open the database: %s\n", (const char*)result);
+        if (result) ERR("Can't re-open the index (do you need to decrypt it ?): %s\n", (const char*)result);
         if (!cipheredMasterKey.getSize()) ERR("Bad readback of the ciphered master key\n");
         for (uint32 i = 1; i <= revisionID; i++)
         {
@@ -3478,10 +3575,30 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         memset(password, 0, passLen);
     } else { pass = *optionsMap["password"]; optionsMap.removeValue("password"); }
 
+    if (action == "decryptindex")
+    {
+        Frost::KeyFactory::KeyT key;
+        Frost::derivePassword(key, pass);
+        pass = ""; // Password is not required anymore, let's wipe it
+
+        // Then decrypt the given index file
+        result = Frost::Helpers::ensureValidIndexFile( remote + DEFAULT_INDEX ".aes", Frost::DatabaseModel::databaseURL + DEFAULT_INDEX, key, console, true);
+        if (result) ERR("Decrypting the index file failed (bad password ?): %s\n", (const char*)result);
+        
+        return EXIT_SUCCESS;
+    }
+
+
     if (action == "purge")
     {
         // Purge the directory now for useless chunks
         if (!optionsMap["remote"]) return showHelpMessage("Bad argument for purge, remote missing (that's where the backup is saved)");
+
+        Frost::KeyFactory::KeyT key;
+        Frost::derivePassword(key, pass);
+        result = Frost::Helpers::ensureValidIndexFile( remote + DEFAULT_INDEX ".aes", Frost::DatabaseModel::databaseURL + DEFAULT_INDEX, key, console, false);
+        if (result) ERR("Decrypting the index file failed (bad password ?): %s\n", (const char*)result);
+        memset(key, 0, ArrSz(key));
 
         result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
         if (result) ERR("Can't re-open the database: %s\n", (const char*)result);
@@ -3514,8 +3631,15 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
         if (!File::Info(backup, true).doesExist() || !File::Info(backup, true).isDir())
             return showHelpMessage("Bad argument for backup, the --backup parameter is not a folder");
 
-        {
             Frost::String indexFile = File::Info(Frost::DatabaseModel::databaseURL).isDir() ? Frost::DatabaseModel::databaseURL + DEFAULT_INDEX : Frost::DatabaseModel::databaseURL;
+
+        Frost::KeyFactory::KeyT key;
+        Frost::derivePassword(key, pass);
+        result = Frost::Helpers::ensureValidIndexFile( remote + DEFAULT_INDEX ".aes", indexFile, key, console, false);
+        if (result && File::Info(remote + DEFAULT_INDEX ".aes").doesExist()) ERR("Decrypting the index file failed (bad password ?): %s\n", (const char*)result);
+        if (!Frost::safeIndex) memset(key, 0, ArrSz(key));
+
+        {
             if (!File::Info(indexFile).doesExist())
             {
                 if (File::Info(*optionsMap["keyvault"], true).doesExist()) ERR("Index file not found while keyvault exist already. Remove the keyvault, or fix the index file path");
@@ -3548,11 +3672,43 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
 
         // Need to be called anyway
         Frost::finalizeDatabase();
-        if (warningLog.getSize()) fputs((const char*)(warningLog.Join("\n")+"\n"), stderr);
+        // Check if we need to encrypt the index file
+        if (Frost::safeIndex)
+        {
+        
+            Stream::OutputFileStream output(remote + DEFAULT_INDEX ".aes");
+            Stream::InputFileStream input(indexFile);
+            
+            Frost::FileFormat::CipheredIndexHeader indexHeader;
+            Random::fillBlock(indexHeader.nonce, ArrSz(indexHeader.nonce), true);
+
+            if (output.write(&indexHeader, sizeof(indexHeader)) != sizeof(indexHeader)) ERR("Could not write the output header to: %s\n", (const char*)(remote + DEFAULT_INDEX ".aes"));
+            
+            Frost::KeyFactory::KeyT nonce, hash;
+            memcpy(nonce, indexHeader.nonce, ArrSz(indexHeader.nonce));
+            
+            if (!Frost::Helpers::AESCounterProcess(key, nonce, input, output, console, indexHeader.hash, 0)) ERR("Error while encrypting the index\n");
+            if (!output.setPosition(0)) ERR("Could not seek back to the start of the ciphered index file\n");
+
+            // Update the header now we know about the hash of the input file
+            if (output.write(&indexHeader, sizeof(indexHeader)) != sizeof(indexHeader)) ERR("Could not write the output header to: %s\n", (const char*)(remote + DEFAULT_INDEX ".aes"));
+        }
+        
+        if (Frost::safeIndex)
+            // Need to set the ciphered file's modification time now it's done writing and closed
+            File::Info(remote + DEFAULT_INDEX ".aes", true).setModifiedTime(File::Info(indexFile, true).modification);
+        
+        if (warningLog.getSize()) { fputs("\nReceived warnings:\n", stderr); fputs((const char*)(warningLog.Join("\n")+"\n"), stderr); }
         return EXIT_SUCCESS;
     }
     if (action == "restore")
     {
+        Frost::KeyFactory::KeyT key;
+        Frost::derivePassword(key, pass);
+        result = Frost::Helpers::ensureValidIndexFile( remote + DEFAULT_INDEX ".aes", Frost::DatabaseModel::databaseURL + DEFAULT_INDEX, key, console, false);
+        if (result) ERR("Decrypting the index file failed (bad password ?): %s\n", (const char*)result);
+        memset(key, 0, ArrSz(key));
+    
         result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
         if (result) ERR("Can't re-open the database: %s\n", (const char*)result);
         if (!cipheredMasterKey.getSize()) ERR("Bad readback of the ciphered master key\n");
@@ -3568,11 +3724,17 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
 
         // Need to be called anyway
         Frost::finalizeDatabase();
-        if (warningLog.getSize()) fputs((const char*)(warningLog.Join("\n")+"\n"), stderr);
+        if (warningLog.getSize()) { fputs("\nReceived warnings:\n", stderr); fputs((const char*)(warningLog.Join("\n")+"\n"), stderr); }
         return EXIT_SUCCESS;
     }
     if (action == "cat")
     {
+        Frost::KeyFactory::KeyT key;
+        Frost::derivePassword(key, pass);
+        result = Frost::Helpers::ensureValidIndexFile( remote + DEFAULT_INDEX ".aes", Frost::DatabaseModel::databaseURL + DEFAULT_INDEX, key, console, false);
+        if (result) ERR("Decrypting the index file failed (bad password ?): %s\n", (const char*)result);
+        memset(key, 0, ArrSz(key));
+
         result = Frost::initializeDatabase("", revisionID, cipheredMasterKey);
         if (result) ERR("Can't re-open the database: %s\n", (const char*)result);
         if (!cipheredMasterKey.getSize()) ERR("Bad readback of the ciphered master key\n");
@@ -4111,6 +4273,9 @@ int main(int argc, char ** argv)
     Frost::dumpLevel += options.indexOf("-vv") != options.getSize() ? 2 : 0;
     if (Frost::dumpLevel) Logger::setDefaultSink(&debugSink);
 
+    // Check if we need to encrypt the index file once the backup is done
+    Frost::safeIndex = options.indexOf("--safeindex") != options.getSize();
+
     // This also works for tests, so test it before entering any tests
     if (checkOption(options, "compression") == EXIT_SUCCESS) return EXIT_SUCCESS;
     if (checkOption(options, "entropy") == EXIT_SUCCESS) return EXIT_SUCCESS;
@@ -4178,7 +4343,7 @@ int main(int argc, char ** argv)
 
     int remoteOpt = checkOption(options, "remote");
     if (remoteOpt == EXIT_SUCCESS) return EXIT_SUCCESS;
-    if (remoteOpt == 1) // Found a remote, set the default index position
+    if (remoteOpt == 1 && !Frost::safeIndex) // Found a remote, set the default index position
         optionsMap.storeValue("index", new Strings::FastString(*optionsMap["remote"]));
 
     if (checkOption(options, "index") == EXIT_SUCCESS) return EXIT_SUCCESS;
@@ -4198,6 +4363,7 @@ int main(int argc, char ** argv)
     if ((ret = handleAction(options, "purge")) != BailOut) return ret;
     if ((ret = handleAction(options, "backup")) != BailOut) return ret;
     if ((ret = handleAction(options, "restore")) != BailOut) return ret;
+    if ((ret = handleAction(options, "decryptindex"))   != BailOut) return ret;
     if ((ret = handleAction(options, "dump"))       != BailOut) return ret;
 
     return showHelpMessage("Either backup, purge or restore mode required");

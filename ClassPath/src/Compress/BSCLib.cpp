@@ -216,7 +216,7 @@ namespace Compression
         void empty() { fill = consumed = 0; }
         
         
-        MemoryBuffer(const size_t size) : buffer(size), total(size), consumed(0), fill(0) {}
+        MemoryBuffer(const size_t size) : buffer(size), total(size), fill(0), consumed(0) {}
     };
     
     bool BSCLib::compressData(uint8 *& out, size_t & outSize, const uint8 * in, size_t inSize)

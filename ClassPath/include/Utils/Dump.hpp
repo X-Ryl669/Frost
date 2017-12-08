@@ -8,14 +8,14 @@
 namespace Utils
 {
     /** Dump the given byte array to string as an hexadecimal string */
-    static inline void dumpToHexString(Strings::FastString & out, const uint8 * const array, const uint32 length)
+    inline void dumpToHexString(Strings::FastString & out, const uint8 * const array, const uint32 length)
     {
         for (uint32 i = 0; i < length; i++)
             out += Strings::FastString::Print("%02X", (unsigned int)array[i]);
     }
     
     /** Dump the given byte array to string as an hexadecimal string */
-    static Strings::FastString dumpToHexString(const void * array, const uint32 length)
+    inline Strings::FastString dumpToHexString(const void * array, const uint32 length)
     {
         Strings::FastString ret; dumpToHexString(ret, (const uint8 * const)array, length); return ret;
     }
@@ -30,7 +30,7 @@ namespace Utils
     void hexDump(Strings::FastString & out, const uint8 * const array, const uint32 length, const uint32 colSize = 16, const bool withAddress = false, const bool withCharVal = false);
 
     /** Dump the given byte array to string as an hexadecimal string with ASCII display on right */
-    static Strings::FastString hexDump(const void * array, const uint32 length)
+    inline Strings::FastString hexDump(const void * array, const uint32 length)
     {
         Strings::FastString ret; hexDump(ret, (const uint8 * const)array, length, 128, false, true); return ret;
     }

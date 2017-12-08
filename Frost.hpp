@@ -103,6 +103,7 @@ namespace Frost
             @param fileVault       A path to the file vault to open.
             @param cipherMasterKey The ciphered master key that's read from the index database.
             @param password        The password used to protect the private key
+            @param ID              The key's ID
             @return empty string on success, or the error message on failure.
                     if the file does not exist,
                     or if the mode does not fit the expected mode (0600)
@@ -242,6 +243,19 @@ namespace Frost
         /** Decrypt a given block with AES counter mode.
             @warning Beware that this use the current key factory to figure out the current key and nonce */
         bool AESCounterDecrypt(const KeyFactory::KeyT & nonceRandom, const ::Stream::InputStream & input, ::Stream::OutputStream & output);
+        /** Encrypt or decrypt using AES counter mode.
+            This does not use the current key factory and thus is more verbose to use.
+            This uses a simple scheme for nonce+counter concatenation (unlike AESCounterEncrypt)
+            @param key          The encryption/decryption key
+            @param nonceRandom  The nonce random value used (only the first 8 bytes are used) 
+            @param input        The input stream
+            @param output       The output stream
+            @param inputHash    If provided, this will compute the hash of the input data and store it there 
+            @param outputHash   If provided, this will compute the hash of the output data and store it there (only one is expected) */
+        bool AESCounterProcess(const KeyFactory::KeyT & key, const KeyFactory::KeyT & nonceRandom, const ::Stream::InputStream & input, ::Stream::OutputStream & output, ProgressCallback & callback, uint8 * inputHash = 0, uint8 * outputHash = 0);
+        /** Ensure the index file is available or recreate if not 
+            @return empty string on success, or the error message */
+        String ensureValidIndexFile(const String & encryptedIndexPath, const String & localIndexPath, const KeyFactory::KeyT & key, ProgressCallback & callback, const bool forceDecryption = false);
 
         /** Close a currently filled multichunk and save in database and filesystem */
 //        bool closeMultiChunk(const String & basePath, File::MultiChunk & multiChunk, uint64 multichunkListID, uint64 * totalOutSize, ProgressCallback & callback, uint64 & previousMultichunkID, CompressorToUse actualComp = Default);
@@ -286,8 +300,8 @@ namespace Frost
           - 4 bytes for UID
           - 4 bytes for parent UID
           - 4 bytes (chunk lists' UID)
-          - ~60 bytes (around for file's metadata)
-          - ~22 bytes (for file's base name)
+          - ~60 bytes (average for file's metadata)
+          - ~22 bytes (average for file's base name)
           = 94 bytes per file on average => 9.4MB of data for 100k files
         Because each file's record is variable size, and we want to avoid storing useless "length" field.
         Metadata size is known while parsing starts on the metadata field, so this does not requires any length storage.
@@ -298,7 +312,7 @@ namespace Frost
         the idea for implementation:
 
         # FILE HEADER
-          The file header will contain the magic number ('Frst' or 0x46727374), followed by a 32 bit version/state (currently 0x2)
+          The file header will contain the magic number ('Frst' or 0x46727374), followed by a 32 bit version/state (currently 0x3)
           A 32 bit offset to the main catalog of object, in 4-bytes unit (this limits the index' size to 16GB maximum)
           The ciphered's master key follows (108 bytes).
           If the catalog offset is 0, then a full catalog is expected to be found at end of file. This shortcut allows no modification
@@ -367,7 +381,26 @@ namespace Frost
 
         @note Archive integers are stored as native endianness (typically little-endian) so they can be memory mapped directly.
               This means that you can not backup a system with a given endianness and restore on a system with a different endianness.
-              This is usually not required
+              Hopefully, this is usually not required
+              
+        When using safe index mode, the index file is encrypted and stored on the remote folder (so it's safe to store on hostile server). 
+        The local cleartext index is not deleted, and used as cache for subsequent operations.
+        The cache is used if no encrypted version is found or if and only if:
+            - It is present
+            - Its modification time is the same as the ciphered index file's modification time
+            - Its size is equal to the size of the ciphered index file minus the header size (48 bytes)
+            - (skipped by default) Its hash matches the one written in the header in the ciphered index file
+            * Notice that since the cache is on your system, it's very unlikely it becomes modified by an attacker and computing the hash of
+              such huge file is likely to take a lot of time each time, so it's not checked by default
+        
+        If the cache file is not found, it's decrypted from the encrypted index file and hash is also computed and checked.
+        
+        The cyphered index file is named "index.frost.aes" and contains a header like this:
+            - 32 bits magic number ('FtEi' 0x46744569)
+            - 32 bits version/state (currently 0x3)
+            - 256 bits SHA256 hash of the unencrypted index file
+            - 64 bits of the random salt used as nonce in AES256 CTR mode, counter starts with 0
+    
     */
     namespace FileFormat
     {
@@ -375,10 +408,27 @@ namespace Frost
         template <size_t N>
         inline bool isZero(const uint8 (&a)[N]) { for (size_t i = 0; i < N; i++) if (a[i]) return false; return true; }
 
-
-
         // Starting from now, everything is typically packed
 #pragma pack(push, 1)
+        /** The ciphered index header (see above, new in v3) */
+        struct CipheredIndexHeader
+        {
+            /** The magic number */
+            union { uint32 number; char text[4]; } magic;
+            /** The version number (should be 3) */
+            uint32 version;
+            /** The hash of the cleartext index file */
+            uint8  hash[32];
+            /** The random nonce used */
+            uint8  nonce[8];
+            
+            /** Check if this header is valid */
+            bool isValid() const { return memcmp(magic.text, "FtEi", 4) == 0 && version == 3; }
+            
+            CipheredIndexHeader() : version(3) { memcpy(magic.text, "FtEi", 4); memset(hash, 0, ArrSz(hash)); memset(nonce, 0, ArrSz(nonce)); }
+        };
+
+
         /** The file's offset used */
         struct Offset
         {
@@ -543,7 +593,17 @@ namespace Frost
             static int compareData(const Chunk & a, const Chunk & b) { return a.UID < b.UID ? -1 : (a.UID == b.UID ? 0 : 1); }
         };
 
-        typedef uint8 ChecksumType[20];
+        /** Make the checksum type a real type, else it fails to compile with the automatic conversion */
+        struct ChecksumType
+        {
+            uint8 checksum[20];
+            operator uint8 * ()             { return &checksum[0]; }
+            operator const uint8 * () const { return &checksum[0]; }
+
+            ChecksumType(const uint8 (&CS)[20]) { memcpy(checksum, CS, ArrSz(checksum)); }
+            ChecksumType(const uint8 * CS)      { memcpy(checksum, CS, ArrSz(checksum)); }
+            ChecksumType()                      { memset(checksum, 0, ArrSz(checksum)); }
+        };
 
         /** Implementation of the hashing policies for integers.
             @param T    must be an integer type
@@ -1167,7 +1227,7 @@ namespace Frost
             uint8 cipheredMasterKey[108];
 
             /** Assert the file is valid */
-            bool isSupportedFormat() const { return memcmp(magic.text, "Frst", 4) == 0 && version == 2; }
+            bool isSupportedFormat() const { return memcmp(magic.text, "Frst", 4) == 0 && version == 3; }
             /** Check correctness of this information for testing purpose */
             bool isCorrect(const uint64 fileSize, const uint64 fileOffset = 0) const { return isSupportedFormat() && catalogOffset.fileOffset() <= (fileSize - sizeof(Catalog)) && !isZero(cipheredMasterKey); }
             /** Get the structure size (as some have optional fields) */
@@ -1184,7 +1244,7 @@ namespace Frost
 
 
             /** Default construction */
-            MainHeader() : version(2) { memcpy(magic.text, "Frst", 4); memset(cipheredMasterKey, 0, ArrSz(cipheredMasterKey)); }
+            MainHeader() : version(3) { memcpy(magic.text, "Frst", 4); memset(cipheredMasterKey, 0, ArrSz(cipheredMasterKey)); }
         };
 
 #pragma pack(pop)

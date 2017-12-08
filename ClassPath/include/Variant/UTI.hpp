@@ -25,7 +25,9 @@ namespace UniversalTypeIdentifier
         inline bool isEqual(ModifiableTypeID const * other) const { if (other) return getID1() == other->getID1() && getID2() == other->getID2() && getID3() == other->getID3() && getID4() == other->getID4(); return false; }
         virtual ~ModifiableTypeID(){}
     };
+    /** The constant typeID type */
     typedef const ModifiableTypeID  ConstTypeID;
+    /** The TypeID type the typebase is using for keys */
     typedef ConstTypeID *           TypeID;
 
     /** Declare the Comparable policy for the type ID */
@@ -46,6 +48,7 @@ namespace UniversalTypeIdentifier
                     : a->getID1() < b->getID1()
                 );
         }
+        /** Check if 2 types are equals */
         inline static bool Equal(TypeID a, TypeID b) { return (bool)(a->getID1() == b->getID1() && a->getID2() == b->getID2() && a->getID3() == b->getID3() && a->getID4() == b->getID4()); }
     };
 
@@ -277,7 +280,7 @@ namespace UniversalTypeIdentifier
     namespace N { type T; } \
     namespace UniversalTypeIdentifier { void getTypeID(N::T *); }
     
-    
+    /** This links a type known at compile time to a runtime instance of TypeID */
     template <typename T>
     static TypeID getTypeID(T* t) { return getTypeIDImpl(t, (Bool2Type< IsConst<T>::Result > *)0); }
 
@@ -300,6 +303,7 @@ namespace UniversalTypeIdentifier
 
         CreationMethods(Type::Var * (*pFunc1)(), TypeID (*pFunc2)(), Type::DataSource * (*pFunc3)(const void *), void (*pFunc4)(Type::DataSource *, void*), const char* (*pFunc5)()) : createDefaultObject(pFunc1), registerObjectUTI(pFunc2), getDataSource(pFunc3), setDataSource(pFunc4), getTypeName(pFunc5) {}
         CreationMethods(const CreationMethods & xCM) : createDefaultObject(xCM.createDefaultObject), registerObjectUTI(xCM.registerObjectUTI), getDataSource(xCM.getDataSource), setDataSource(xCM.setDataSource), getTypeName(xCM.getTypeName) {}
+        CreationMethods & operator = (const CreationMethods & xCM) { memcpy(this, &xCM, sizeof(*this)); return *this; }
     };
 
     typedef const CreationMethods   ConstCreationMethods;

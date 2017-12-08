@@ -82,7 +82,7 @@ RegisterClassFunctions(Database::Index, ("<Value>%u</Value>", ((Database::Index*
 RegisterClassForVariant(Database::ReferenceBase, 0x00000000, 0x00000000, 0x00000000, 0xc3e5dd01)
 RegisterClassFunctions(Database::ReferenceBase, ("<Value>%u</Value>", ((Database::ReferenceBase*)pData)->ref), sSrc.Scan("%u", &((Database::ReferenceBase*)pData)->ref))
 RegisterClassForVariant(Database::TableDefinition*, 0x00000000, 0x00000000, 0x00000000, 0xdeadf00d)
-RegisterClassFunctions(Database::TableDefinition*, ("<Value></Value>"), throw ConversionNotAllowed(); )
+RegisterClassFunctions(Database::TableDefinition*, ("<Value></Value>"), Throw(ConversionNotAllowed()); )
   
 */
 #ifndef DOXYGEN
@@ -110,17 +110,17 @@ RegisterClassFunctions(Database::TableDefinition*, ("<Value></Value>"), throw Co
     RegisterClassForVariantImpl(Database::Index, 0x00000000, 0x00000000, 0x00000000, 0xf4e3de23, ("<Value>%u</Value>", ((Database::Index*)pData)->index), sSrc.Scan("%u", &((Database::Index*)pData)->index))
     RegisterClassForVariantImpl(Database::LongIndex, 0x00000000, 0x00000000, 0x00000000, 0xf4e3de24, ("<Value>" PF_LLU "</Value>", ((Database::LongIndex*)pData)->index), sSrc.Scan(PF_LLU, &((Database::LongIndex*)pData)->index))
     //RegisterClassForVariantImpl(Database::ReferenceBase, 0x00000000, 0x00000000, 0x00000000, 0xc3e5dd01, ("<Value>%u</Value>", ((Database::ReferenceBase*)pData)->ref->like((unsigned int)0)), unsigned int u; sSrc.Scan("%u", &u); ((Database::ReferenceBase*)pData)->ref = u )
-    //RegisterClassForVariantImpl(Database::TableDefinition*, 0x00000000, 0x00000000, 0x00000000, 0xdeadf00d, ("<Value></Value>"), throw ConversionNotAllowed() )
+    //RegisterClassForVariantImpl(Database::TableDefinition*, 0x00000000, 0x00000000, 0x00000000, 0xdeadf00d, ("<Value></Value>"), Throw(ConversionNotAllowed()) )
     RegisterClassForVariantImpl(Database::UnescapedString , 0x00000000, 0x00000000, 0x00000000, 0xc34def33, ("<Value>%s</Value>", (const char *)*(Database::UnescapedString*)pData), *(Strings::FastString*)pData = sSrc)
     RegisterClassForVariantImpl(Database::Blob , 0x00000000, 0x00000000, 0x00000000, 0xc34def35, ("<Value>"); Database::SQLFormat::serializeBlob((Database::Blob*)pData, sSrc); sSrc+= "</Value>", Database::SQLFormat::unserializeBlob((Database::Blob*)pData, sSrc))
 
-    RegisterClassForVariantImpl(Database::NotNullString     , 0x00000000, 0x00000000, 0x00000007, 0xc34def32, ("<Value></Value>"), throw ConversionNotAllowed() )
-    RegisterClassForVariantImpl(Database::NotNullUniqueString, 0x00000000, 0x00000000, 0x00000007, 0xc34def34, ("<Value></Value>"), throw ConversionNotAllowed() )
-    RegisterClassForVariantImpl(Database::NotNullInt        , 0x00000000, 0x00000000, 0x00000007, 0x00000005, ("<Value></Value>"), throw ConversionNotAllowed() )
-    RegisterClassForVariantImpl(Database::NotNullUnsigned   , 0x00000000, 0x00000000, 0x00000007, 0x00000006, ("<Value></Value>"), throw ConversionNotAllowed() )
-    RegisterClassForVariantImpl(Database::NotNullLongInt    , 0x00000000, 0x00000000, 0x00000007, 0x00000009, ("<Value></Value>"), throw ConversionNotAllowed() )
-    RegisterClassForVariantImpl(Database::NotNullUnsignedLongInt, 0x00000000, 0x00000000, 0x00000007, 0x0000000A, ("<Value></Value>"), throw ConversionNotAllowed() )
-    RegisterClassForVariantImpl(Database::NotNullDouble     , 0x00000000, 0x00000000, 0x00000007, 0x0000000C, ("<Value></Value>"), throw ConversionNotAllowed() )
+    RegisterClassForVariantImpl(Database::NotNullString     , 0x00000000, 0x00000000, 0x00000007, 0xc34def32, ("<Value></Value>"), Throw(ConversionNotAllowed()) )
+    RegisterClassForVariantImpl(Database::NotNullUniqueString, 0x00000000, 0x00000000, 0x00000007, 0xc34def34, ("<Value></Value>"), Throw(ConversionNotAllowed()) )
+    RegisterClassForVariantImpl(Database::NotNullInt        , 0x00000000, 0x00000000, 0x00000007, 0x00000005, ("<Value></Value>"), Throw(ConversionNotAllowed()) )
+    RegisterClassForVariantImpl(Database::NotNullUnsigned   , 0x00000000, 0x00000000, 0x00000007, 0x00000006, ("<Value></Value>"), Throw(ConversionNotAllowed()) )
+    RegisterClassForVariantImpl(Database::NotNullLongInt    , 0x00000000, 0x00000000, 0x00000007, 0x00000009, ("<Value></Value>"), Throw(ConversionNotAllowed()) )
+    RegisterClassForVariantImpl(Database::NotNullUnsignedLongInt, 0x00000000, 0x00000000, 0x00000007, 0x0000000A, ("<Value></Value>"), Throw(ConversionNotAllowed()) )
+    RegisterClassForVariantImpl(Database::NotNullDouble     , 0x00000000, 0x00000000, 0x00000007, 0x0000000C, ("<Value></Value>"), Throw(ConversionNotAllowed()) )
 #endif
 
     RegisterClassForVariantImpl(StringArray                 , 0x00000000, 0x00000000, 0x00000008, 0xc34def32, ("<Value>"); for(uint32 iter = 0; iter < ((StringArray*)pData)->getSize(); iter++) sSrc+="<l>"+((*(StringArray*)pData)[iter])+"</l>"; sSrc+="</Value>", \
@@ -132,4 +132,3 @@ RegisterClassFunctions(Database::TableDefinition*, ("<Value></Value>"), throw Co
                                 { sSrc+="<l>"; DataSource * lds = ((RefArray*)pData)->getElementAtPosition(iter).getDataSource(); Strings::FastString tmp; if (lds) lds->getValue().extractTo(tmp); sSrc+=tmp; sSrc+= "</l>"; delete lds; } sSrc+="</Value>", \
                                 ((RefArray*)pData)->Clear(); while(sSrc.getLength()) {sSrc = sSrc.fromFirst("<l>"); Ref * tmp = new Ref; if (!tmp) break; tmp->setDataSource(new TextDataSource(sSrc.upToFirst("</l>"))); (*(RefArray*)pData).Append(tmp); sSrc = sSrc.fromFirst("</l>"); })
 #endif // !DOXYGEN
-

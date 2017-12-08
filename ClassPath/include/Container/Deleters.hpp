@@ -53,6 +53,16 @@ namespace Container
     {   inline static void deleter(void* & t) { delete[] (T*)t; t = 0; }
         inline static void deleterNoRef(void* t) { delete[] (T*)t; }};
 
+    /**  Simple helper class that's keeping scope ordered and only delete if told so */
+    template <class T> class ConditionalDelete
+    {
+        T * ptr;
+        bool deleteOnExit;
+    public:
+        void deleteLater(const bool b = true) { deleteOnExit = b; }
+        ConditionalDelete(T * ptr) : ptr(ptr), deleteOnExit(false) {}
+        ~ConditionalDelete() { if (deleteOnExit) delete ptr; }
+    };
 
     /** This is used to store a pointer to a data type.
         The ProxyArray class is using delete[] operator to delete the object.
@@ -72,7 +82,7 @@ namespace Container
 
         It's simplified to
         @code
-        RobinHoodHashTable<ProxyArray<NonPOD>, int> hash;
+        RobinHoodHashTable<ProxyArray, int> hash;
         hash.storeValue(0, new NonPOD[2]);
         // If using C++11, you can also do this
         hash.storeValue(1, new NonPOD[3] { whatever, NonPODConstructor, accept});

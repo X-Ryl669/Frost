@@ -67,7 +67,7 @@ namespace Stack
 					// Need to realloc the data
 					if (allocatedSize == 0) allocatedSize = 2; else allocatedSize *= 2;
 					// This will not work with type other than POD
-					array = (uint8*)realloc(array, allocatedSize*sizeof(T));
+					array = (uint8*)Platform::safeRealloc(array, allocatedSize*sizeof(T));
 					if (array == NULL) { Reset(); return; }
 				}
 				// Copy the data
@@ -189,7 +189,7 @@ namespace Stack
 					// Need to realloc the data
 					if (allocatedSize == 0) allocatedSize = 2; else allocatedSize *= 2;
 					// This will not work with type other than POD
-					array = (T**)realloc(array, allocatedSize*elementSize);
+					array = (T**)Platform::safeRealloc(array, allocatedSize*elementSize);
 					if (array == NULL) { Reset(); return; }
 				}
                 if (currentSize + currentPos + 1 >= allocatedSize )

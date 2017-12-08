@@ -174,6 +174,15 @@ namespace Platform
         }
     }
 
+    struct RemovePIDFile
+    {
+        const char * pidFile;
+        RemovePIDFile(const char * pidFile) : pidFile(pidFile) {}
+        ~RemovePIDFile() { unlink(pidFile); }
+    };
+    static RemovePIDFile & autoRemovePIDFile(const char * pidFile) { static RemovePIDFile i(pidFile); return i; }
+    static bool isDaemonInstalled = false;
+
     bool daemonize(const char * pidFile, const char * syslogName, bool & isParent)
     {
         // Set up the logger to use
@@ -183,7 +192,17 @@ namespace Platform
         isParent = true;
 
         // Check if already a daemon
-        if (getppid() == 1) return true;
+        if (isDaemonInstalled && getppid() == 1)
+        {
+            const char * ttyName = ctermid(NULL);
+            int devtty = open(ttyName, O_RDWR);
+            if (devtty < 0)
+            {
+                Logger::log(Logger::Content, "Seems like %s is already a daemon, the tty name is %s", syslogName, ttyName);
+                return true;
+            }
+            close(devtty);
+        }
 
         // Trap signals that we expect to recieve
         signal(SIGCHLD, childSigHandler); signal(SIGUSR1, childSigHandler); signal(SIGALRM, childSigHandler);
@@ -212,7 +231,10 @@ namespace Platform
         // At this point we are executing as the child process
         isParent = false;
         if (pidFile && pidFile[0])
+        {
             File::Info(pidFile, true).setContent(Strings::FastString::Print("%d", getpid()));
+            (void)autoRemovePIDFile(pidFile);
+        }
 
         // Cancel certain signals
         signal(SIGCHLD, SIG_DFL); // A child process dies
@@ -231,7 +253,7 @@ namespace Platform
 
         if ((chdir("/")) < 0)
         {
-            Logger::log(Logger::Error, "Unable to create new session, code=%d (%s)", errno, strerror(errno));
+            Logger::log(Logger::Error, "Unable to reset current directory, code=%d (%s)", errno, strerror(errno));
             return false;
         }
 
@@ -240,6 +262,7 @@ namespace Platform
 
         // Tell the parent process that we have started
         kill(getppid(), SIGUSR1);
+        isDaemonInstalled = true;
         return true;
     }
 

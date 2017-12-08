@@ -65,11 +65,6 @@ namespace Hashing
         static const uint32 SHAMask[4];
         /** The SHA1 bits */
         static const uint32 SHABits[4];
-    public:
-        /** Constructor */
-        SHA1(){}
-        /** Destructor */
-        virtual ~SHA1(){}
     };
     /** Hash a string with SHA1 and get a hexadecimal string on output */
     Strings::FastString getSHA1Of(const Strings::FastString & data);

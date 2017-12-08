@@ -19,11 +19,11 @@ namespace Logger
 
         for (;;)
         {
-            va_list argp;
-            va_start(argp, format);
             char * buffer = (char*)malloc(startSize);
             if(!buffer) return;
             
+            va_list argp;
+            va_start(argp, format);
             const int err = (int)vsnprintf(buffer, startSize - 1, format, argp);
             va_end(argp);
             

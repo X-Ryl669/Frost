@@ -153,6 +153,51 @@ namespace Stream
         offset = 0;
         area = 0;
     }
+    bool MemoryMappedFileStream::mapEx(const uint64 offset, const uint64 size, uint8 * & buffer, void * & opaque)
+    {
+        if (IsInvalid(stream)) return false;
+        // If you need to enlarge the file, use a smaller offset than the file size
+        if (offset > fileSize) return false;
+        // You must use page aligned offset in this mapping method
+        if (pagedOffset(offset) != offset) return false;
+
+  #if defined(_WIN32)
+        opaque = ::CreateFileMapping(stream, 0, writing ? PAGE_READWRITE : PAGE_READONLY, (size + offset) >> 32ULL, (size + offset) & 0xFFFFFFFF, 0);
+        if ((HANDLE)opaque == INVALID_HANDLE_VALUE) return false;
+
+        buffer = (uint8*)::MapViewOfFile((HANDLE)opaque, writing ? FILE_MAP_WRITE : FILE_MAP_READ, offset >> 32ULL, offset & 0xFFFFFFFF, size);
+        if (!buffer) return false;
+  #else
+        // Should we enlarge the file on the file system first ?
+        if ((size + offset) > fileSize && ftruncate(stream, size + offset) == -1) return false;
+
+        buffer = (uint8*)::mmap(0, size, PROT_READ | (writing ? PROT_WRITE : 0), MAP_SHARED, stream, offset);
+        if (buffer == MAP_FAILED) return false;
+        opaque = 0;
+  #endif
+        // For writing, we need to adjust when mapping exceed initial file size
+        if ((size + offset) > fileSize) fileSize = size + offset;
+        return true;
+    }
+    bool MemoryMappedFileStream::unmapEx(uint8 * buffer, const uint64 size, void * opaque, const bool sync)
+    {
+        if (sync)
+        {
+  #if defined(_WIN32)
+            if (::FlushViewOfFile(buffer, size) == 0 || ::FlushFileBuffers(stream) == 0) return false;
+  #else
+            if (::msync(buffer, size, MS_SYNC) != 0) return false;
+  #endif
+        }
+  #if defined(_WIN32)
+        ::UnmapViewOfFile(buffer);
+        ::CloseHandle((HANDLE)opaque);
+  #else
+        ::munmap(buffer, size);
+  #endif
+        return true;
+    }
+
     bool MemoryMappedFileStream::sync()
     {
         if (area)
@@ -590,8 +635,8 @@ namespace Stream
         if (tempPos && tempPos < keySize)
         {
             uint8 localBuffer[32] = {0};
-            memset(localBuffer, 0, sizeof(localBuffer));
             memcpy(localBuffer, buffer, keySize);
+            if (keySize < sizeof(localBuffer)) memset(&localBuffer[keySize], 0, sizeof(localBuffer) - keySize);
             crypto.Encrypt(localBuffer, buffer, keySize, Crypto::AES::CFB);
             // Then write the final stream back to the output stream
             outputStream.write(buffer, tempPos); // Please note that we have cut the last part, here

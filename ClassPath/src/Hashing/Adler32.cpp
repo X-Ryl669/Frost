@@ -7,7 +7,8 @@ namespace Hashing
 {
     void Adler32::Start()
     {
-        a = 1; b = 0;
+        RollingHasher::Start();
+        a = 1; b = 0; len = 0;
     }
     
     
@@ -22,6 +23,7 @@ namespace Hashing
     {
         if (!buffer || !size) return;
         
+        len += size;
         // Faster implementation
         const uint32 nMax = 5552;
         while (size >= nMax)
@@ -58,5 +60,27 @@ namespace Hashing
         if (a > Base) a -= Base;
         b += a;
         if (b > Base) b -= Base;
+        len++;
+    }
+    
+    void Adler32::Roll(uint8 ch)
+    {
+        // Remove the part before the window
+        if (a < window[windowPos]) a += Base; // Faster than modulo ?
+        a -= window[windowPos];
+        
+        uint32 mB = len >= windowSize ? (windowSize * window[windowPos] + 1) : 0;
+        if (b < mB) b += Base;
+        b -= mB;
+        
+        // And add the new part
+        a += ch;
+        if (a > Base) a -= Base;
+        b += a;
+        if (b > Base) b -= Base;
+        
+        window[windowPos++] = ch;
+        if (windowPos == windowSize) windowPos = 0;
+        len++;
     }
 }

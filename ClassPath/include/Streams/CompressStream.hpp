@@ -57,7 +57,7 @@ namespace Stream
             Returning -1 is safer than returning the compressed stream size */
         inline uint64 fullSize() const { return decompressedSize; }
         /** This method returns true if the end of stream is reached */
-        inline bool endReached() const { return stream->currentPosition() == stream->fullSize(); }
+        inline bool endReached() const { return stream->currentPosition() == stream->fullSize() && !compressor->hasDataToFlush(); }
         /** This method returns the position of the next byte that could be read from this stream 
             @warning This is false (as it returns the position in the compressed stream), but can nonetheless 
                      can be used to estimate the current amount of data processed */
@@ -160,18 +160,18 @@ namespace Stream
     public:
         /** Construct a DecompressInputStream object from the given stream with the given compressor (it's owned).
             @param stream       The actual stream to read compressed data to (must exist after this object is deleted)
-            @param compressor   A pointer on a new allocated compressor that's own by this stream. If 0, a GZip is built and used. */
-        CompressOutputStream(OutputStream & stream, Compression::BaseCompressor * compressor = 0) 
-            : stream(stream), compressor(compressor) 
+            @param comp        A pointer on a new allocated compressor that's own by this stream. If 0, a GZip is built and used. */
+        CompressOutputStream(OutputStream & stream, Compression::BaseCompressor * comp = 0)
+            : stream(stream), compressor(comp)
         {
             if (!compressor)
                 compressor = new Compression::GZip;
         }
         /** Construct a DecompressInputStream object from the given stream with the given compressor (it's owned).
             @param stream       A pointer on an output stream that's owned by this object
-            @param compressor   A pointer on a new allocated compressor that's own by this stream. If 0, a GZip is built and used. */
-        CompressOutputStream(OutputStream * stream, Compression::BaseCompressor * compressor = 0) 
-            : stream(stream), compressor(compressor) 
+            @param comp        A pointer on a new allocated compressor that's own by this stream. If 0, a GZip is built and used. */
+        CompressOutputStream(OutputStream * stream, Compression::BaseCompressor * comp = 0)
+            : stream(stream), compressor(comp)
         {
             if (!compressor)
                 compressor = new Compression::GZip;

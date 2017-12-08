@@ -31,6 +31,15 @@
 #include <openssl/evp.h>
 #include <openssl/engine.h>
 
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) ||  defined(LIBRESSL_VERSION_NUMBER)
+extern "C" int RSA_set0_key(RSA *r, BIGNUM *n, BIGNUM *e, BIGNUM *d);
+extern "C" void RSA_get0_key(const RSA *r, const BIGNUM **n, const BIGNUM **e, const BIGNUM **d);
+extern "C" int RSA_set0_factors(RSA *r, BIGNUM *p, BIGNUM *q);
+extern "C" int RSA_set0_crt_params(RSA *r, BIGNUM *dmp1, BIGNUM *dmq1, BIGNUM *iqmp);
+extern "C" void RSA_get0_factors(const RSA *r, const BIGNUM **p, const BIGNUM **q);
+extern "C" int ECDSA_SIG_set0(ECDSA_SIG *sig, BIGNUM *r, BIGNUM *s);
+extern "C" void ECDSA_SIG_get0(const ECDSA_SIG *sig, const BIGNUM **pr, const BIGNUM **ps);
+#endif
 
 namespace Crypto
 {
@@ -272,7 +281,7 @@ namespace Crypto
         }
 
         void Destroy() { if (context) ::EVP_CIPHER_CTX_free(context); context = 0; }
-        OSSL_AES() : context(0), prevOpMode((OperationMode)-1), previousEncrypt(true) {}
+        OSSL_AES() : context(0), blockSize(DefaultBlockSize), prevOpMode((OperationMode)-1), previousEncrypt(true) {}
         ~OSSL_AES() { Destroy(); }
     };
 
@@ -296,8 +305,7 @@ namespace Crypto
                 Destroy();
                 context = ::RSA_new();
                 if (!context) return false;
-                context->n = ::BN_bin2bn(&array[0 * size * 4], size * 4, NULL);
-                context->e = ::BN_bin2bn(&array[1 * size * 4], size * 4, NULL);
+                if (!RSA_set0_key(context, ::BN_bin2bn(&array[0 * size * 4], size * 4, NULL), ::BN_bin2bn(&array[1 * size * 4], size * 4, NULL), NULL)) return false;
                 return true;
             }
             /** Export the private key as uint8 array (for storing it) */
@@ -305,12 +313,15 @@ namespace Crypto
             {
                 if (!array || arrayLen < getRequiredArraySize()) return false;
                 if (!context) return false;
-                if (BN_num_bytes(context->n) > size * 4) return false;
-                if (BN_num_bytes(context->e) > size * 4) return false;
+                const BIGNUM * n = 0, *e = 0;
+                RSA_get0_key(context, &n, &e, NULL);
+
+                if (BN_num_bytes(n) > size * 4) return false;
+                if (BN_num_bytes(e) > size * 4) return false;
                 memset(array, 0, arrayLen);
-                ::BN_bn2bin(context->n, &array[1 * size * 4 - BN_num_bytes(context->n)]);
+                ::BN_bn2bin(n, &array[1 * size * 4 - BN_num_bytes(n)]);
                 // Find out the required size for the number
-                ::BN_bn2bin(context->e, &array[2 * size * 4 - BN_num_bytes(context->e)]);
+                ::BN_bn2bin(e, &array[2 * size * 4 - BN_num_bytes(e)]);
                 return true;
             }
 
@@ -347,26 +358,30 @@ namespace Crypto
                 context = ::RSAPublicKey_dup(((PublicKey*)publicKey)->context);
                 if (!context) return false;
 
-                context->d = ::BN_bin2bn(&array[0 * size * 4], size * 4, NULL);
-                context->p = ::BN_bin2bn(&array[1 * size * 4], size * 2, NULL);
-                context->q = ::BN_bin2bn(&array[1 * size * 4 + size * 2], size * 2, NULL);
+                BIGNUM * d = ::BN_bin2bn(&array[0 * size * 4], size * 4, NULL);
+                if (!RSA_set0_key(context, NULL, NULL, d)) return false;
+                BIGNUM * p = ::BN_bin2bn(&array[1 * size * 4], size * 2, NULL);
+                BIGNUM * q = ::BN_bin2bn(&array[1 * size * 4 + size * 2], size * 2, NULL);
+                if (!RSA_set0_factors(context, p, q)) return false;
 
                 // Compute those value once for all
-                context->dmp1 = ::BN_new();
-                context->dmq1 = ::BN_new();
-                context->iqmp = ::BN_new();
+                BIGNUM * dmp1 = ::BN_new();
+                BIGNUM * dmq1 = ::BN_new();
+                BIGNUM * iqmp = ::BN_new();
                 BIGNUM * tmp = ::BN_new();
                 BN_CTX * ctx = ::BN_CTX_new();
-                ::BN_sub(tmp, context->p, ::BN_value_one());
-                ::BN_mod(context->dmp1, context->d, tmp, ctx);
+                ::BN_sub(tmp, p, ::BN_value_one());
+                ::BN_mod(dmp1, d, tmp, ctx);
 
-                ::BN_sub(tmp, context->q, ::BN_value_one());
-                ::BN_mod(context->dmq1, context->d, tmp, ctx);
+                ::BN_sub(tmp, q, ::BN_value_one());
+                ::BN_mod(dmq1, d, tmp, ctx);
 
-                ::BN_mod_inverse(context->iqmp, context->q, context->p, ctx);
+                ::BN_mod_inverse(iqmp, q, p, ctx);
 
                 ::BN_free(tmp);
                 ::BN_CTX_free(ctx);
+
+                if (!RSA_set0_crt_params(context, dmp1, dmq1, iqmp)) return false;
 
                 return ::RSA_check_key(context) == 1;
             }
@@ -375,13 +390,16 @@ namespace Crypto
             {
                 if (!array || arrayLen < getRequiredArraySize()) return false;
                 if (!context) return false;
-                if (BN_num_bytes(context->d) > size * 4) return false;
-                if (BN_num_bytes(context->p) > size * 2) return false;
-                if (BN_num_bytes(context->q) > size * 2) return false;
+                const BIGNUM * d = 0, * p = 0, * q = 0;
+                RSA_get0_key(context, NULL, NULL, &d);
+                RSA_get0_factors(context, &p, &q);
+                if (BN_num_bytes(d) > size * 4) return false;
+                if (BN_num_bytes(p) > size * 2) return false;
+                if (BN_num_bytes(q) > size * 2) return false;
                 memset(array, 0, arrayLen);
-                ::BN_bn2bin(context->d, &array[1 * size * 4 - BN_num_bytes(context->d)]);
-                ::BN_bn2bin(context->p, &array[1 * size * 4 + size * 2 - BN_num_bytes(context->p)]);
-                ::BN_bn2bin(context->q, &array[2 * size * 4 - BN_num_bytes(context->q)]);
+                ::BN_bn2bin(d, &array[1 * size * 4 - BN_num_bytes(d)]);
+                ::BN_bn2bin(p, &array[1 * size * 4 + size * 2 - BN_num_bytes(p)]);
+                ::BN_bn2bin(q, &array[2 * size * 4 - BN_num_bytes(q)]);
                 return true;
             }
 
@@ -435,8 +453,12 @@ namespace Crypto
         {
             PrivateKey & privKey = (PrivateKey&)privateKey;
             privKey.Destroy();
-            privKey.context = ::RSA_generate_key(size * 32, 65537, NULL, NULL);
+            privKey.context = ::RSA_new();
             if (!privKey.context) return false;
+            BIGNUM * e = ::BN_new();
+            if (!::BN_set_word(e, 65537)) { ::BN_free(e); return false; }
+            if (!::RSA_generate_key_ex(privKey.context, size * 32, e, NULL)) { ::BN_free(e); return false; }
+            ::BN_free(e);
 
             key.Destroy();
             key.context = ::RSAPublicKey_dup(privKey.context);
@@ -479,28 +501,31 @@ namespace Crypto
                 context = ::RSA_new();
                 if (!context) return false;
 
-                context->n = ::BN_bin2bn(&array[0 * size * 4], size * 4, NULL);
-                context->e = ::BN_bin2bn(&array[1 * size * 4], size * 4, NULL);
-                context->d = ::BN_bin2bn(&array[2 * size * 4], size * 4, NULL);
-                context->p = ::BN_bin2bn(&array[3 * size * 4], size * 2, NULL);
-                context->q = ::BN_bin2bn(&array[3 * size * 4 + size * 2], size * 2, NULL);
+                BIGNUM * n = ::BN_bin2bn(&array[0 * size * 4], size * 4, NULL);
+                BIGNUM * e = ::BN_bin2bn(&array[1 * size * 4], size * 4, NULL);
+                BIGNUM * d = ::BN_bin2bn(&array[2 * size * 4], size * 4, NULL);
+                BIGNUM * p = ::BN_bin2bn(&array[3 * size * 4], size * 2, NULL);
+                BIGNUM * q = ::BN_bin2bn(&array[3 * size * 4 + size * 2], size * 2, NULL);
+                if (!RSA_set0_key(context, n, e, d)) return false;
+                if (!RSA_set0_factors(context, p, q)) return false;
 
                 // Compute those value once for all
-                context->dmp1 = ::BN_new();
-                context->dmq1 = ::BN_new();
-                context->iqmp = ::BN_new();
+                BIGNUM * dmp1 = ::BN_new();
+                BIGNUM * dmq1 = ::BN_new();
+                BIGNUM * iqmp = ::BN_new();
                 BIGNUM * tmp = ::BN_new();
                 BN_CTX * ctx = ::BN_CTX_new();
-                ::BN_sub(tmp, context->p, ::BN_value_one());
-                ::BN_mod(context->dmp1, context->d, tmp, ctx);
+                ::BN_sub(tmp, p, ::BN_value_one());
+                ::BN_mod(dmp1, d, tmp, ctx);
 
-                ::BN_sub(tmp, context->q, ::BN_value_one());
-                ::BN_mod(context->dmq1, context->d, tmp, ctx);
+                ::BN_sub(tmp, q, ::BN_value_one());
+                ::BN_mod(dmq1, d, tmp, ctx);
 
-                ::BN_mod_inverse(context->iqmp, context->q, context->p, ctx);
+                ::BN_mod_inverse(iqmp, q, p, ctx);
 
                 ::BN_free(tmp);
                 ::BN_CTX_free(ctx);
+                if (!RSA_set0_crt_params(context, dmp1, dmq1, iqmp)) return false;
 
                 return ::RSA_check_key(context) == 1;
             }
@@ -509,17 +534,22 @@ namespace Crypto
             {
                 if (!array || arrayLen < getRequiredArraySize()) return false;
                 if (!context) return false;
-                if (BN_num_bytes(context->n) > size * 4) return false;
-                if (BN_num_bytes(context->e) > size * 4) return false;
-                if (BN_num_bytes(context->d) > size * 4) return false;
-                if (BN_num_bytes(context->p) > size * 2) return false;
-                if (BN_num_bytes(context->q) > size * 2) return false;
+                const BIGNUM * n = 0, * e = 0, * d = 0;
+                RSA_get0_key(context, &n, &e, &d);
+
+                const BIGNUM * p = 0, * q = 0;
+                RSA_get0_factors(context, &p, &q);
+                if (BN_num_bytes(n) > size * 4) return false;
+                if (BN_num_bytes(e) > size * 4) return false;
+                if (BN_num_bytes(d) > size * 4) return false;
+                if (BN_num_bytes(p) > size * 2) return false;
+                if (BN_num_bytes(q) > size * 2) return false;
                 memset(array, 0, arrayLen);
-                ::BN_bn2bin(context->n, &array[1 * size * 4 - BN_num_bytes(context->n)]);
-                ::BN_bn2bin(context->e, &array[2 * size * 4 - BN_num_bytes(context->e)]);
-                ::BN_bn2bin(context->d, &array[3 * size * 4 - BN_num_bytes(context->d)]);
-                ::BN_bn2bin(context->p, &array[3 * size * 4 + size * 2 - BN_num_bytes(context->p)]);
-                ::BN_bn2bin(context->q, &array[4 * size * 4 - BN_num_bytes(context->q)]);
+                ::BN_bn2bin(n, &array[1 * size * 4 - BN_num_bytes(n)]);
+                ::BN_bn2bin(e, &array[2 * size * 4 - BN_num_bytes(e)]);
+                ::BN_bn2bin(d, &array[3 * size * 4 - BN_num_bytes(d)]);
+                ::BN_bn2bin(p, &array[3 * size * 4 + size * 2 - BN_num_bytes(p)]);
+                ::BN_bn2bin(q, &array[4 * size * 4 - BN_num_bytes(q)]);
                 return true;
             }
 
@@ -547,21 +577,24 @@ namespace Crypto
                 Destroy();
                 context = ::RSA_new();
                 if (!context) return false;
-                context->n = ::BN_bin2bn(&array[0 * size * 4], size * 4, NULL);
-                context->e = ::BN_bin2bn(&array[1 * size * 4], size * 4, NULL);
-                return true;
+                BIGNUM * n = ::BN_bin2bn(&array[0 * size * 4], size * 4, NULL);
+                BIGNUM * e = ::BN_bin2bn(&array[1 * size * 4], size * 4, NULL);
+
+                return RSA_set0_key(context, n, e, NULL) != 0;
             }
             /** Export the private key as uint8 array (for storing it) */
             virtual bool Export (uint8 * array, const uint32 arrayLen, const uint32 mask = 0xFFFFFFFF) const
             {
                 if (!array || arrayLen < getRequiredArraySize()) return false;
                 if (!context) return false;
-                if (BN_num_bytes(context->n) > size * 4) return false;
-                if (BN_num_bytes(context->e) > size * 4) return false;
+                const BIGNUM * n = 0, * e = 0;
+                RSA_get0_key(context, &n, &e, NULL);
+                if (BN_num_bytes(n) > size * 4) return false;
+                if (BN_num_bytes(e) > size * 4) return false;
                 memset(array, 0, arrayLen);
-                ::BN_bn2bin(context->n, &array[1 * size * 4 - BN_num_bytes(context->n)]);
+                ::BN_bn2bin(n, &array[1 * size * 4 - BN_num_bytes(n)]);
                 // Find out the required size for the number
-                ::BN_bn2bin(context->e, &array[2 * size * 4 - BN_num_bytes(context->e)]);
+                ::BN_bn2bin(e, &array[2 * size * 4 - BN_num_bytes(e)]);
                 return true;
             }
 
@@ -616,8 +649,12 @@ namespace Crypto
         {
             PrivateKey & privKey = (PrivateKey&)privateKey;
             privKey.Destroy();
-            privKey.context = ::RSA_generate_key(size * 32, 65537, NULL, NULL);
+            privKey.context = ::RSA_new();
             if (!privKey.context) return false;
+            BIGNUM * e = ::BN_new();
+            if (!::BN_set_word(e, 65537)) { ::BN_free(e); return false; }
+            if (!::RSA_generate_key_ex(privKey.context, size * 32, e, NULL)) { ::BN_free(e); return false; }
+            ::BN_free(e);
 
             key.Destroy();
             key.context = ::RSAPublicKey_dup(privKey.context);
@@ -851,8 +888,9 @@ namespace Crypto
 
             ::ECDSA_SIG * sig = ::ECDSA_SIG_new();
             CleanUpOnScopeExit(::ECDSA_SIG_free, sig);
-            sig->r = ::BN_bin2bn(&signedMessage[0 * EC_KeySize<group>::Size], EC_KeySize<group>::Size, sig->r);
-            sig->s = ::BN_bin2bn(&signedMessage[1 * EC_KeySize<group>::Size], EC_KeySize<group>::Size, sig->s);
+            BIGNUM * r = ::BN_bin2bn(&signedMessage[0 * EC_KeySize<group>::Size], EC_KeySize<group>::Size, NULL);
+            BIGNUM * s = ::BN_bin2bn(&signedMessage[1 * EC_KeySize<group>::Size], EC_KeySize<group>::Size, NULL);
+            if (!ECDSA_SIG_set0(sig, r, s)) return false;
 
             return ::ECDSA_do_verify(digest, sha1.hashSize(), sig, const_cast<PublicKey&>(key).context) == 1;
         }
@@ -872,8 +910,10 @@ namespace Crypto
             if (sig == NULL) return false;
             // Need to copy the numbers in the signed message
             memset(signedMessage, 0, signedLen);
-            ::BN_bn2bin(sig->r, &signedMessage[EC_KeySize<group>::Size - BN_num_bytes(sig->r)]);
-            ::BN_bn2bin(sig->s, &signedMessage[2*EC_KeySize<group>::Size - BN_num_bytes(sig->s)]);
+            const BIGNUM * r = 0, * s = 0;
+            ECDSA_SIG_get0(sig, &r, &s);
+            ::BN_bn2bin(r, &signedMessage[EC_KeySize<group>::Size - BN_num_bytes(r)]);
+            ::BN_bn2bin(s, &signedMessage[2*EC_KeySize<group>::Size - BN_num_bytes(s)]);
             ::ECDSA_SIG_free(sig);
             return true;
         }

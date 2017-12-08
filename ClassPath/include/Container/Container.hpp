@@ -51,6 +51,11 @@ namespace Container
 
     namespace PrivateGenericImplementation
     {
+        template <typename T>
+        static T& makeDefaultValue() { static T t; return t; }
+        template <typename T>
+        static T& makeDefaultValue0() { static T t(0); return t; }
+
         /** The memory policy interface */
         template <typename T>
         struct MemoryPolicy
@@ -1405,7 +1410,7 @@ namespace Container
                 } else memcpy(dest, src, srcSize * sizeof(T));
             }
             /** This method returns a default constructed element or can throw */
-            inline static T& DefaultElement() { static T t(0); return t; }
+            inline static T& DefaultElement() { return PrivateGenericImplementation::makeDefaultValue0<T>(); }
             /** This method search for the given element and returns arraySize if not found */
             inline static size_t Search(const T* array, const size_t arraySize, const size_t from, const T & valueToLookFor) { size_t i = from; while (i < arraySize && array[i] != valueToLookFor) i++; return i; }
             /** This method search for the given element and returns arraySize if not found */
@@ -1674,7 +1679,7 @@ namespace Container
                 } else CopyArray((T*)dest, src, srcSize, srcSize);
             }
             /** This method returns a default constructed element or can throw */
-            inline static T & DefaultElement() { static T t; return t; }
+            inline static T & DefaultElement() { return PrivateGenericImplementation::makeDefaultValue<T>(); }
             /** This method search for the given element and returns arraySize if not found
                 The type must have a defined "!= operator"
             */
@@ -2045,7 +2050,7 @@ namespace Container
                 // Construction
             public:
                 /** Default constructor */
-                LinearBlock(LinearBlock * previous = 0, LinearBlock * next = 0) : spxPrevious(previous), spxNext(next) , soUsed(0)    {}
+                LinearBlock(LinearBlock * previous = 0, LinearBlock * next = 0) : spxNext(next), spxPrevious(previous), soUsed(0)    {}
                 /** Default destruction too : destruct object if needed */
                 ~LinearBlock()
                 {

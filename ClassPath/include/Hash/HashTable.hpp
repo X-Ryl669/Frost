@@ -1,43 +1,13 @@
 #ifndef hpp_HashTable_hpp
 #define hpp_HashTable_hpp
 
-// We need deleters
-#include "../Container/Deleters.hpp"
 // We need containers
 #include "../Container/Container.hpp"
+// We need hashers declaration too
+#include "Hasher.hpp"
 
 namespace Container
 {
-    /** Hash the given key.
-        The hasher interface transform a key to make searching faster.
-        The identity transformer interface gives the same output as the input.
-        @warning The HashKeyT must be a plain old data, or it will break, and it must support % operator
-    */
-    template <class KeyType>
-    struct NoHashKey
-    {
-        /** The final hash type */
-        typedef KeyType HashKeyT;
-        /** The key hashing process */
-        static inline HashKeyT hashKey(const KeyType & initialKey) { return initialKey; }
-        /** Compare function */
-        static inline bool     compareKeys(const KeyType & first, const KeyType & second) { return first == second; }
-    };
-
-    /** The hasher interface transform a key to make searching faster. */
-    template <class KeyType>
-    struct HashKey
-    {
-        /** The final hash type */
-        typedef uint32 HashKeyT;
-
-        /** The key hashing process */
-        static HashKeyT hashKey(const KeyType & initialKey);
-        /** Compare function */
-        static inline bool compareKeys(const KeyType & first, const KeyType & second) { return first == second; }
-    };
-
-
 
 #if (_MSC_VER > 1200 || !defined(_MSC_VER))
     // The selector based on POD key type, this clear speed up the hash table with POD is used for key
@@ -178,6 +148,8 @@ namespace Container
 
             IterT(const HashTable * hash, const uint32 index = 0, Entry * first = 0)
                 : hash(hash), currentIndex(index), currentEntry(first) {}
+            IterT(const IterT & o)
+                : hash(o.hash), currentIndex(o.currentIndex), currentEntry(o.currentEntry) {}
 
             /** Increment the iterator */
             const IterT & operator++() const
@@ -517,12 +489,5 @@ namespace Container
     };
 
 }
-
-#ifdef hpp_Strings_hpp
-namespace Strings
-{
-    typedef Container::HashTable<FastString, FastString, Container::HashKey<FastString>, Container::DeletionWithDelete<FastString>, false, true > StringMap;
-}
-#endif
 
 #endif

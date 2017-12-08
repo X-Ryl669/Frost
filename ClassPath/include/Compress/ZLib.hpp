@@ -49,6 +49,10 @@ namespace Compression
         uint8       workBuffer[32768];
         /** The opaque buffer usage */
         uint32      workBufferLength;
+        /** An opaque buffer used in stream mode */
+        uint8       baseBuffer[8192];
+        /** The opaque buffer usage */
+        uint32      inputAmount;
     
         // Interface
     public:
@@ -58,6 +62,8 @@ namespace Compression
         virtual void setCompressionFactor(const float factor = 1.0f) { compressionFactor = (int)(factor * 9 + .5f); }
         /** Reset the object for a specific operation */
         virtual void Reset(const bool isCompressing) = 0;
+        /** Check if the compressor still has data to flush */
+        virtual bool hasDataToFlush() const;
     
         /** Continuous compression process.
             Not all compressor support this (in that case, it's probably emulated or might return false).
@@ -78,7 +84,7 @@ namespace Compression
         virtual bool decompressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, const uint32 amountToProcess = 0);
         
         /** Default constructor */
-        CommonZlib(const char * name) : BaseCompressor(name), lastError(Success), compressionFactor(-1), opaque(0), workBufferLength(0) {}
+        CommonZlib(const char * name) : BaseCompressor(name), lastError(Success), compressionFactor(-1), opaque(0), workBufferLength(0), inputAmount(0) {}
     };
 
     /** Implements ZLib compression. 

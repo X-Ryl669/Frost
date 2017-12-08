@@ -124,6 +124,8 @@ namespace Compression
         {
             return processData(outStream, inStream, amountToProcess, &BaseCompressor::decompressData);
         }
+        /** Check if the compressor still has data to flush */
+        virtual bool hasDataToFlush() const { return false; }
 
 
         // Construction and destruction

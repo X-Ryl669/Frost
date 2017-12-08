@@ -7,6 +7,8 @@
 #include <new>
 // Need Universal Type Identifier
 #include "UTI.hpp"
+// Need exceptions too
+#include "../Exceptions/BaseException.hpp"
 
 #if __GNUC__ >= 6
   #ifndef __clang__
@@ -15,6 +17,10 @@
   #endif
 #endif
 
+#if __GNUC__
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wuninitialized"
+#endif
 
 /** Manipulate any type generically.
     This namespace main contribution is the variant type called Var (or Ref).
@@ -96,7 +102,7 @@ namespace Type
 	    struct Empty { };
 
 	    /** Not constant exception */
-	    struct NotConstException {};
+	    struct NotConstException { virtual const char * what() const { return "Element is not const"; } };
 
         //	RegisterClassForVariant(Empty, 0x00000000, 0x00000000, 0x00000000, 0x00000000);
 	    /** This is the maximum variant size before it is stored automatically in the heap */
@@ -407,7 +413,7 @@ namespace Type
     //	inline bool convertTo(T*) {	if (! this->isExactly((T*)0)) return false; toRef(out); return true; }
 	    
 	    //	template<typename T>
-    //	inline const T & like(const T &) const { if (!isExactly((T*)0)) throw NotConstException(); return *toPointer((const T*)0); }
+    //	inline const T & like(const T &) const { if (!isExactly((T*)0)) Throw(NotConstException()); return *toPointer((const T*)0); }
 	    /** Explicitly convert the type to the requested type 
 	        If the requested type doesn't match the internal type, an heavy conversion is performed.
 		    Heavy conversions requires creating a DataSource object dynamically and can fail
@@ -418,7 +424,7 @@ namespace Type
 	    inline const T like(const T *) const { if (!isExactly((T*)0)) return heavyConversionTo((T*)0); return *toPointer((const T*)0); }
 
 	    template<typename T>
-	    inline const T heavyConversionTo(T*) const { T temporary; VarT<Policy> tmp = temporary; tmp.setDataSource(getDataSource()); if (!tmp.extractTo(temporary)) throw NotConstException(); return temporary; }
+	    inline const T heavyConversionTo(T*) const { T temporary; VarT<Policy> tmp = temporary; tmp.setDataSource(getDataSource()); if (!tmp.extractTo(temporary)) Throw(NotConstException()); return temporary; }
 
         template<typename T>
 	    inline bool convertInto(T& value) const { VarT<Policy> tmp = value; tmp.setDataSource(getDataSource()); return tmp.extractTo(value); }
@@ -533,11 +539,13 @@ namespace Type
         /** Default constructor */
         GetterSetterT() : getter(0), setter(0), self(0) {}
         /** Generic purpose constructor */
-        GetterSetterT(const void * self, GetterT getter, SetterT setter) : self(new Opaque(self)), getter(getter), setter(setter) {}
+        GetterSetterT(const void * self, GetterT getter, SetterT setter) : getter(getter), setter(setter), self(new Opaque(self)) {}
         /** Copy constructor */
         GetterSetterT(const GetterSetterT & other) : getter(other.getter), setter(other.setter), self(other.self->Clone()) {}
+        /** Copy operator */
+        GetterSetterT & operator = (const GetterSetterT & other) { if (&other == this) return *this; this->~GetterSetterT(); return *new(this) GetterSetterT(other); }
         /** A constructor with an opaque member */
-        GetterSetterT(Opaque * self, GetterT getter, SetterT setter) : self(self), getter(getter), setter(setter) {}
+        GetterSetterT(Opaque * self, GetterT getter, SetterT setter) : getter(getter), setter(setter), self(self) {}
         
         ~GetterSetterT() { delete0(self); }
     };
@@ -718,6 +726,10 @@ namespace Type
 }
 
 #ifdef __GNUC__
+  #pragma GCC diagnostic pop
+#endif
+
+#if __GNUC__ >= 6
   #ifndef __clang__
   #pragma GCC diagnostic pop
   #endif

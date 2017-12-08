@@ -11,4 +11,3 @@ namespace Container
         return Hash::superFastHash(initialKey, initialKey.getLength());
     }
 }
-

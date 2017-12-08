@@ -409,4 +409,3 @@ namespace Encoding
 }
 
 #endif
-

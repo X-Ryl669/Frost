@@ -505,8 +505,9 @@ namespace Bstrlib
                 String ret = String("abcdefgh").midString(-1, 0); // ret = ""
                 String ret = String("abcdefgh").midString(-3, 3); // ret = "fgh"
                 String ret = String("abcdefgh").midString(-3, 2); // ret = "fg"
-                String ret = String("abcdefgh").midString([whatever], -3); // ret = "fgh"
-                String ret = String("abcdefgh").midString([whatever], -30); // ret = "abcdefgh"
+                String ret = String("abcdefgh").midString(0, -3); // ret = "abcde"
+                String ret = String("abcdefgh").midString(1, -3); // ret = "bcde"
+                String ret = String("abcdefgh").midString([whatever], -30); // ret = "abcdefgh"   as negative length takes precedence
     	    @endcode
     	    @param left     The index to start with (0 based)
     	    @param len      The number of bytes to return */
@@ -837,6 +838,7 @@ namespace Bstrlib
     	return retval;
     }
 
+  #if (WantRegularExpressions == 1)
     #define _STRINGIFY_(a) #a
     /** This is used to create regular expression strings without double escaping the strings.
         Like this:
@@ -862,7 +864,7 @@ namespace Bstrlib
         @endcode
         @sa String::regExMatch and String::regExReplace method */
     #define RE(re) (const char*)::Bstrlib::StackStr<sizeof(_STRINGIFY_(re))>(_STRINGIFY_(re))
-
+  #endif
 } // namespace Bstrlib
 #endif
 

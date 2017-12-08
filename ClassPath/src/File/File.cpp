@@ -989,7 +989,7 @@ namespace File
             if (!metadata || metadata[0] != 'P') return false; // Can't restore non-posix metadata here. Sorry
 
             // Need to split the metadata array
-            bool isSymLink = metadata[1] == 'S';
+            // bool isSymLink = metadata[1] == 'S';
             // bool isDevNode = metadata[1] == 'T';
             // bool isCharDev = metadata[2] == 'H';
 
@@ -1512,11 +1512,13 @@ namespace File
     // Get the next file iteratively
     bool DirectoryIterator::getNextFile(Info & info) const
     {
+        if (!normalizedPath)
+            normalizedPath = path.normalizedPath(Platform::Separator, false);
 #ifdef _WIN32
         if (finder == INVALID_HANDLE_VALUE) return false;
         info.name = Strings::convert(Strings::ReadOnlyUnicodeString(data.cFileName));
-        if (info.path.getLength() == 0)
-            info.path = path.normalizedPath(Platform::Separator, false);
+        if (!info.path)
+            info.path = normalizedPath;
         info.size = ((uint64)data.nFileSizeHigh << 32) | data.nFileSizeLow;
         info.creation = Time::convert(data.ftCreationTime);
         info.lastAccess = Time::convert(data.ftLastAccessTime);
@@ -1534,7 +1536,7 @@ namespace File
         {
             finder = opendir(path);
             if (finder == 0) return false;
-            info.path = path.normalizedPath(Platform::Separator, false);
+            info.path = normalizedPath;
         }
 
         // Then read the directory (we don't use readdir_r here because it's unsafe, the dirent's size can't be known beforehand)
@@ -1547,7 +1549,7 @@ namespace File
         if (info.path.getLength() == 0)
         {
             if (path.getLength() != 1)
-                info.path = path.normalizedPath(Platform::Separator, false);
+                info.path = normalizedPath;
             else
                 info.path = "";
         }
@@ -1574,11 +1576,13 @@ namespace File
     // Get the next file iteratively
     bool DirectoryIterator::getNextFilePath(Info & info) const
     {
+        if (!normalizedPath)
+            normalizedPath = path.normalizedPath(Platform::Separator, false);
+
 #ifdef _WIN32
         if (finder == INVALID_HANDLE_VALUE) return false;
         info.name = Strings::convert(Strings::ReadOnlyUnicodeString(data.cFileName));
-        if (info.path.getLength() == 0)
-            info.path = path.normalizedPath(Platform::Separator, false);
+        if (!info.path) info.path = normalizedPath;
         info.size = ((uint64)data.nFileSizeHigh << 32) | data.nFileSizeLow;
         info.creation = Time::convert(data.ftCreationTime);
         info.lastAccess = Time::convert(data.ftLastAccessTime);
@@ -1596,7 +1600,7 @@ namespace File
         {
             finder = opendir(path);
             if (finder == 0) return false;
-            info.path = path.normalizedPath(Platform::Separator, false);
+            info.path = normalizedPath;
         }
 
         // Then read the directory (see above for why we don't use readdir_r)
@@ -1606,10 +1610,27 @@ namespace File
 
         // Ok, need to stat the file name then
         info.name = ent->d_name;
-        info.path = path.normalizedPath(Platform::Separator, false);;
+        info.path = normalizedPath;
         info.type = convertDirType(ent->d_type);
         info.size = 0;
         info.modification = 0;
+        if (info.type == (Info::Type)0)
+        {
+            struct stat status = {0};
+            if (lstat(normalizedPath + PathSeparator + info.name, &status) == 0)
+            {
+                if (S_ISREG(status.st_mode))  info.type = Info::Regular;
+                if (S_ISDIR(status.st_mode))  info.type = Info::Directory;
+                if (S_ISCHR(status.st_mode))  info.type = Info::Device;
+                if (S_ISBLK(status.st_mode))  info.type = Info::Device;
+                if (S_ISFIFO(status.st_mode)) info.type = Info::FIFO;
+                if (S_ISLNK(status.st_mode))  info.type = Info::Link;
+                if (S_ISSOCK(status.st_mode)) info.type = Info::Socket;
+                if (S_ISLNK(status.st_mode))  info.type = Info::Link;
+                info.size = (uint64)status.st_size;             // Does not really make sense for a link
+                info.modification = (double)status.st_mtime;    // but since we have made a stat call...
+            }
+        }
         return true;
 #endif
     }

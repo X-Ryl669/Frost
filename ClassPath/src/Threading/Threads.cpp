@@ -8,6 +8,10 @@
 #include "../../include/Utils/Assert.hpp"
 #endif
 
+// Define the TLS's withStack marker
+#include "../../include/Exceptions/BaseException.hpp"
+namespace Exception { TLSDecl bool WithStackM::w = true; }
+
 using namespace Threading;
 
 
@@ -19,7 +23,6 @@ using namespace Threading;
   // We need them for the semaphore code, since unnamed POSIX semaphore are not supported.
   #include <mach/mach.h>
   #include <mach/task.h>
-  #define SIGSTACK SIGUSR2
 #endif
 
 #if defined(_LINUX)
@@ -35,10 +38,11 @@ using namespace Threading;
   #elif defined R15
     #define REG_PC R15
   #endif
-  #define SIGSTACK SIGRTMIN
 #endif // Linux
 
 #if defined(_POSIX)
+    static pthread_once_t keyOnce = PTHREAD_ONCE_INIT;
+
     namespace Strings { char* ulltoa(uint64 value, char* result, int base); }
   #ifndef STDERR_FILENO
     #define STDERR_FILENO 2
@@ -134,12 +138,14 @@ using namespace Threading;
         // 30 stack frame should be enough
         void *  array[30];
         size_t size = backtrace(array, 30);
-  #if defined(_MAC)
-        array[1] = (void *) ucontext->uc_mcontext->__ss.__rip;
-  #elif defined(__ARMEL__)
+#if defined(__ARMEL__)
         array[1] = (void *) ucontext->uc_mcontext.arm_pc;
-  #else
+#elif defined(__aarch64__)
+          array[1] = (void *) ucontext->uc_mcontext.pc;
+#elif defined(_LINUX) && (defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(_M_X64))
         array[1] = (void *) ucontext->uc_mcontext.gregs [REG_PC];
+#elif defined(_MAC)
+          array[1] = (void *) ucontext->uc_mcontext->__ss.__rip;
   #endif
 
         // Prepare the backtrace using our own method
@@ -163,15 +169,17 @@ using namespace Threading;
     extern "C" void GetSigStack(int sig,  siginfo_t * siginfo, void * _ucontext)
     {
         // Need to dump the stack here
-        if (sig == SIGUSR1 || sig == SIGSTACK)
+        if (sig == SIGUSR1)
         {
             ucontext_t * ucontext = (ucontext_t*)_ucontext;
             // 30 stack frame should be enough
             void *  array[30];
             size_t size = backtrace(array, 30);
-  #ifdef __ARMEL__
+  #if defined(__ARMEL__)
             array[1] = (void *) ucontext->uc_mcontext.arm_pc;
-  #elif defined(_LINUX)
+  #elif defined(__aarch64__)
+            array[1] = (void *) ucontext->uc_mcontext.pc;
+  #elif defined(_LINUX) && (defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(_M_X64))
             array[1] = (void *) ucontext->uc_mcontext.gregs [REG_PC];
   #elif defined(_MAC)
             array[1] = (void *) ucontext->uc_mcontext->__ss.__rip;
@@ -185,7 +193,7 @@ using namespace Threading;
             {
                 // Get the this pointer in the TLS
                 Thread * pThis = (Thread*)pthread_getspecific(Thread::threadThisKey);
-                if (sig != SIGSTACK && pThis != NULL)
+                if (pThis != NULL)
                 {
                     pThis->stack = "";
                     for (size_t i = 0; i < size; i++)
@@ -416,6 +424,7 @@ void * Thread::RunThread(void * pVoid)
         {
             if (pOld.sa_sigaction == ::GetSigStack)
             {   // Already set up
+                (void)pthread_once(&keyOnce, &Thread::createTLSThisKey);
                 // Use thread local storage to store this pointer
                 pthread_setspecific(threadThisKey, (void*)pThread);
                 // Set the mask to block SIGUSR2 (only the main thread can get it)
@@ -431,6 +440,8 @@ void * Thread::RunThread(void * pVoid)
                 sa.sa_flags = SA_SIGINFO;
                 sigemptyset(&sa.sa_mask);
                 // Use thread local storage to store this pointer
+
+                (void)pthread_once(&keyOnce, &Thread::createTLSThisKey);
                 pthread_setspecific(threadThisKey, (void*)pThread);
                 sigaction(SIGUSR1, &sa, NULL);
                 // Set the mask to block SIGUSR2 (only the main thread can get it)
@@ -621,11 +632,29 @@ Strings::FastString GetMainThreadStack()
 /** Get the current thread's stack (Linux only) */
 Strings::FastString Thread::getCurrentThreadStack()
 {
-    pthread_kill(pthread_self(), SIGSTACK);
-    SemWait(xSemaphore);
-    return sStack;
+    // 30 stack frame should be enough
+    void *  array[30];
+    size_t size = backtrace(array, 30);
+
+    // Prepare the backtrace using our own method
+    StackFrameInfo frames[30];
+    dumpStackFrames(frames, size, array);
+
+    if (size)
+    {
+        // Probably the main thread, so handle the stack now with global variables
+        Strings::FastString stack = "";
+        for (size_t i = 0; i < size; i++)
+            stack += frames[i].getFrame();
+        return stack;
+    }
+    return "";
 }
 
+void Thread::createTLSThisKey()
+{
+    pthread_key_create(&threadThisKey, NULL);
+}
 
 void Thread::installMainThreadHandler()
 {
@@ -640,9 +669,8 @@ void Thread::installMainThreadHandler()
         sa.sa_flags = SA_SIGINFO;
         sigemptyset(&sa.sa_mask);
         sigaction(SIGUSR1, &sa, NULL);
-        sigaction(SIGSTACK, &sa, NULL);
         // Use thread local storage to store this pointer
-        pthread_key_create(&threadThisKey, NULL);
+        (void)pthread_once(&keyOnce, &Thread::createTLSThisKey);
         pthread_setspecific(threadThisKey, (void*)NULL);
 
 /*

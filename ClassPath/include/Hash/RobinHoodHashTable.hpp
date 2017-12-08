@@ -1,41 +1,11 @@
 #ifndef hpp_RobinHoodHashTable_hpp
 #define hpp_RobinHoodHashTable_hpp
 
-// We need deleters
-#include "../Container/Deleters.hpp"
+// We need hashers declaration too
+#include "Hasher.hpp"
 
 namespace Container
 {
-    /** Default function for uint32 */
-    inline uint32 hashIntegerKey(uint32 x) { x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x); return x ? (uint32)x : (uint32)1; } // Avoid 0 as it's reserved
-    /** Default function for uint32 */
-    inline uint32 hashIntegerKey(uint64 x) { x = ((x >> 32) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x) * 0x45d9f3b; x = ((x >> 16) ^ x); return x ? (uint32)x : (uint32)1; }
-    /** Default function for uint32 */
-    inline uint32 hashIntegerKey(uint16 x) { uint32 r = x * 0x45d9f3b; r = ((r >> 16) ^ r); return r ? r : 1; }
-    /** Default function for any other integer type is to avoid hashing */
-    template <typename T> inline uint32 hashIntegerKey(T x) { return x; }
-
-
-    /** Implementation of the hashing policies for integers.
-        @param T    must be an integer type
-        You must provide a uint32 hashIntegerKey(T) overload for this to work */
-    template <typename T>
-    struct IntegerHashingPolicy
-    {
-        /** The type for the hashed key */
-        typedef uint32 HashKeyT;
-        /** Allow compiletime testing of the default value */
-        enum { DefaultAreZero = 1 };
-
-        /** Check if the initial keys are equal */
-        static bool isEqual(const T key1, const T key2) { return key1 == key2; }
-        /** Compute the hash value for the given input */
-        static inline HashKeyT Hash(T x) { return hashIntegerKey(x); }
-        /** Get the default hash value (this is stored by default in the buckets), it's the value that's means that the hash is not computed yet. */
-        static inline HashKeyT defaultHash() { return 0; }
-        /** Reset the key value to default */
-        static inline void resetKey(T & key) { key = 0; }
-    };
 
     /** The internal table is made of these. We use the same optimization as described in RobinHood's paper */
     template <typename T, typename Key, typename HashPolicy = IntegerHashingPolicy<Key> >
@@ -43,6 +13,8 @@ namespace Container
     {
         /** The hask key type we need */
         typedef typename HashPolicy::HashKeyT HashKeyT;
+        /** The key format we are using for our method, to avoid useless copy */
+        typedef typename DirectAccess<Key, IsPOD<Key>::result != 0 >::Type KeyT;
 
         /** This bucket data */
         T           data;
@@ -50,11 +22,11 @@ namespace Container
         /** Get the hash for this bucket */
         inline HashKeyT getHash(void *) const { return hash; }
         /** Get the key for this bucket */
-        inline Key getKey(void *) const { return key; }
+        inline KeyT getKey(void *) const { return key; }
         /** Set the hask for this bucket */
         inline void setHash(const HashKeyT h, void *) { hash = h; }
         /** Set the key for this bucket */
-        inline void setKey(const Key & k, void *) { key = k; }
+        inline void setKey(KeyT k, void *) { key = k; }
         /** Reset the key to the default value */
         inline void resetKey(void *) { HashPolicy::resetKey(key); }
 
@@ -89,17 +61,21 @@ namespace Container
         For usage, @sa Tests::RobinHoodHashTableTests
 
         @warning The type must be a Plain Old Data (with no destructor), since no destructor are called, and data is moved
-        @param T            The data type. Must be very small and POD (if you need to store non POD type, use Proxy or ProxyArray type)
+        @param Type         The data type. Must be very small and POD (if you need to store non POD type, use Proxy or ProxyArray type)
         @param Key          The key type.
         @param HashPolicy   Defaults to integer based key (should be small and POD too)
         @param Bucket       The bucket type to use (default to a very simple bucket type, but can be made more compact by template specialization) */
-    template <typename T, typename Key = uint32, typename HashPolicy = IntegerHashingPolicy<Key>, typename Bucket = Bucket<T, Key, HashPolicy> >
+    template <typename Type, typename Key = uint32, typename HashPolicy = IntegerHashingPolicy<Key>, typename Bucket = Bucket<Type, Key, HashPolicy> >
     class RobinHoodHashTable
     {
         // Type definitions and enumerations
     public:
         /** The hash key type we are using */
         typedef typename HashPolicy::HashKeyT HashKeyT;
+        /** The type format we are using for our method, to avoid useless copy */
+        typedef typename DirectAccess<Type, IsPOD<Type>::result != 0 >::Type T;
+        /** The key format we are using for our method, to avoid useless copy */
+        typedef typename DirectAccess<Key, IsPOD<Key>::result != 0 >::Type KeyT;
 
         /** Constants used in this table */
         enum
@@ -107,7 +83,7 @@ namespace Container
             GrowthRate = 2, //!< The default exponential grow rate
         };
         /** The generator callback function used in resize */
-        typedef bool (*ResizeGenFunc)(size_t index, T & t, Key & k, void * token);
+        typedef bool (*ResizeGenFunc)(size_t index, Type & t, Key & k, void * token);
 
         /** The iterator type */
         struct IterT
@@ -122,8 +98,8 @@ namespace Container
                 while (currentPos < table.allocSize && table.table[currentPos].getHash(table.opaque) == HashPolicy::defaultHash()) ++currentPos;
                 return *this;
             }
-            T * operator *() const { return currentPos < table.allocSize ? &table.table[currentPos].data : 0; }
-            Key getKey() const { return currentPos < table.allocSize ? table.table[currentPos].getKey(table.opaque) : (Key)0; }
+            Type * operator *() const { return currentPos < table.allocSize ? &table.table[currentPos].data : 0; }
+            KeyT getKey() const { return currentPos < table.allocSize ? table.table[currentPos].getKey(table.opaque) : HashPolicy::invalidKey(); }
             void Reset() const { currentPos = (size_t)-1; operator++(); }
 
             IterT(const RobinHoodHashTable & table) : table(table), currentPos((size_t)-1) { operator++(); }
@@ -153,7 +129,7 @@ namespace Container
         {
             const HashKeyT hash = table[index].getHash(opaque);
             if (hash == HashPolicy::defaultHash()) return allocSize; // Impossible distance
-            size_t init = table[index].getHash(opaque) % allocSize;
+            size_t init = hash % allocSize;
             return init <= index ? index - init : index + allocSize - init; // Warp the index
         }
 
@@ -183,10 +159,10 @@ namespace Container
         }
 
         /** Check if this table contains the given key */
-        bool containsKey(const Key & key) { return getValue(key) != 0; }
+        bool containsKey(KeyT key) { return getValue(key) != 0; }
 
         /** Get the value for the given key */
-        T * getValue(const Key & key) const
+        Type * getValue(KeyT key) const
         {
             const HashKeyT hash = HashPolicy::Hash(key);
             size_t initPos = hash % allocSize;
@@ -202,12 +178,18 @@ namespace Container
             return 0;
         }
 
-        /** Store a value in the table */
-        bool storeValue(Key key, T data)
+        /** Store a value in the table
+            @param key      The key to map the data with
+            @param data     The data to store in the table
+            @param update   If true, the value is updated on collision */
+        bool storeValue(KeyT key, T data, const bool update = false)
         {
-            if ((count+1) == allocSize * loadFactor) return false; // Not enough space to worth appending it
+            if ((count+1) >= allocSize * loadFactor && (update && getValue(key) == 0)) return false; // Not enough space to worth appending it
 
+            Bucket bucket;
             HashKeyT hash = HashPolicy::Hash(key);
+            bucket.setHash(hash, opaque);
+            bool bucketUsed = false;
             size_t initPos = hash % allocSize;
             size_t current = 0, probeCurrent = 0;
 
@@ -215,17 +197,37 @@ namespace Container
             for (size_t i = 0; i < probingMaxSize; i++)
             {
                 current = (initPos + i) % allocSize;
-                if (table[current].getHash(opaque) == HashPolicy::defaultHash())
+                HashKeyT currentHash = table[current].getHash(opaque);
+                if (update && currentHash == hash && !bucketUsed)
+                {   // Seems to exist already. Make sure it's still valid when checking keys
+                    if (HashPolicy::isEqual(key, table[current].getKey(opaque)))
+                    {   // Update now
+                        table[current].data = data;
+                        return true;
+                    }
+                }
+                if (currentHash == HashPolicy::defaultHash())
+                {   // Empty area
+                    if (bucketUsed) table[current].swapBucket(bucket);
+                    else
                 {
                     table[current].data = data;
                     table[current].setKey(key, opaque);
                     table[current].setHash(hash, opaque);
+                    }
                     break;
                 }
                 size_t probeDist = computeDistToInit(current); // If the bucket is empty, the previous test used it already, so this can not happen here
                 if (probeCurrent > probeDist)
                 {   // Swap the current bucket with the one to insert
-                    table[current].swapBucket(key, hash, data);
+                    if (!bucketUsed)
+                    {   // Copy is required before swapping, let's copy it now
+                        bucket.data = data;
+                        bucket.setKey(key, opaque);
+                        bucket.setHash(hash, opaque);
+                        bucketUsed = true;
+                    }
+                    table[current].swapBucket(bucket);
                     probeCurrent = probeDist;
                 }
                 probeCurrent++;
@@ -235,12 +237,12 @@ namespace Container
         }
 
         /** Extract a value from the table. The value is forgotten from the table (done by swapping 0 with the value) */
-        T extractValue (const Key & key)
+        Type extractValue (KeyT key)
         {
             const HashKeyT hash = HashPolicy::Hash(key);
             size_t initPos = hash % allocSize;
             size_t current = 0;
-            T ret = 0;
+            Type ret = 0;
 
             for(size_t i = 0; i < probingMaxSize; i++)
             {

@@ -13,8 +13,9 @@ namespace Utils
         RefCounting can create loops, requires an additional counter storage (since the ClassPath compiles on 32bits systems, we don't expect
         high bits in the pointer to be available for storing a counter).
         Most of the time, the reference counting never goes above 1, so this is a sign that a more efficient solution could be used.
-        We present ScopePtr and OwnPtr here. A ScopePtr stored a pointer and delete it when it's deleted (usually when it goes out of scope).
-        OwnPtr is like a ScopePtr except that it tracks if it owns the pointer to the object. It can be sold to become a WeakPtr.
+        We present ScopePtr and OwnPtr here.
+        A ScopePtr stores a pointer and deletes it when it's deleted (usually when it goes out of scope).
+        OwnPtr is like a ScopePtr except that it tracks if it owns the pointer to the object. It can be sold to become a (non owning) OwnPtr.
         @sa OwnPtr
 
         There is nothing special with this, usage is quite
@@ -95,7 +96,7 @@ namespace Utils
         never overcome 2, so it's often easier to just design the code with OwnPtr and transfer ownership explicitely
         when the refCount would reach 2 with a shared pointer (likely at a single place in the code).
 
-        The interface using a reference &, like operator = and constructor won't own the object by default, while the other will.
+        The interface using a reference &, like operator = and constructor won't own the object by default, while the other method will.
 
         Unlike smart pointers (with reference counting), OwnPtr can deal with stack based object correctly
         (smart pointer need pointers allocated on the heap). So it's also a simple way to return either heap allocated or

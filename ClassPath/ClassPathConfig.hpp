@@ -138,6 +138,12 @@
     Default: enabled */
 #define WantDatabase 1
 
+/** If you want GUI code, enable this. This provides all the GUI related functions in GUI namespace.
+    This requires linking with GLFW3, GL, GLEW, and probably many X11 related libraries on linux (X11, Xinerama, Xrandr, Xcursor, Xxf86vm)
+    Default: disabled */
+#define WantGUI 0
+
+
 
 /** If you want ...
     Default: disabled */

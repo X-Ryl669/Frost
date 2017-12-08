@@ -68,11 +68,11 @@ namespace Comparator
     /** Comparable type with reserved key value.
         This is used to match unknown pattern at runtime. Obviously, the reserved key value will never be compared correctly.
         By default, this implementation supports two reserved pattern, '#' is used to match numbers-like (that is any sequence
-        of these chars "-0123456789."), and '"' is used to match any text up to the delimiter.
+        of these chars "-0123456789."), and '"' is used to match any text up to the delimiter. Finally, '*' is used as a catch-all since appearance.
 
         When used with URL, it allows O(log(N)) routing tables searching, with placeholder capture if any in the TS tree.
         If you need something else, just copy/paste and adapt this code */
-    template <class KeyType, KeyType N = (KeyType)'#', KeyType T = (KeyType)'"', KeyType D = (KeyType)'/', class Policy = DefaultComparator>
+    template <class KeyType, KeyType N = (KeyType)'#', KeyType T = (KeyType)'"', KeyType D = (KeyType)'/', KeyType C = (KeyType)'*', class Policy = DefaultComparator>
     struct ReservedComparable
     {
         typedef CompareType Result;
@@ -87,6 +87,8 @@ namespace Comparator
                   || Policy::Equal(_key, (K)'8') || Policy::Equal(_key, (K)'9')))
                 return NotDecided;
             if (Policy::Equal(key, T) && !Policy::Equal(_key, D))
+                return NotDecided;
+            if (Policy::Equal(key, C))
                 return NotDecided;
             return BasicCompare(_key);
         }

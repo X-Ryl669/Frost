@@ -4,6 +4,23 @@
 
 namespace Strings
 {
+
+    // A faster method to compute log10 of a number
+    inline uint32 countDigits(uint64 n)
+    {
+        uint32 count = 1;
+        while (true)
+        {
+            // Avoid integer division for each power of ten, branch instead, it's faster
+            if (n < 10)         return count;
+            if (n < 100)        return count + 1;
+            if (n < 1000)       return count + 2;
+            if (n < 10000)      return count + 3;
+            n /= 10000u;
+            count += 4;
+        }
+    }
+
     // Fast long to int code
     char* ulltoa(uint64 value, char* result, int base)
     {
@@ -24,6 +41,50 @@ namespace Strings
         }
         return result;
     }
+
+
+    template <int base>
+    struct ToStr
+    {
+        enum { MinBufferSize = 65 };
+        inline static char * convert(uint64 value, char * result) { return ulltoa(value, result, base); }
+    };
+
+    template <>
+    struct ToStr<10>
+    {
+        // Max value: 18446744073709551615
+        enum { MinBufferSize = 21 };
+
+        static char * convert(uint64 value, char * result)
+        {
+            static char Digits[]    = "0001020304050607080910111213141516171819202122232425262728293031323334353637383940414243444546474849"
+                                      "5051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899";
+            result += MinBufferSize - 1; *result = 0;
+            while (value >= 100)
+            {
+               // Avoid integer division for each power of ten, use lookup table
+               uint64 q = (value / 100); uint32 r = (uint32)(value % 100);
+               value = q;
+               *--result = Digits[r * 2 + 1];
+               *--result = Digits[r * 2];
+             }
+             if (value < 10) { *--result = '0' + value; return result; }
+             *--result = Digits[value * 2 + 1];
+             *--result = Digits[value * 2];
+             return result;
+        }
+        static char * convert(int64 value, char * result)
+        {
+            if (value < 0)
+            {
+                char * r = convert((uint64)-value, result);
+                *--r = '-'; return r;
+            }
+            return convert((uint64)value, result);
+        }
+    };
+
 
     const unsigned int VerySimpleReadOnlyString::Find(const VerySimpleReadOnlyString & needle, unsigned int pos) const
     {

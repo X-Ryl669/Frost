@@ -360,7 +360,7 @@ namespace Tree
             define a :
             @code
             typedef String Name;
-            typedef uint32 Number
+            typedef uint32 Number;
             AVL::Tree<Name, Number>   reverseDictionary;
             @endcode
 
@@ -763,7 +763,7 @@ namespace Tree
                 if (current->right()) current->right()->rootNode = current;
                 
                 if (same && *parent) (*parent)->rootNode = rootNode;
-                if (!shouldDeleteNode && newTarget) newTarget->Forget();
+                if (!shouldDeleteNode) newTarget->Forget();
 
                 delete newTarget;
             }
@@ -871,20 +871,6 @@ namespace Tree
                     current = previous;
                 }
             }
-
-            /** Get the given node's root node pointer */
-            inline  NodeT** getRootOf(NodeT* node)
-            {
-                // If the node is already root, or the tree as no node
-                if (root == 0 || node == 0 || node->rootNode == 0) return 0;
-                // If the root node of the given node is the tree root node, return our root node
-                else if (node->rootNode->rootNode == 0)  return &root;
-                // Else check if the root node is the left node of the root node, and return the left node
-                else if (node->rootNode == node->rootNode->rootNode->left())    return &node->rootNode->rootNode->left();
-                // Else it is the right node
-                return &node->rootNode->rootNode->right();              
-            }
-
 
 
             // Accessors

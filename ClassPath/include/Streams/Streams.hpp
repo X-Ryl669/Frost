@@ -585,6 +585,21 @@ namespace Stream
         void unmap(const bool sync = true);
         /** Sync the mapping to disk (only for file opened for writing) */
         bool sync();
+        /** Create a secondary mapping.
+            This is an advanced feature and should not be used unless you master the complete process and don't forget to unmap it.
+            This is useful in case you need to update an header for example.
+            Beware however that mappings should not overlap.
+            @warning Unlike map, this does not unmap automatically the previous mapping, you must call unmapEx to use this method
+            @param offset   The number of bytes from the beginning of the file (must be aligned to system's page size or it'll fail)
+            @param size     The number of bytes to map
+            @param buffer   On output, should point to valid mapped area
+            @param opaque   It's filled on output, you must remember this one as it's required to unmap the area later on.
+            @return true on success */
+        bool mapEx(const uint64 offset, const uint64 size, uint8 * & buffer, void * & opaque);
+        /** Unmap the given mapping of the file from memory.
+            You must call this for each mapping received from mapEx */
+        bool unmapEx(uint8 * buffer, const uint64 size, void * opaque, const bool sync = true);
+
 
         // Construction and destruction
     public:
@@ -646,6 +661,8 @@ namespace Stream
     public:
         /** Allow copying */
         InputStringStream(const InputStringStream & other) : content(other.content), position(other.position) {}
+        /** Allow copying too */
+        InputStringStream & operator = (const InputStringStream & other) { content = other.content; position = other.position; return *this; }
     };
 
 
@@ -1476,7 +1493,7 @@ namespace Stream
 
     private:
         /** Deny copying */
-        AESOutputStream(const AESInputStream &);
+        AESOutputStream(const AESOutputStream &);
     };
 #endif
 

@@ -35,6 +35,7 @@ namespace File
             }
             FileFilter() : filePattern(""), found(0) {}
             FileFilter(const String & pattern) : filePattern(pattern), found(0) {}
+            virtual ~FileFilter() {}
         };
 
         /** The file filter array */

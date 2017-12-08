@@ -179,6 +179,11 @@ namespace Compression
         return ret;
     }
 
+    bool CommonZlib::hasDataToFlush() const 
+    { 
+        return opaque && isDecompressing(opaque) && inputAmount > 0; 
+    }
+ 
     // Required 
     const float CommonZlib::HeaderLess = 2.0f;
     bool CommonZlib::decompressStream(Stream::OutputStream & outStream, const Stream::InputStream & inStream, uint32 amountToProcess)
@@ -186,27 +191,27 @@ namespace Compression
         // Special cases first
         if (!opaque) return false;
         if (!isDecompressing(opaque))
+        {
             Reset(false);
+            inputAmount = 0;
+        }
         
         // We are either limited to the quantity of output data to process or the whole input stream
         bool consumeAllInput = amountToProcess == 0;
 
-        // Read some data to decompress
-        uint8 baseBuffer[8192];
-        uint32 inputAmount = consumeAllInput ? (uint32)inStream.fullSize() : sizeof(baseBuffer);
-        
         // That fills the buffer of the min(buffer size, amountLeft)
-        uint8 * buffer = baseBuffer; uint64 inSize = 0;
+        uint8 * buffer = baseBuffer; uint64 inSize = inputAmount;
 
         while (consumeAllInput || amountToProcess > 0)
         {
             // Flush the output, if any first
             uint32 outAmount = min(workBufferLength, amountToProcess);
-            if (outStream.write(workBuffer, outAmount) != outAmount) return false;
+            if (outStream.write(workBuffer, outAmount) != outAmount) { inputAmount = inSize; return false; }
             if (amountToProcess <= outAmount)
             {
                 memmove(workBuffer, &workBuffer[amountToProcess], workBufferLength - amountToProcess);
                 workBufferLength -= outAmount;
+                inputAmount = inSize;    
                 return true; // Done decompressing the asked size
             }
             workBufferLength = 0;
@@ -219,8 +224,8 @@ namespace Compression
             if (!inSize)
             {
                 buffer = baseBuffer;
-                inSize = inStream.read(buffer, (uint64)min((uint32)sizeof(baseBuffer), inputAmount));
-                if (inSize == (uint64)-1) return false;
+                inSize = inStream.read(buffer, (uint64)min((uint32)sizeof(baseBuffer), (uint32)inStream.fullSize()));
+                if (inSize == (uint64)-1) { inputAmount = 0; return false; }
                 if (inSize == 0) // No more data in input
                     break;
             }
@@ -230,11 +235,15 @@ namespace Compression
             workBufferLength = destLen;
 
             if (lastError != Success && lastError != EndOfStream)
+            {
+                inputAmount = inSize;
                 return false;
+            }
             
             // Check if we actually got any data, and if not, let's exit the loop anyway
             if (lastError == EndOfStream)
             {
+                inputAmount = 0; // inSize;
                 if (destLen)
                 {
                     destLen = min(amountToProcess, (uint32)destLen);
@@ -246,7 +255,10 @@ namespace Compression
             }
                 
             // Adjust buffer head
-            buffer += inSize - (uint64)dataSize;
+            memmove(baseBuffer, baseBuffer + (inSize - (uint64)dataSize), dataSize);
+            //buffer += inSize - (uint64)dataSize;
+            inSize = (uint64)dataSize;
+            inputAmount = inSize;
             if (amountToProcess < workBufferLength)
             {
                 // Need to copy the decoded part
@@ -255,12 +267,12 @@ namespace Compression
                 workBufferLength -= amountToProcess;
                 return true; // Done decompressing the asked size
             }
-            inSize = (uint64)dataSize;
         }
         
         // Flush the stream ?
         if (inStream.fullSize() == 0) 
         {
+            inputAmount = 0;
             // Need to flush the output now
             while (1)
             {
@@ -292,7 +304,6 @@ namespace Compression
         if (!amountToProcess) amountToProcess = (uint32)inStream.fullSize();
 
         // Read some data to compress
-        uint8 baseBuffer[8192];
         uint8 * buffer = baseBuffer;
         uint64 inSize = inStream.read(buffer, (uint64)min((uint32)sizeof(baseBuffer), amountToProcess));
         if (inSize == (uint64)-1) return false;

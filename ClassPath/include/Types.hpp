@@ -21,6 +21,8 @@
     #else
         #if __x86_64__
 	       #define HAS_ATOMIC_BUILTIN64 1
+	#elif __aarch64__
+	       #define HAS_ATOMIC_BUILTIN64 1
         #elif __ARMEL__
 	       #define NO_ATOMIC_BUILTIN64 1 // Should change that as soon as it's supported by the libs
         #else
@@ -51,6 +53,7 @@
 
 #if __cplusplus >= 201103L
     #define HAS_STD_ATOMIC 1
+    #define HasCPlusPlus11 1
 #endif
 
 // Safety checks for this configuration
@@ -318,10 +321,6 @@
 #endif
 
 // Helper function that should never be omitted
-/** Get the absolute value for a signed number */
-template <typename T> inline T Abs(T a) { return a < 0 ? -a : a; }
-/** Get the absolute value for the difference (a - b), it works with unsigned number too */
-template <typename T> inline T AbsDiff(T a, T b) { return a < b ? b-a : a-b; }
 // Easy method to get a int as big endian in all case
 inline uint32 BigEndian(uint32 a)
 {
@@ -384,6 +383,8 @@ inline size_t Monsanto(const size_t x, const size_t wordSize = 4) { return (x + 
 #endif
 #define ForceUndefinedSymbol(x) void* __ ## x ## _fp =(void*)&x;
 
+/** Free a pointer and zero it */
+template <typename T> inline void free0(T*& t) { free(t); t = 0; }
 /** Delete a pointer and zero it */
 template <typename T> inline void delete0(T*& t) { delete t; t = 0; }
 /** Delete a pointer to an array and zero it */
@@ -654,6 +655,15 @@ public:
         #define _DBFlagName _
     #endif
 
+    #if (WantGUI == 1)
+        #define _GUIFlag    1048576
+        #define _GUIFlagName GUI
+    #else
+        #define _GUIFlag 0
+        #define _GUIFlagName _
+    #endif
+
+
 
     #if (DEBUG==1)
         #define _DebugFlag         1073741824
@@ -686,7 +696,7 @@ public:
 
     #define _ClassPathFlags (_SSLFlag + _AESFlag + _TypeFlag + _FFMPEGFlag + _TLSFlag + _BaseFlag + _FloatFlag + \
                              _ChronoFlag + _AtomicFlag + _MD5Flag + _ExLockFlag + _SOAPFlag + _CompressFlag + \
-                             _OwnPicFlag + _RegExFlag + _PingFlag + _BSCFlag + _JSFlag + _AIOFlag + _DBFlag + _DebugFlag)
+                             _OwnPicFlag + _RegExFlag + _PingFlag + _BSCFlag + _JSFlag + _AIOFlag + _DBFlag + _GUIFlag + _DebugFlag)
 
 
     #define _String(X) #X
@@ -703,8 +713,8 @@ public:
         // This is going to break your software in a very subtle way, since the binary will not match the sources, so debugging will be painful, if not impossible.
         // The solution is simple, make sure you are using the same flags for the both projects.
         enum { ClassPathFlags = _ClassPathFlags };
-        extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DBFlagName), _DebugFlagName);
-        inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DBFlagName), _DebugFlagName); }
+        extern int NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DBFlagName), _GUIFlagName), _DebugFlagName);
+        inline int getBuildFlags() { return NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(NAME(_checkSameCompilationFlags_, _SSLFlagName), _AESFlagName), _TypeFlagName), _FFMPEGFlagName), _TLSFlagName), _BaseFlagName), _FloatFlagName), _ChronoFlagName), _AtomicFlagName), _MD5FlagName), _ExLockFlagName), _SOAPFlagName), _CompressFlagName), _OwnPicFlagName), _RegExFlagName), _PingFlagName), _BSCFlagName), _JSFlagName), _AIOFlagName), _DBFlagName), _GUIFlagName), _DebugFlagName); }
         extern const char * getBuildFlagsName();
         /** This get the Git's HEAD SHA1 added with -dirty if dirty or "" if not supported */
         extern const char * getBuildRepoVer();
@@ -782,6 +792,8 @@ public:
     #undef _DBFlag
     #undef _DBFlagName
 
+    #undef _GUIFlag
+    #undef _GUIFlagName
 
     #undef _DebugFlag
     #undef _DebugFlagName
@@ -794,4 +806,3 @@ public:
 #endif
 
 #endif
-

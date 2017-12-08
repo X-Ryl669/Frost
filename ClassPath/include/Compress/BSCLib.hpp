@@ -19,7 +19,8 @@ namespace Compression
     /** Implementation class for Block Sorting Compressor.
         The algorithm was written by Ilya Grebnov.
         BSC is using Burrows Wheeler Transform for coder, and a Lempel Ziv based range coder.
-        It gives better compression ratio than LZMA but is faster. */
+        It gives better compression ratio than LZMA but is faster.
+        @sa Tests::CompressTests */
     class BSCLib : public BaseCompressor
     {
         // Type definition and enumeration

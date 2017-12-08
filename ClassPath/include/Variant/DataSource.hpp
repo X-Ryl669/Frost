@@ -14,7 +14,10 @@ namespace Type
     typedef VarT<ObjectPtrPolicy>  Ref;
     
     /** Thrown when the conversion is not allowed */
-    struct ConversionNotAllowed {};
+    struct ConversionNotAllowed
+    {
+        virtual const char * what() const { return "Conversion not allowed"; }
+    };
 
     /** Define the data source interface.
         If you want to use variant with your own type, and allow code conversion with supported type,

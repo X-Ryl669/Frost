@@ -17,6 +17,20 @@
     Strings::FastString GetMainThreadStack();
 #endif
 
+/** Thread local storage modifier.
+    @warning Apple until XCode 8 does not support C++11 thread_local specifier, so it falls back to the C's __thread which in turn does not call destructors.
+             So, in general, you should not mark a non POD object with this flag */
+#if HasCPlusPlus11 == 1 && __apple_build_version__ > 7030029
+    #define TLSDecl  thread_local
+#elif defined(_MSC_VER)
+    #define TLSDecl  __declspec(thread)
+#elif defined(_POSIX)
+    #define TLSDecl __thread
+#else
+    // It's not per thread, but since it's neither any case above, well...
+    #define TLSDecl
+#endif
+
 /** Classes that provides multithreading functionality.
     You'll find the abstract class Threading::Thread to implement a safe thread.
     There's also the Threading::WithStartMarker that let you wait until the thread is started.
@@ -313,6 +327,8 @@ namespace Threading
 
         /** Install the dump stack handler for main thread */
         static void installMainThreadHandler();
+        /** Create the thread's TLS key */
+        static void createTLSThisKey();
 
         /** @cond Private
             Stack only stuff */
@@ -670,7 +686,7 @@ namespace Threading
 
         /** Construction with one shot method with this signature: void Obj::method() */
         JobThread(Obj & instance, OneShot shot, const char * name = NULL) : instance(instance), oneShot(shot), step(0), done(name, Event::ManualReset, Event::InitiallySet), cancelEvent(name, Event::AutoReset), progressIndex(0) {}
-        /** Construction with step by step method with this signature: bool Obj::step(int progress) */
+        /** Construction with step by step method with this signature: bool Obj::step(uint32 progress) */
         JobThread(Obj & instance, Step step, const char * name = NULL) : instance(instance), oneShot(0), step(step), done(name, Event::ManualReset, Event::InitiallySet), cancelEvent(name, Event::AutoReset), progressIndex(0) {}
         /** Destruction */
         ~JobThread() { cancelEvent.Set(); destroyThread(); }

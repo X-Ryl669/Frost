@@ -68,7 +68,7 @@ namespace File
         uint16 breakPos = 0;
         for (uint16 i = minChunkSize; i < (uint16)read; i++)
         {
-            rolling.Append(chunk.data[i]);
+            rolling.Roll(chunk.data[i]);
             // Get the checksum to check for dividers
             uint32 checksum = rolling.getChecksumLE();
             if ((checksum % lowDivider) == (lowDivider - 1))
