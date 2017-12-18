@@ -322,7 +322,7 @@ namespace Type
 		    VarT(const T & x) : table(getTable((Empty*)0)) { inner.Pointer = NULL; Init(x); }
 	    /** Value constructor */
 	    template <typename T>
-		    VarT(int, const T & x) : table(getTable((Empty*)0)) { inner.Pointer = NULL; InitDefault(x); }
+		    VarT(int, const T * x) : table(getTable((Empty*)0)) { inner.Pointer = NULL; InitDefault(x); }
 	    /** Copy constructor */
 	    VarT(const VarT & x) : table(getTable((Empty*)0)) { inner.Pointer = NULL; Set(x); }
 
@@ -345,7 +345,7 @@ namespace Type
 	    }
 	    /** Initialization to a specified type at runtime using default constructor */
 	    template<typename T>
-	    void InitDefault(const T& x) 
+	    void InitDefault(const T* x) 
 	    {
 		    table = getTable((T*)0);
 		    if (Policy::makeCopy)
@@ -353,7 +353,7 @@ namespace Type
 			    if (sizeof(T) <= MaximumStaticSize)	new(inner.Buffer) T;
 			    else 								inner.Pointer = new T; 
 		    }
-		    else inner.Pointer = reinterpret_cast<void*>(const_cast<T*>(&x));
+		    else inner.Pointer = reinterpret_cast<void*>(const_cast<T*>(x));
 	    }
 
 	    VarT& Set(const VarT & x) 

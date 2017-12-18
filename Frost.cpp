@@ -3506,8 +3506,17 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
 
     // Common database initialization code
     Frost::DatabaseModel::databaseURL = optionsMap["index"]->normalizedPath(Platform::Separator, true);
-    if (!File::Info(Frost::DatabaseModel::databaseURL, true).doesExist()) return showHelpMessage("Bad argument for " + action + ", index path does not exists");
-
+    if (!File::Info(Frost::DatabaseModel::databaseURL, true).doesExist())
+    {
+        if (action == "backup" && optionsMap["remote"] && *optionsMap["remote"] == *optionsMap["index"])
+        {   // If the remote folder does not exists, let's create it
+            File::Info remoteFolder(optionsMap["remote"]->normalizedPath(Platform::Separator, true));
+            if (!remoteFolder.doesExist()) remoteFolder.makeDir();
+            
+        }   // Else, it's an error
+        else return showHelpMessage("Bad argument for " + action + ", index path does not exists: " + Frost::DatabaseModel::databaseURL);
+    }
+    
     Frost::MemoryBlock              cipheredMasterKey;
     unsigned int                    revisionID = 0;
     Frost::ConsoleProgressCallback  console(action != "cat");
@@ -3628,10 +3637,15 @@ int handleAction(Strings::StringArray & options, const Strings::FastString & act
     {
         // Ok, start the system now
         Frost::String backup = params[0].normalizedPath(Platform::Separator, true);
-        if (!File::Info(backup, true).doesExist() || !File::Info(backup, true).isDir())
+        File::Info backupPath(backup, true);
+        if (!backupPath.doesExist() || !backupPath.isDir())
             return showHelpMessage("Bad argument for backup, the --backup parameter is not a folder");
 
-            Frost::String indexFile = File::Info(Frost::DatabaseModel::databaseURL).isDir() ? Frost::DatabaseModel::databaseURL + DEFAULT_INDEX : Frost::DatabaseModel::databaseURL;
+        // Prefix search for the index path in the backup path (this is an error)
+        if (File::Info(Frost::DatabaseModel::databaseURL, true).getRealFullPath().midString(0, backupPath.getRealFullPath().getLength()) == backupPath.getRealFullPath())
+            return showHelpMessage("The (output) index path can not be found in the given backup path");
+        
+        Frost::String indexFile = File::Info(Frost::DatabaseModel::databaseURL).isDir() ? Frost::DatabaseModel::databaseURL + DEFAULT_INDEX : Frost::DatabaseModel::databaseURL;
 
         Frost::KeyFactory::KeyT key;
         Frost::derivePassword(key, pass);

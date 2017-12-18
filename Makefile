@@ -70,6 +70,9 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
    SHAREDLIBS += -lrt -ldl
 endif
+ifeq ($(UNAME_S),Darwin)
+   CXXFLAGS += -I/opt/local/include
+endif
 LDXX = g++
 Q = @
 

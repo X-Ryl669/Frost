@@ -40,7 +40,7 @@
         }; \
         template <> struct CMImpl< TYPE > : public CreationMethods \
         { \
-            static Var * createDefaultObject() { return new Var(0, *( TYPE * ) 0); }  \
+            static Var * createDefaultObject() { return new Var(0, ( TYPE * ) 0); }  \
             static TypeID registerObjectUTI(void) { return new TypeIDImpl<TYPE>(); } \
             static const char * getTypeName(void) { return #TYPE; } \
             static DataSource* getDataSource(const void *); \
@@ -83,7 +83,7 @@
         }; \
         template <> struct CMImpl< TYPE > : public CreationMethods \
         { \
-            static Type::VarT<Type::ObjectCopyPolicy> * createDefaultObject() { return new Type::VarT<Type::ObjectCopyPolicy>(0, *( TYPE * ) 0); }  \
+            static Type::VarT<Type::ObjectCopyPolicy> * createDefaultObject() { return new Type::VarT<Type::ObjectCopyPolicy>(0, ( TYPE * ) 0); }  \
             static TypeID registerObjectUTI(void) { return new TypeIDImpl<TYPE>(); } \
             static const char * getTypeName(void) { return #TYPE; } \
             static Type::DataSource* getDataSource(const void * pData) \
